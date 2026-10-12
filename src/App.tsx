@@ -1,17 +1,27 @@
 import { App as KApp, Page } from 'konsta/react'
 import { LoginScreen } from './features/auth/LoginScreen'
 import { useAuth } from './features/auth/useAuth'
+import { dexieStore } from './features/review/dexieStore'
 import { ReviewScreen } from './features/review/ReviewScreen'
-import { memoryStore, useReviewSession } from './features/review/useReviewSession'
-import { SAMPLE_CARDS } from './lib/sample-cards'
+import { useAutoSync, usePendingCount } from './features/review/useAutoSync'
+import { useReviewSession } from './features/review/useReviewSession'
+import { db } from './lib/db'
+import { supabase } from './lib/supabase'
+import { supabaseRemote, sync } from './lib/sync'
 
-// Hors du rendu : le store et l'horloge doivent rester stables pour le hook.
-const store = memoryStore(SAMPLE_CARDS)
+// Hors du rendu : le store, l'horloge et le sync doivent rester stables pour les hooks.
+// Le hook ne relit le store qu'au montage et à restart() : useAutoSync appelle restart()
+// quand un sync ramène des données alors que la session peut être rechargée sans perte.
+const store = dexieStore(db)
+const remote = supabaseRemote(supabase)
+const runSync = () => sync(db, remote)
 const clock = () => new Date()
 
 function Review({ onSignOut }: { onSignOut(): void }) {
   const session = useReviewSession(store, clock)
-  return <ReviewScreen session={session} now={clock} onSignOut={onSignOut} />
+  useAutoSync(session, runSync)
+  const pending = usePendingCount(db)
+  return <ReviewScreen session={session} now={clock} unsynced={pending > 0} onSignOut={onSignOut} />
 }
 
 export default function App() {
