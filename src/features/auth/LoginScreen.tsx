@@ -31,7 +31,9 @@ export function LoginScreen({ signIn }: Props) {
         <form onSubmit={submit} noValidate>
           <List strongIos insetIos>
             <ListInput
-              label="E-mail"
+              label={<label htmlFor="login-email">E-mail</label>}
+              inputId="login-email"
+              inputClassName="h-11!"
               type="email"
               name="email"
               autoComplete="username"
@@ -44,7 +46,9 @@ export function LoginScreen({ signIn }: Props) {
               onChange={e => setEmail(e.target.value)}
             />
             <ListInput
-              label="Mot de passe"
+              label={<label htmlFor="login-password">Mot de passe</label>}
+              inputId="login-password"
+              inputClassName="h-11!"
               type="password"
               name="password"
               autoComplete="current-password"

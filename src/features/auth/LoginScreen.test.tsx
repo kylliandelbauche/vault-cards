@@ -11,19 +11,21 @@ afterEach(cleanup)
 
 describe('LoginScreen', () => {
   it('champs compatibles avec le remplissage automatique iOS', () => {
-    const { container } = renderLogin(vi.fn())
-    const email = container.querySelector('input[type="email"]')!
-    const password = container.querySelector('input[type="password"]')!
+    renderLogin(vi.fn())
+    const email = screen.getByLabelText('E-mail')
+    const password = screen.getByLabelText('Mot de passe')
+    expect(email.getAttribute('type')).toBe('email')
+    expect(password.getAttribute('type')).toBe('password')
     expect(email.getAttribute('autocomplete')).toBe('username')
     expect(password.getAttribute('autocomplete')).toBe('current-password')
   })
 
   it('envoie les identifiants et affiche le message d’erreur', async () => {
     const signIn = vi.fn().mockResolvedValue({ error: 'E-mail ou mot de passe incorrect.' })
-    const { container } = renderLogin(signIn)
+    renderLogin(signIn)
     const user = userEvent.setup()
-    await user.type(container.querySelector('input[type="email"]')!, ' moi@exemple.be ')
-    await user.type(container.querySelector('input[type="password"]')!, 'faux')
+    await user.type(screen.getByLabelText('E-mail'), ' moi@exemple.be ')
+    await user.type(screen.getByLabelText('Mot de passe'), 'faux')
     await user.click(screen.getByRole('button', { name: 'Se connecter' }))
     expect(signIn).toHaveBeenCalledWith('moi@exemple.be', 'faux')
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', 'E-mail ou mot de passe incorrect.')
