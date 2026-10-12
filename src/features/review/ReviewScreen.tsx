@@ -3,13 +3,14 @@ import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
 import { RatingBar } from './RatingBar'
 import { useReviewKeys } from './useReviewKeys'
+import type { SyncIndicator } from './useAutoSync'
 import type { ReviewSession } from './useReviewSession'
 
 interface Props {
   session: ReviewSession
   now: () => Date
-  /** Des reviews attendent encore d'être poussées vers Supabase. */
-  unsynced?: boolean
+  /** État de la synchro, affiché sous le titre. */
+  sync?: SyncIndicator
   onSignOut?(): void
 }
 
@@ -35,22 +36,30 @@ function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   )
 }
 
-function UnsyncedBadge() {
+const SYNC_BADGE: Record<SyncIndicator, { label: string; dot: string; text: string }> = {
+  synced: { label: 'Synchronisé', dot: 'bg-good', text: 'text-good' },
+  unsynced: { label: 'Non synchronisé', dot: 'bg-muted', text: 'text-muted' },
+  syncing: { label: 'Synchronisation…', dot: 'bg-muted animate-pulse', text: 'text-muted' },
+}
+
+/** Point de couleur + libellé (jamais la couleur seule) ; textes ≥ 4,5:1 en clair comme en sombre. */
+function SyncBadge({ sync }: { sync: SyncIndicator }) {
+  const { label, dot, text } = SYNC_BADGE[sync]
   return (
-    <span className="inline-flex items-center gap-1.5 text-[13px] font-normal text-sys-gray">
-      <span aria-hidden className="size-2 rounded-full bg-sys-gray" />
-      non synchronisé
+    <span role="status" className={`inline-flex items-center gap-1.5 text-[13px] font-normal ${text}`}>
+      <span aria-hidden className={`size-2 rounded-full ${dot}`} />
+      {label}
     </span>
   )
 }
 
-export function ReviewScreen({ session, now, unsynced = false, onSignOut }: Props) {
+export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
 
   return (
     <Page className="flex flex-col">
-      <Navbar title="Vault Cards" subtitle={unsynced ? <UnsyncedBadge /> : undefined} right={status === 'reviewing' && <Counters counts={session.counts} />} />
+      <Navbar title="Vault Cards" subtitle={sync && <SyncBadge sync={sync} />} right={status === 'reviewing' && <Counters counts={session.counts} />} />
       {status === 'reviewing' && <Progressbar className="mx-4 my-2 w-auto" progress={session.progress} />}
 
       <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center">
@@ -69,7 +78,7 @@ export function ReviewScreen({ session, now, unsynced = false, onSignOut }: Prop
           </Block>
         )}
         {status === 'done' && (
-          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.restart} onSignOut={onSignOut} />
+          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onSignOut={onSignOut} />
         )}
         {current && <CardView card={current.card} revealed={revealed} onReveal={session.reveal} />}
       </main>

@@ -16,6 +16,7 @@
   --color-new: var(--new);
   --color-new-tint: var(--new-tint);
   --color-sys-gray: var(--sys-gray);
+  --color-muted: var(--muted);
 }
 
 :root {
@@ -29,6 +30,7 @@
   --new: #0a5fc4;
   --new-tint: #e3eefb;
   --sys-gray: #8e8e93;
+  --muted: #636366; /* gris lisible en petit texte (AA), contrairement à sys-gray */
 }
 
 .dark {
@@ -42,4 +44,5 @@
   --new: #6cb2ff;
   --new-tint: #132a45;
   --sys-gray: #8e8e93;
+  --muted: #aeaeb2;
 }

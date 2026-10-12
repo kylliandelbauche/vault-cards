@@ -3,7 +3,7 @@ import { LoginScreen } from './features/auth/LoginScreen'
 import { useAuth } from './features/auth/useAuth'
 import { dexieStore } from './features/review/dexieStore'
 import { ReviewScreen } from './features/review/ReviewScreen'
-import { useAutoSync, usePendingCount } from './features/review/useAutoSync'
+import { syncIndicator, useAutoSync, usePendingCount } from './features/review/useAutoSync'
 import { useReviewSession } from './features/review/useReviewSession'
 import { db } from './lib/db'
 import { supabase } from './lib/supabase'
@@ -19,9 +19,9 @@ const clock = () => new Date()
 
 function Review({ onSignOut }: { onSignOut(): void }) {
   const session = useReviewSession(store, clock)
-  useAutoSync(session, runSync)
+  const syncState = useAutoSync(session, runSync)
   const pending = usePendingCount(db)
-  return <ReviewScreen session={session} now={clock} unsynced={pending > 0} onSignOut={onSignOut} />
+  return <ReviewScreen session={session} now={clock} sync={syncIndicator(pending, syncState)} onSignOut={onSignOut} />
 }
 
 export default function App() {
