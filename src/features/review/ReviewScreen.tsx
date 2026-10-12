@@ -58,20 +58,20 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
   const { status, current, revealed } = session
 
   return (
-    <Page className="flex flex-col">
+    <Page className="flex flex-col overflow-hidden!">
       <Navbar title="Vault Cards" subtitle={sync && <SyncBadge sync={sync} />} right={status === 'reviewing' && <Counters counts={session.counts} />} />
       {status === 'reviewing' && <Progressbar className="mx-4 my-2 w-auto" progress={session.progress} />}
 
-      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center">
-        {status === 'loading' && <div className="flex justify-center"><Preloader /></div>}
+      <main className="mx-auto flex min-h-0 w-full max-w-xl flex-1 flex-col overflow-y-auto overscroll-contain py-2">
+        {status === 'loading' && <div className="my-auto flex justify-center"><Preloader /></div>}
         {status === 'error' && (
-          <Block className="flex flex-col items-center gap-4 text-center">
+          <Block className="my-auto flex flex-col items-center gap-4 text-center">
             <p role="alert" className="text-[17px] text-sys-gray">Impossible de lire les cartes enregistrées sur cet appareil.</p>
             <Button large rounded className="max-w-xs" onClick={session.restart}>Réessayer</Button>
           </Block>
         )}
         {status === 'empty' && (
-          <Block className="text-center text-[17px] text-sys-gray">
+          <Block className="my-auto text-center text-[17px] text-sys-gray">
             {navigator.onLine === false
               ? 'Connecte-toi à internet pour la première synchronisation.'
               : "Aucune carte pour l'instant. Lance /flashcards sur le Mac."}
@@ -84,7 +84,7 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
       </main>
 
       {current && (
-        <div className="sticky bottom-0 mx-auto w-full max-w-xl bg-ios-light-surface px-4 pt-2 dark:bg-ios-dark-surface pb-[max(16px,var(--k-safe-area-bottom))]">
+        <div className="mx-auto w-full max-w-xl shrink-0 bg-ios-light-surface px-4 pt-2 dark:bg-ios-dark-surface pb-[max(16px,var(--k-safe-area-bottom))]">
           {session.saveFailed && (
             <p role="alert" className="pb-2 text-center text-[15px] text-again">Note non enregistrée. Réessaie.</p>
           )}

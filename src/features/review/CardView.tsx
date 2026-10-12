@@ -12,7 +12,7 @@ export function CardView({ card, revealed, onReveal }: Props) {
   return (
     <Card
       raised
-      className={revealed ? '' : 'cursor-pointer'}
+      className={revealed ? 'my-auto shrink-0' : 'my-auto shrink-0 cursor-pointer'}
       contentWrapPadding="p-5"
       onClick={onReveal}
     >
