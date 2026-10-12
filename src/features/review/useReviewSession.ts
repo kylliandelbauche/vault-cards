@@ -18,13 +18,15 @@ export const memoryStore = (cards: Card[]): ReviewStore => {
   }
 }
 
-type Status = 'loading' | 'empty' | 'reviewing' | 'done'
+type Status = 'loading' | 'error' | 'empty' | 'reviewing' | 'done'
 type Stats = { again: number; hard: number; good: number }
 
 export interface ReviewSession {
   status: Status
   current: SessionItem | null
   revealed: boolean
+  /** La dernière note n'a pas pu être enregistrée : la carte reste affichée, on peut renoter. */
+  saveFailed: boolean
   reveal(): void
   rate(r: Rating): void
   counts: { new: number; learn: number; due: number }
@@ -38,6 +40,7 @@ interface State {
   status: Status
   queue: SessionItem[]
   revealed: boolean
+  saveFailed: boolean
   processed: number
   stats: Stats
   nextDueAt: Date | null
@@ -53,11 +56,12 @@ interface State {
 export const SCREEN_CHANGE_GUARD_MS = 400
 
 const ZERO: Stats = { again: 0, hard: 0, good: 0 }
-const INITIAL: State = { status: 'loading', queue: [], revealed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
+const INITIAL: State = { status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
+const FAILED: State = { ...INITIAL, status: 'error' }
 const STAT_KEY = { 1: 'again', 2: 'hard', 3: 'good' } as const
 const systemNow = () => new Date()
 
-/** Le store est lu au montage et à `restart()` ; un `store` ou un `now` recréé à chaque rendu ne relance rien. */
+/** Le store est lu au montage et à `restart()` (échec de lecture → status `error`) ; un `store` ou un `now` recréé à chaque rendu ne relance rien. */
 export function useReviewSession(store: ReviewStore, now: () => Date = systemNow): ReviewSession {
   const [state, setState] = useState<State>(INITIAL)
   // Miroir synchrone de l'état, lu par les gestionnaires pour éviter les closures périmées.
@@ -98,9 +102,12 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
 
   useEffect(() => {
     let current = true
-    void load().then(loaded => { if (current) apply(loaded) })
+    load().then(
+      loaded => { if (current) apply(loaded) },
+      () => { if (current) commit(FAILED) },
+    )
     return () => { current = false }
-  }, [load, apply])
+  }, [load, apply, commit])
 
   const reveal = useCallback(() => {
     const s = live.current
@@ -125,7 +132,12 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         reviewed_at: now().toISOString(),
         synced: 0,
       }
-      await store.addReview(review)
+      try {
+        await store.addReview(review)
+      } catch {
+        commit({ ...live.current, saveFailed: true })
+        return
+      }
       reviews.current = [...reviews.current, review]
       const updated = stateFromReviews(reviews.current.filter(x => x.card_id === item.card.id))
       const rest = live.current.queue.slice(1)
@@ -137,6 +149,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         status: finished ? 'done' : 'reviewing',
         queue,
         revealed: false,
+        saveFailed: false,
         processed: live.current.processed + 1,
         stats: { ...live.current.stats, [STAT_KEY[r]]: live.current.stats[STAT_KEY[r]] + 1 },
         nextDueAt: finished ? nextDue(cards.current, reviews.current, t) : null,
@@ -147,13 +160,17 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     }
   }, [commit])
 
-  const restart = useCallback(() => { void load().then(apply) }, [load, apply])
+  const restart = useCallback(() => {
+    if (live.current.status === 'error') commit(INITIAL)
+    load().then(apply, () => commit(FAILED))
+  }, [load, apply, commit])
 
   const total = state.processed + state.queue.length
   return {
     status: state.status,
     current: state.status === 'reviewing' ? state.queue[0] ?? null : null,
     revealed: state.revealed,
+    saveFailed: state.saveFailed,
     reveal,
     rate,
     counts: countKinds(state.queue),
