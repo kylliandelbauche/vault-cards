@@ -21,6 +21,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../shared/**/*.ts"],
   "exclude": ["**/fixtures/**"]
 }
