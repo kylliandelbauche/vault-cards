@@ -1,2 +1,29 @@
 @import "tailwindcss";
 @import "konsta/react/theme.css";
+
+/* Couleurs système iOS (clair / sombre), utilisables en `bg-sys-red`, `text-sys-green`… */
+@theme inline {
+  --color-sys-red: var(--sys-red);
+  --color-sys-orange: var(--sys-orange);
+  --color-sys-green: var(--sys-green);
+  --color-sys-blue: var(--sys-blue);
+  --color-sys-gray: var(--sys-gray);
+}
+
+:root {
+  color-scheme: light;
+  --sys-red: #ff3b30;
+  --sys-orange: #ff9500;
+  --sys-green: #34c759;
+  --sys-blue: #007aff;
+  --sys-gray: #8e8e93;
+}
+
+.dark {
+  color-scheme: dark;
+  --sys-red: #ff453a;
+  --sys-orange: #ff9f0a;
+  --sys-green: #30d158;
+  --sys-blue: #0a84ff;
+  --sys-gray: #8e8e93;
+}
