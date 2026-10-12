@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAuthRetryableFetchError } from '@supabase/supabase-js'
-import { supabase } from '../../lib/supabase'
+import { AUTH_STORAGE_KEY, supabase } from '../../lib/supabase'
 
 export type AuthStatus = 'loading' | 'signed-out' | 'signed-in'
 
@@ -13,6 +13,8 @@ export function useAuth(): {
   signOut(): Promise<void>
 } {
   const [status, setStatus] = useState<AuthStatus>('loading')
+  // Déconnexion volontaire : on ignore tout SIGNED_IN / TOKEN_REFRESHED jusqu'à la prochaine connexion réussie.
+  const signedOutByUser = useRef(false)
 
   useEffect(() => {
     let active = true
@@ -29,7 +31,9 @@ export function useAuth(): {
     )
 
     const { data } = supabase.auth.onAuthStateChange(event => {
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') setStatus('signed-in')
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (!signedOutByUser.current) setStatus('signed-in')
+      }
       else if (event === 'SIGNED_OUT') setStatus('signed-out')
     })
 
@@ -43,6 +47,7 @@ export function useAuth(): {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) return { error: isAuthRetryableFetchError(error) ? OFFLINE : BAD_CREDENTIALS }
+      signedOutByUser.current = false
       setStatus('signed-in')
       return { error: null }
     } catch {
@@ -51,12 +56,27 @@ export function useAuth(): {
   }, [])
 
   const signOut = useCallback(async () => {
+    signedOutByUser.current = true
     try {
-      await supabase.auth.signOut()
+      const { error } = await supabase.auth.signOut()
+      // Hors ligne avec jeton expiré, supabase-js renvoie l'erreur de rafraîchissement sans rien effacer,
+      // et `scope: 'local'` passe par le même chemin. On efface donc la session locale nous-mêmes.
+      if (error) clearLocalSession()
+    } catch {
+      clearLocalSession()
     } finally {
       setStatus('signed-out')
     }
   }, [])
 
   return { status, signIn, signOut }
+}
+
+function clearLocalSession() {
+  try {
+    localStorage.removeItem(AUTH_STORAGE_KEY)
+    localStorage.removeItem(`${AUTH_STORAGE_KEY}-user`)
+  } catch {
+    // Stockage indisponible : le garde en mémoire suffit pour cette session.
+  }
 }

@@ -10,7 +10,7 @@ const auth = vi.hoisted(() => ({
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
 }))
-vi.mock('../../lib/supabase', () => ({ supabase: { auth } }))
+vi.mock('../../lib/supabase', () => ({ supabase: { auth }, AUTH_STORAGE_KEY: 'test-auth' }))
 
 import { useAuth } from './useAuth'
 
@@ -120,5 +120,41 @@ describe('useAuth', () => {
     expect(result.current.status).toBe('signed-out')
     unmount()
     expect(unsubscribe).toHaveBeenCalled()
+  })
+
+  it('jeton de rafraîchissement révoqué au démarrage → signed-out', async () => {
+    auth.getSession.mockResolvedValue({
+      data: { session: null },
+      error: new AuthApiError('Invalid Refresh Token: Refresh Token Not Found', 400, 'refresh_token_not_found'),
+    })
+    const { result } = renderHook(() => useAuth())
+    await waitFor(() => expect(result.current.status).toBe('signed-out'))
+  })
+
+  it('signOut hors ligne → session locale effacée, reste signed-out malgré un TOKEN_REFRESHED', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: null }, error: new AuthRetryableFetchError('Failed to fetch', 0) })
+    auth.signOut.mockResolvedValue({ error: new AuthRetryableFetchError('Failed to fetch', 0) })
+    localStorage.setItem('test-auth', '{}')
+    localStorage.setItem('test-auth-user', '{}')
+    const { result } = renderHook(() => useAuth())
+    await waitFor(() => expect(result.current.status).toBe('signed-in'))
+    await act(async () => { await result.current.signOut() })
+    expect(result.current.status).toBe('signed-out')
+    expect(localStorage.getItem('test-auth')).toBeNull()
+    expect(localStorage.getItem('test-auth-user')).toBeNull()
+    act(() => emit('TOKEN_REFRESHED', session(nowSec() + 3600)))
+    expect(result.current.status).toBe('signed-out')
+  })
+
+  it('après une déconnexion volontaire, une nouvelle connexion réussie repasse signed-in', async () => {
+    auth.getSession.mockResolvedValue({ data: { session: session(nowSec() + 3600) }, error: null })
+    auth.signInWithPassword.mockResolvedValue({ data: { session: session(nowSec() + 3600), user: {} }, error: null })
+    const { result } = renderHook(() => useAuth())
+    await waitFor(() => expect(result.current.status).toBe('signed-in'))
+    await act(async () => { await result.current.signOut() })
+    await act(async () => { await result.current.signIn('a@b.c', 'bon') })
+    expect(result.current.status).toBe('signed-in')
+    act(() => emit('TOKEN_REFRESHED', session(nowSec() + 3600)))
+    expect(result.current.status).toBe('signed-in')
   })
 })
