@@ -67,6 +67,25 @@ describe('useReviewSession', () => {
     expect(loads).toBe(1)
   })
 
+  it('« Réviser à nouveau » (révision libre) : propose toutes les cartes même si aucune n’est due', async () => {
+    const store = memoryStore(cards)
+    const { result } = renderHook(() => useReviewSession(store, fixedNow))
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    for (let i = 0; i < cards.length; i++) { act(() => result.current.reveal()); await act(async () => result.current.rate(3)) }
+    expect(result.current.status).toBe('done')
+
+    act(() => result.current.restart()) // session normale : rien n'est dû
+    await waitFor(() => expect(result.current.status).toBe('done'))
+
+    act(() => result.current.reviewAll())
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    expect(result.current.counts.due + result.current.counts.learn + result.current.counts.new).toBe(cards.length)
+    expect(result.current.stats).toEqual({ again: 0, hard: 0, good: 0 })
+    act(() => result.current.reveal())
+    await act(async () => result.current.rate(3))
+    expect(await store.loadReviews()).toHaveLength(cards.length + 1) // notée normalement
+  })
+
   describe('erreurs du stockage local', () => {
     it('chargement en échec : status error, puis restart() recharge', async () => {
       let fail = true

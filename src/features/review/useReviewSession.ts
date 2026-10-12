@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { stateFromReviews } from '../../lib/scheduler'
-import { buildQueue, countKinds, nextDue, type SessionItem } from '../../lib/session'
+import { buildQueue, countKinds, freeQueue, nextDue, type SessionItem } from '../../lib/session'
 import type { Card, Rating, Review } from '../../lib/types'
 
 export interface ReviewStore {
@@ -33,7 +33,10 @@ export interface ReviewSession {
   progress: number // 0..1
   stats: Stats
   nextDueAt: Date | null
+  /** Recharge une session normale : cartes dues + nouvelles du jour. */
   restart(): void
+  /** Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes, dues ou non. */
+  reviewAll(): void
 }
 
 interface State {
@@ -79,11 +82,11 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   }, [])
 
   // Lit le store et prépare l'état de départ, sans toucher à l'état React.
-  const load = useCallback(async () => {
+  const load = useCallback(async (mode: 'due' | 'all' = 'due') => {
     const { store, now } = io.current
     const [cs, rs] = await Promise.all([store.loadCards(), store.loadReviews()])
     const t = now()
-    const queue = buildQueue(cs, rs, t)
+    const queue = mode === 'all' ? freeQueue(cs, rs, t) : buildQueue(cs, rs, t)
     const hasLiveCards = cs.some(c => !c.deleted_at)
     const next: State = {
       ...INITIAL,
@@ -160,10 +163,12 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     }
   }, [commit])
 
-  const restart = useCallback(() => {
+  const reload = useCallback((mode: 'due' | 'all') => {
     if (live.current.status === 'error') commit(INITIAL)
-    load().then(apply, () => commit(FAILED))
+    load(mode).then(apply, () => commit(FAILED))
   }, [load, apply, commit])
+  const restart = useCallback(() => reload('due'), [reload])
+  const reviewAll = useCallback(() => reload('all'), [reload])
 
   const total = state.processed + state.queue.length
   return {
@@ -178,5 +183,6 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     stats: state.stats,
     nextDueAt: state.nextDueAt,
     restart,
+    reviewAll,
   }
 }

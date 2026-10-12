@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildQueue, countKinds, nextDue } from './session'
+import { buildQueue, countKinds, freeQueue, nextDue } from './session'
 import type { Card, Review } from './types'
 
 const card = (id: string, extra: Partial<Card> = {}): Card => ({
@@ -39,5 +39,15 @@ describe('countKinds / nextDue', () => {
   })
   it('nextDue : null si aucune carte révisée', () => {
     expect(nextDue([card('a')], [], now)).toBeNull()
+  })
+})
+
+describe('freeQueue (révision libre)', () => {
+  it('toutes les cartes vivantes, dues ou non, sans limite de nouvelles ; jamais les supprimées', () => {
+    const cards = [...Array.from({ length: 25 }, (_, i) => card(`n${i}`)), card('later'), card('gone', { deleted_at: '2026-10-02T00:00:00Z' })]
+    const q = freeQueue(cards, [rv('later', '2026-10-12T09:59:00Z')], now)
+    expect(q).toHaveLength(26)
+    expect(q.map(i => i.card.id)).not.toContain('gone')
+    expect(q[0].card.id).toBe('later') // cartes déjà vues d'abord (échéance la plus proche), puis nouvelles
   })
 })
