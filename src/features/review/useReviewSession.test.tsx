@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { useReviewSession, memoryStore, SCREEN_CHANGE_GUARD_MS } from './useReviewSession'
-import type { Card } from '../../lib/types'
+import type { Card, Review } from '../../lib/types'
 
 const cards: Card[] = ['a', 'b'].map(id => ({ id, deck: 'x', source_path: `x/${id}.md`, front: id, back: id,
   updated_at: '2026-10-01T00:00:00Z', deleted_at: null }))
@@ -65,6 +65,67 @@ describe('useReviewSession', () => {
     await waitFor(() => expect(result.current.status).toBe('reviewing'))
     act(() => result.current.reveal())
     expect(loads).toBe(1)
+  })
+
+  it('« Réviser à nouveau » (révision libre) : propose toutes les cartes même si aucune n’est due', async () => {
+    const store = memoryStore(cards)
+    const { result } = renderHook(() => useReviewSession(store, fixedNow))
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    for (let i = 0; i < cards.length; i++) { act(() => result.current.reveal()); await act(async () => result.current.rate(3)) }
+    expect(result.current.status).toBe('done')
+
+    act(() => result.current.restart()) // session normale : rien n'est dû
+    await waitFor(() => expect(result.current.status).toBe('done'))
+
+    act(() => result.current.reviewAll())
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    expect(result.current.counts.due + result.current.counts.learn + result.current.counts.new).toBe(cards.length)
+    expect(result.current.stats).toEqual({ again: 0, hard: 0, good: 0 })
+    act(() => result.current.reveal())
+    await act(async () => result.current.rate(3))
+    expect(await store.loadReviews()).toHaveLength(cards.length + 1) // notée normalement
+  })
+
+  describe('erreurs du stockage local', () => {
+    it('chargement en échec : status error, puis restart() recharge', async () => {
+      let fail = true
+      const base = memoryStore(cards)
+      const store = { ...base, loadCards: async () => { if (fail) throw new Error('IndexedDB indisponible'); return base.loadCards() } }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('error'))
+      fail = false
+      act(() => result.current.restart())
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    })
+    it('restart() en échec : status error (pas de rejet non géré)', async () => {
+      let fail = false
+      const base = memoryStore(cards)
+      const store = { ...base, loadReviews: async () => { if (fail) throw new Error('IndexedDB indisponible'); return base.loadReviews() } }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      fail = true
+      act(() => result.current.restart())
+      await waitFor(() => expect(result.current.status).toBe('error'))
+    })
+    it('écriture d’une note en échec : on reste sur la carte, erreur visible, la note peut être refaite', async () => {
+      let fail = true
+      const base = memoryStore(cards)
+      const store = { ...base, addReview: async (r: Review) => { if (fail) throw new Error('quota dépassé'); return base.addReview(r) } }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      const first = result.current.current!.card.id
+      act(() => result.current.reveal())
+      await act(async () => result.current.rate(3))
+      expect(result.current.current!.card.id).toBe(first)
+      expect(result.current.revealed).toBe(true)
+      expect(result.current.saveFailed).toBe(true)
+      expect(result.current.progress).toBe(0)
+      fail = false
+      await act(async () => result.current.rate(3))
+      expect(result.current.current!.card.id).not.toBe(first)
+      expect(result.current.saveFailed).toBe(false)
+      expect(await store.loadReviews()).toHaveLength(1)
+    })
   })
 
   describe('garde anti double tap entre révéler et noter', () => {

@@ -3,11 +3,14 @@ import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
 import { RatingBar } from './RatingBar'
 import { useReviewKeys } from './useReviewKeys'
+import type { SyncIndicator } from './useAutoSync'
 import type { ReviewSession } from './useReviewSession'
 
 interface Props {
   session: ReviewSession
   now: () => Date
+  /** État de la synchro, affiché sous le titre. */
+  sync?: SyncIndicator
   onSignOut?(): void
 }
 
@@ -33,30 +36,58 @@ function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   )
 }
 
-export function ReviewScreen({ session, now, onSignOut }: Props) {
+const SYNC_BADGE: Record<SyncIndicator, { label: string; dot: string; text: string }> = {
+  synced: { label: 'Synchronisé', dot: 'bg-good', text: 'text-good' },
+  unsynced: { label: 'Non synchronisé', dot: 'bg-muted', text: 'text-muted' },
+  syncing: { label: 'Synchronisation…', dot: 'bg-muted animate-pulse', text: 'text-muted' },
+}
+
+/** Point de couleur + libellé (jamais la couleur seule) ; textes ≥ 4,5:1 en clair comme en sombre. */
+function SyncBadge({ sync }: { sync: SyncIndicator }) {
+  const { label, dot, text } = SYNC_BADGE[sync]
+  return (
+    <span role="status" className={`inline-flex items-center gap-1.5 text-[13px] font-normal ${text}`}>
+      <span aria-hidden className={`size-2 rounded-full ${dot}`} />
+      {label}
+    </span>
+  )
+}
+
+export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
 
   return (
     <Page className="flex flex-col">
-      <Navbar title="Vault Cards" right={status === 'reviewing' && <Counters counts={session.counts} />} />
+      <Navbar title="Vault Cards" subtitle={sync && <SyncBadge sync={sync} />} right={status === 'reviewing' && <Counters counts={session.counts} />} />
       {status === 'reviewing' && <Progressbar className="mx-4 my-2 w-auto" progress={session.progress} />}
 
       <main className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center">
         {status === 'loading' && <div className="flex justify-center"><Preloader /></div>}
+        {status === 'error' && (
+          <Block className="flex flex-col items-center gap-4 text-center">
+            <p role="alert" className="text-[17px] text-sys-gray">Impossible de lire les cartes enregistrées sur cet appareil.</p>
+            <Button large rounded className="max-w-xs" onClick={session.restart}>Réessayer</Button>
+          </Block>
+        )}
         {status === 'empty' && (
           <Block className="text-center text-[17px] text-sys-gray">
-            Aucune carte pour l'instant. Lance /flashcards sur le Mac.
+            {navigator.onLine === false
+              ? 'Connecte-toi à internet pour la première synchronisation.'
+              : "Aucune carte pour l'instant. Lance /flashcards sur le Mac."}
           </Block>
         )}
         {status === 'done' && (
-          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.restart} onSignOut={onSignOut} />
+          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onSignOut={onSignOut} />
         )}
         {current && <CardView card={current.card} revealed={revealed} onReveal={session.reveal} />}
       </main>
 
       {current && (
         <div className="sticky bottom-0 mx-auto w-full max-w-xl bg-ios-light-surface px-4 pt-2 dark:bg-ios-dark-surface pb-[max(16px,var(--k-safe-area-bottom))]">
+          {session.saveFailed && (
+            <p role="alert" className="pb-2 text-center text-[15px] text-again">Note non enregistrée. Réessaie.</p>
+          )}
           {revealed
             ? <RatingBar state={current.state} now={now()} onRate={session.rate} />
             : <Button large rounded className="min-h-14" onClick={session.reveal}>Afficher la réponse</Button>}

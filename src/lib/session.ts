@@ -30,6 +30,20 @@ export function buildQueue(cards: Card[], reviews: Review[], now: Date, newLimit
   return [...due, ...fresh]
 }
 
+/**
+ * Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes, dues ou non, sans limite
+ * de nouvelles. Cartes déjà vues d'abord (échéance la plus proche), puis nouvelles dans l'ordre habituel.
+ * FSRS gère une révision anticipée via le temps écoulé depuis la précédente.
+ */
+export function freeQueue(cards: Card[], reviews: Review[], now: Date): SessionItem[] {
+  const grouped = byCard(reviews)
+  const items = cards.filter(c => !c.deleted_at)
+    .map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
+  const seen = items.filter(i => !isNew(i.state)).sort((a, b) => a.state.due.getTime() - b.state.due.getTime())
+  const fresh = buildQueue(items.filter(i => isNew(i.state)).map(i => i.card), [], now, Infinity)
+  return [...seen, ...fresh]
+}
+
 export function countKinds(items: SessionItem[]) {
   let n = 0, learn = 0, due = 0
   for (const { state } of items) {
