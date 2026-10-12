@@ -1,2 +1,45 @@
 @import "tailwindcss";
 @import "konsta/react/theme.css";
+
+/*
+ * Couleurs de notation, style « bouton teinté » iOS : fond clair + texte foncé (et l'inverse en sombre).
+ * Contraste texte / fond ≥ 4,5:1 (WCAG AA) dans les deux modes, y compris sur le fond de page.
+ * Utilisables en `bg-again-tint text-again`, `text-good`, `bg-new-tint text-new`…
+ */
+@theme inline {
+  --color-again: var(--again);
+  --color-again-tint: var(--again-tint);
+  --color-hard: var(--hard);
+  --color-hard-tint: var(--hard-tint);
+  --color-good: var(--good);
+  --color-good-tint: var(--good-tint);
+  --color-new: var(--new);
+  --color-new-tint: var(--new-tint);
+  --color-sys-gray: var(--sys-gray);
+}
+
+:root {
+  color-scheme: light;
+  --again: #b33a27;
+  --again-tint: #fbeae6;
+  --hard: #8f5a05;
+  --hard-tint: #fbf1dc;
+  --good: #1c7340;
+  --good-tint: #e4f3ea;
+  --new: #0a5fc4;
+  --new-tint: #e3eefb;
+  --sys-gray: #8e8e93;
+}
+
+.dark {
+  color-scheme: dark;
+  --again: #f08672;
+  --again-tint: #3a1f1a;
+  --hard: #e9b44c;
+  --hard-tint: #362912;
+  --good: #5fcf8c;
+  --good-tint: #17311f;
+  --new: #6cb2ff;
+  --new-tint: #132a45;
+  --sys-gray: #8e8e93;
+}
