@@ -1,6 +1,7 @@
 import { Card } from 'konsta/react'
 import { obsidianUrl } from '../../lib/obsidian'
 import type { Card as CardData } from '../../lib/types'
+import { getTag, type TagDef } from '../../../shared/tags'
 
 interface Props {
   card: CardData
@@ -23,6 +24,7 @@ export function CardView({ card, revealed, onReveal }: Props) {
       >
         {card.source_path}
       </a>
+      <TagPills slugs={card.tags} />
       <p className="mt-3 whitespace-pre-wrap text-[22px] leading-snug font-semibold">{card.front}</p>
       {revealed && (
         <>
@@ -31,5 +33,24 @@ export function CardView({ card, revealed, onReveal }: Props) {
         </>
       )}
     </Card>
+  )
+}
+
+/** Pastilles emoji + label. Tag inconnu (liste locale plus ancienne que la base) : ignoré. */
+function TagPills({ slugs }: { slugs: readonly string[] | undefined }) {
+  const tags = (slugs ?? []).map(getTag).filter((t): t is TagDef => t !== undefined)
+  if (tags.length === 0) return null
+  return (
+    <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Tags">
+      {tags.map(t => (
+        <li
+          key={t.slug}
+          className="rounded-full px-2 py-0.5 text-xs leading-5 font-medium"
+          style={{ backgroundColor: `var(--tag-${t.color}-bg)`, color: `var(--tag-${t.color}-fg)` }}
+        >
+          <span aria-hidden="true">{t.emoji}</span> {t.label}
+        </li>
+      ))}
+    </ul>
   )
 }

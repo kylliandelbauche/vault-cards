@@ -3,7 +3,7 @@ import { renderHook, act, waitFor } from '@testing-library/react'
 import { useReviewSession, memoryStore, SCREEN_CHANGE_GUARD_MS } from './useReviewSession'
 import type { Card, Review } from '../../lib/types'
 
-const cards: Card[] = ['a', 'b'].map(id => ({ id, deck: 'x', source_path: `x/${id}.md`, front: id, back: id,
+const cards: Card[] = ['a', 'b'].map(id => ({ id, deck: 'x', tags: [], source_path: `x/${id}.md`, front: id, back: id,
   updated_at: '2026-10-01T00:00:00Z', deleted_at: null }))
 // Horloge qui avance d'une seconde à chaque lecture : chaque action tombe après la garde anti double tap.
 const START = Date.parse('2026-10-12T10:00:00Z')

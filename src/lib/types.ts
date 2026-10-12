@@ -4,6 +4,7 @@ export interface Card {
   id: string
   deck: string
   source_path: string
+  tags: string[] // slugs de shared/tags.ts (0 à 2) ; inconnu = ignoré à l'affichage
   front: string
   back: string
   updated_at: string

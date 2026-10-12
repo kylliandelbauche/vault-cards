@@ -37,7 +37,7 @@ function fakeServer() {
     pullLimit: Infinity,
     putCard(c: Partial<Card> & { id: string }, at = stamp()) {
       const prev = cards.get(c.id)
-      const card: Card = { deck: 'd', source_path: `d/${c.id}.md`, front: c.id, back: c.id, deleted_at: null, ...prev, ...c, updated_at: at }
+      const card: Card = { deck: 'd', tags: [], source_path: `d/${c.id}.md`, front: c.id, back: c.id, deleted_at: null, ...prev, ...c, updated_at: at }
       cards.set(c.id, card)
       return card
     },
@@ -227,7 +227,7 @@ describe('supabaseRemote', () => {
     expect(got).toHaveLength(1500)
     expect(calls).toHaveLength(2)
     expect(calls[0].ops).toEqual([
-      ['select', 'id, deck, source_path, front, back, updated_at, deleted_at'],
+      ['select', 'id, deck, source_path, tags, front, back, updated_at, deleted_at'],
       ['gte', 'updated_at', '2026-10-13T00:00:00+00:00'],
       ['order', 'updated_at'],
       ['order', 'id'],

@@ -31,6 +31,16 @@
   --new-tint: #e3eefb;
   --sys-gray: #8e8e93;
   --muted: #636366; /* gris lisible en petit texte (AA), contrairement à sys-gray */
+
+  /* Pastilles de tags (shared/tags.ts → clé `color`). Ratio texte / fond (WCAG, AA ≥ 4,5:1) en commentaire. */
+  --tag-violet-bg: #efe9fb;   --tag-violet-fg: #5b2ea6;   /* 7,43:1 */
+  --tag-bleu-bg: #e3eefb;     --tag-bleu-fg: #0b4f9e;     /* 6,81:1 */
+  --tag-rouge-bg: #fbeae6;    --tag-rouge-fg: #a3301f;    /* 6,00:1 */
+  --tag-orange-bg: #fdeedd;   --tag-orange-fg: #94470a;   /* 5,83:1 */
+  --tag-vert-bg: #e4f3ea;     --tag-vert-fg: #1c6b3c;     /* 5,69:1 */
+  --tag-rose-bg: #fce8f1;     --tag-rose-fg: #a2245f;     /* 6,08:1 */
+  --tag-jaune-bg: #fbf3d0;    --tag-jaune-fg: #7a5a00;    /* 5,72:1 */
+  --tag-grisbleu-bg: #e8edf2; --tag-grisbleu-fg: #3f5368; /* 6,73:1 */
 }
 
 .dark {
@@ -45,6 +55,16 @@
   --new-tint: #132a45;
   --sys-gray: #8e8e93;
   --muted: #aeaeb2;
+
+  /* Pastilles de tags, sombre : fond foncé teinté + texte clair. */
+  --tag-violet-bg: #2a2145;   --tag-violet-fg: #c7b2ff;   /* 8,02:1 */
+  --tag-bleu-bg: #132a45;     --tag-bleu-fg: #8cc4ff;     /* 7,93:1 */
+  --tag-rouge-bg: #3a1f1a;    --tag-rouge-fg: #ff9f8c;    /* 7,61:1 */
+  --tag-orange-bg: #3a2614;   --tag-orange-fg: #ffb672;   /* 8,31:1 */
+  --tag-vert-bg: #17311f;     --tag-vert-fg: #7fdca3;     /* 8,47:1 */
+  --tag-rose-bg: #3a1a2a;     --tag-rose-fg: #ff9cc8;     /* 7,97:1 */
+  --tag-jaune-bg: #332b10;    --tag-jaune-fg: #f0cf5a;    /* 9,22:1 */
+  --tag-grisbleu-bg: #222a33; --tag-grisbleu-fg: #b4c3d3; /* 8,08:1 */
 }
 
 /*
