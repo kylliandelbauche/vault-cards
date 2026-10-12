@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Fond plein (pas de coins arrondis : iOS et Android appliquent leur propre masque). -->
+  <rect width="512" height="512" fill="#0f6b63"/>
+  <!-- Les deux cartes restent dans la zone sûre des icônes maskable (cercle de rayon 0,4 × 512). -->
+  <rect x="132" y="108" width="200" height="260" rx="28" fill="#ffffff" fill-opacity="0.55" transform="rotate(-10 232 238)"/>
+  <rect x="180" y="144" width="200" height="260" rx="28" fill="#ffffff"/>
+</svg>
