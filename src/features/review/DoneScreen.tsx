@@ -6,9 +6,10 @@ interface Props {
   nextDueAt: Date | null
   now: Date
   onRestart(): void
+  onSignOut?(): void
 }
 
-export function DoneScreen({ stats, nextDueAt, now, onRestart }: Props) {
+export function DoneScreen({ stats, nextDueAt, now, onRestart, onSignOut }: Props) {
   return (
     <Block className="flex flex-col items-center gap-6 text-center">
       <h1 className="text-[28px] font-bold">Session terminée</h1>
@@ -21,6 +22,11 @@ export function DoneScreen({ stats, nextDueAt, now, onRestart }: Props) {
         {nextDueAt ? `Prochaine révision dans ${formatInterval(now, nextDueAt)}` : 'Aucune carte en attente.'}
       </p>
       <Button large rounded className="max-w-xs" onClick={onRestart}>Réviser à nouveau</Button>
+      {onSignOut && (
+        <Button clear inline rounded className="mt-4 min-h-11 px-4 text-[15px]" colors={{ textIos: 'text-new' }} onClick={onSignOut}>
+          Se déconnecter
+        </Button>
+      )}
     </Block>
   )
 }

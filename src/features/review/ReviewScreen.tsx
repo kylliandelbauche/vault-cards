@@ -8,6 +8,7 @@ import type { ReviewSession } from './useReviewSession'
 interface Props {
   session: ReviewSession
   now: () => Date
+  onSignOut?(): void
 }
 
 function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
@@ -32,7 +33,7 @@ function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   )
 }
 
-export function ReviewScreen({ session, now }: Props) {
+export function ReviewScreen({ session, now, onSignOut }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
 
@@ -49,7 +50,7 @@ export function ReviewScreen({ session, now }: Props) {
           </Block>
         )}
         {status === 'done' && (
-          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.restart} />
+          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.restart} onSignOut={onSignOut} />
         )}
         {current && <CardView card={current.card} revealed={revealed} onReveal={session.reveal} />}
       </main>
