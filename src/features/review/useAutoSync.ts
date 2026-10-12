@@ -6,6 +6,15 @@ import type { ReviewSession } from './useReviewSession'
 
 export type AutoSyncSession = Pick<ReviewSession, 'status' | 'stats' | 'restart'>
 type SyncResult = { pulledCards: number; pulledReviews: number }
+export interface SyncState { syncing: boolean; lastSync: 'ok' | 'failed' | null }
+export type SyncIndicator = 'syncing' | 'synced' | 'unsynced'
+
+/** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync par intervalle. */
+export const RESUME_SYNC_MIN_INTERVAL_MS = 30_000
+
+/** « Synchronisé » seulement si rien n'attend d'être poussé et que le dernier sync a réussi. */
+export const syncIndicator = (pending: number, { syncing, lastSync }: SyncState): SyncIndicator =>
+  syncing ? 'syncing' : pending === 0 && lastSync === 'ok' ? 'synced' : 'unsynced'
 
 /**
  * La session peut être rechargée sans rien faire perdre : aucune carte, ou « terminée »
@@ -16,11 +25,14 @@ const reloadable = ({ status, stats }: AutoSyncSession) =>
   status === 'empty' || (status === 'done' && stats.again + stats.hard + stats.good === 0)
 
 /**
- * Lance `run` (le sync) au montage, au retour du réseau et quand la session se termine.
+ * Lance `run` (le sync) au montage, au retour du réseau, quand la session se termine, et au
+ * retour au premier plan (`visibilitychange` → visible, `focus`) si le dernier sync a commencé
+ * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS. Jamais deux syncs en parallèle.
  * Les erreurs sont avalées : hors ligne ou jeton expiré, on réessaiera au prochain déclencheur.
  * Si le sync a ramené des données alors que la session est rechargeable, appelle `restart()`.
  */
-export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>) {
+export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>): SyncState {
+  const [state, setState] = useState<SyncState>({ syncing: false, lastSync: null })
   // Dernières valeurs, lues à la fin d'un sync sans en faire des dépendances.
   const io = useRef({ session, run })
   useEffect(() => { io.current = { session, run } })
@@ -28,33 +40,50 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   const again = useRef(false)
   // Données reçues pendant le chargement initial : à recharger s'il se termine vide.
   const stale = useRef(false)
+  const lastStart = useRef(-Infinity)
 
   const trigger = useCallback(async () => {
     if (running.current) { again.current = true; return }
     running.current = true
+    setState(s => ({ ...s, syncing: true }))
     try {
       do {
         again.current = false
+        lastStart.current = Date.now()
         try {
           const { pulledCards, pulledReviews } = await io.current.run()
+          setState(s => ({ ...s, lastSync: 'ok' }))
           if (pulledCards + pulledReviews === 0) continue
           const s = io.current.session
           if (reloadable(s)) s.restart()
           else if (s.status === 'loading') stale.current = true
         } catch {
-          // Silencieux : l'indicateur « non synchronisé » reflète les reviews en attente.
+          // Silencieux (aucun log) : l'indicateur passe à « Non synchronisé ».
+          setState(s => ({ ...s, lastSync: 'failed' }))
         }
       } while (again.current)
     } finally {
       running.current = false
+      setState(s => ({ ...s, syncing: false }))
     }
   }, [])
 
   useEffect(() => {
     void trigger()
     const onOnline = () => { void trigger() }
+    const onResume = () => {
+      if (document.visibilityState !== 'visible') return
+      if (Date.now() - lastStart.current < RESUME_SYNC_MIN_INTERVAL_MS) return
+      void trigger()
+    }
     window.addEventListener('online', onOnline)
-    return () => window.removeEventListener('online', onOnline)
+    window.addEventListener('focus', onResume)
+    document.addEventListener('visibilitychange', onResume)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('focus', onResume)
+      document.removeEventListener('visibilitychange', onResume)
+    }
   }, [trigger])
 
   const { status } = session
@@ -69,6 +98,8 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   useEffect(() => {
     if (status === 'done' && !canReload) void trigger()
   }, [status, canReload, trigger])
+
+  return state
 }
 
 /** Nombre de reviews locales pas encore poussées, mis à jour en direct (liveQuery Dexie). */

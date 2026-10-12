@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { VaultDB } from '../../lib/db'
-import { useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
+import { RESUME_SYNC_MIN_INTERVAL_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
 
 type Result = { pushed: number; pulledCards: number; pulledReviews: number }
 const NOTHING: Result = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
@@ -107,6 +107,98 @@ describe('useAutoSync', () => {
     renderHook(() => useAutoSync(s, vi.fn().mockResolvedValue(CARDS)))
     await flush()
     expect(s.restart).not.toHaveBeenCalled()
+  })
+})
+
+describe('useAutoSync : état du dernier sync', () => {
+  it('syncing pendant le sync, puis ok', async () => {
+    const d = deferred<Result>()
+    const { result } = renderHook(() => useAutoSync(sessionIn('reviewing'), vi.fn().mockReturnValue(d.promise)))
+    await waitFor(() => expect(result.current).toEqual({ syncing: true, lastSync: null }))
+    await act(async () => { d.resolve(NOTHING) })
+    expect(result.current).toEqual({ syncing: false, lastSync: 'ok' })
+  })
+  it('échec : failed', async () => {
+    const { result } = renderHook(() => useAutoSync(sessionIn('reviewing'), vi.fn().mockRejectedValue(new Error('hors ligne'))))
+    await waitFor(() => expect(result.current).toEqual({ syncing: false, lastSync: 'failed' }))
+  })
+})
+
+describe('syncIndicator', () => {
+  it.each([
+    [0, { syncing: false, lastSync: 'ok' }, 'synced'],
+    [2, { syncing: false, lastSync: 'ok' }, 'unsynced'],
+    [0, { syncing: false, lastSync: 'failed' }, 'unsynced'],
+    [0, { syncing: false, lastSync: null }, 'unsynced'],
+    [3, { syncing: true, lastSync: 'failed' }, 'syncing'],
+  ] as const)('%i en attente, %o → %s', (pending, state, expected) => {
+    expect(syncIndicator(pending, state)).toBe(expected)
+  })
+})
+
+describe('useAutoSync : retour au premier plan', () => {
+  const T0 = Date.parse('2026-10-13T10:00:00Z')
+  let visibility: DocumentVisibilityState = 'visible'
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(T0)
+    visibility = 'visible'
+    vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility)
+  })
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks() })
+
+  const mount = async () => {
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1) // sync au montage, à T0
+    return run
+  }
+  const show = () => act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+  const focus = () => act(() => { window.dispatchEvent(new Event('focus')) })
+
+  it('page redevenue visible après l’intervalle minimum : sync', async () => {
+    const run = await mount()
+    vi.setSystemTime(T0 + RESUME_SYNC_MIN_INTERVAL_MS)
+    show()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+  it('focus après l’intervalle minimum : sync ; focus + visibilitychange ensemble : un seul', async () => {
+    const run = await mount()
+    vi.setSystemTime(T0 + RESUME_SYNC_MIN_INTERVAL_MS + 5000)
+    show()
+    focus()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+  it('avant l’intervalle minimum : rien', async () => {
+    const run = await mount()
+    vi.setSystemTime(T0 + RESUME_SYNC_MIN_INTERVAL_MS - 1)
+    show()
+    focus()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+  it('page masquée : rien', async () => {
+    const run = await mount()
+    vi.setSystemTime(T0 + 10 * RESUME_SYNC_MIN_INTERVAL_MS)
+    visibility = 'hidden'
+    show()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+  it('jamais deux syncs en parallèle', async () => {
+    const d = deferred<Result>()
+    const run = vi.fn().mockReturnValueOnce(d.promise).mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    vi.setSystemTime(T0 + RESUME_SYNC_MIN_INTERVAL_MS)
+    show()
+    focus()
+    expect(run).toHaveBeenCalledTimes(1) // le sync de montage est en cours : rien en parallèle
+    await act(async () => { d.resolve(NOTHING) })
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2) // un seul sync de plus, lancé après la fin du premier
   })
 })
 
