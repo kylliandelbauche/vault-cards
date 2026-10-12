@@ -12,9 +12,9 @@ interface Props {
 
 function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   const pills = [
-    { n: counts.new, label: 'nouvelles', cls: 'bg-sys-blue/15 text-sys-blue' },
-    { n: counts.learn, label: 'à revoir', cls: 'bg-sys-red/15 text-sys-red' },
-    { n: counts.due, label: 'dues', cls: 'bg-sys-green/15 text-sys-green' },
+    { n: counts.new, label: 'nouvelles', cls: 'bg-new-tint text-new' },
+    { n: counts.learn, label: 'à revoir', cls: 'bg-again-tint text-again' },
+    { n: counts.due, label: 'dues', cls: 'bg-good-tint text-good' },
   ]
   return (
     <div className="flex gap-1.5 pe-2">
