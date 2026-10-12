@@ -46,3 +46,11 @@
   --sys-gray: #8e8e93;
   --muted: #aeaeb2;
 }
+
+/*
+ * iOS : `100vh` (min-h-screen de Konsta) dépasse la zone visible de Safari.
+ * `dvh` suit la hauteur réelle, pour que la page de révision tienne sans scroll.
+ */
+.k-app {
+  min-height: 100dvh;
+}

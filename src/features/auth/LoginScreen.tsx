@@ -25,8 +25,8 @@ export function LoginScreen({ signIn }: Props) {
   }
 
   return (
-    <Page className="flex flex-col justify-center pb-[var(--k-safe-area-bottom)] pt-[var(--k-safe-area-top)]">
-      <main className="mx-auto w-full max-w-md">
+    <Page className="flex flex-col pb-[var(--k-safe-area-bottom)] pt-[var(--k-safe-area-top)]">
+      <main className="mx-auto my-auto w-full max-w-md">
         <h1 className="mb-6 text-center text-[34px] font-bold">Vault Cards</h1>
         <form onSubmit={submit} noValidate>
           <List strongIos insetIos>

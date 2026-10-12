@@ -11,7 +11,7 @@ interface Props {
 
 export function DoneScreen({ stats, nextDueAt, now, onRestart, onSignOut }: Props) {
   return (
-    <Block className="flex flex-col items-center gap-6 text-center">
+    <Block className="my-auto flex flex-col items-center gap-6 text-center">
       <h1 className="text-[28px] font-bold">Session terminée</h1>
       <div className="flex gap-6 text-[20px] font-semibold tabular-nums">
         <span className="text-again" aria-label={`${stats.again} « Je ne sais pas »`}>✕ {stats.again}</span>
