@@ -162,14 +162,14 @@
   --good-glass: #93f0ad;
 
   /* Couleur des tags, sombre : teintes claires et douces. */
-  --tag-violet-fg: #f5eefe; /* 6,57:1 */
-  --tag-bleu-fg: #e7f1fe; /* 6,53:1 */
-  --tag-rouge-fg: #feebe9; /* 6,50:1 */
-  --tag-orange-fg: #fdeee2; /* 6,57:1 */
-  --tag-vert-fg: #c5fcd7; /* 6,51:1 */
-  --tag-rose-fg: #feecf5; /* 6,57:1 */
-  --tag-jaune-fg: #fcefca; /* 6,53:1 */
-  --tag-turquoise-fg: #befcf5; /* 6,54:1 */
+  --tag-violet-fg: #ded5f8; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-bleu-fg: #c5dbf7; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-rouge-fg: #f7d0d1; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-orange-fg: #f7d3b7; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-vert-fg: #a8e8c0; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-rose-fg: #f5cee3; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-jaune-fg: #f1d876; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-turquoise-fg: #a2e5de; /* pastel, ≥ 6,5:1 au pire cas */
   /* Tag vide sur la carte, pire cas : 5,87:1. */
   --tag-empty-fg: #d1d1d6;
   /*
@@ -178,7 +178,7 @@
    */
   --chip-glow: 12%;
   --chip-rim: 30%;
-  --chip-body: rgb(22 24 30 / 0.62);
+  --chip-body: rgb(10 11 14 / 0.88); /* verre plus sombre : texte pastel coloré ET lisible */
   --chip-sheen: rgb(255 255 255 / 0.04);
   --chip-hover-sheen: rgb(255 255 255 / 0.04);
   --chip-highlight: rgb(255 255 255 / 0.06);
