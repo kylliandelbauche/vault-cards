@@ -10,13 +10,14 @@ interface Props {
 
 /**
  * Carte en verre (#40) : même matériau que les barres, teint plus opaque pour le texte. Toute la carte révèle la réponse.
+ * Ancrée en haut (pas centrée) : en dévoilant la réponse, la carte ne grandit que vers le bas et la question ne bouge pas (#42).
  * Titre de la source sur une ligne tronquée ; sans titre (cache d'avant #35), nom de fichier humanisé. Jamais le chemin local.
  */
 export function CardView({ card, revealed, onReveal }: Props) {
   const title = card.source_title?.trim() || humanizeFileName(card.source_path)
   return (
     <article
-      className={`glass-card my-auto shrink-0 rounded-[28px] p-5 text-black dark:text-white ${revealed ? '' : 'cursor-pointer'}`}
+      className={`glass-card mt-[6dvh] shrink-0 rounded-[28px] p-5 text-black dark:text-white ${revealed ? '' : 'cursor-pointer'}`}
       onClick={onReveal}
     >
       <p className="truncate text-xs text-muted">{title}</p>
