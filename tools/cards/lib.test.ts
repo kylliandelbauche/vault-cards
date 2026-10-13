@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, countLiveCards, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -134,16 +134,61 @@ describe('validatePayload', () => {
 })
 
 describe('assertDeleteConfirmed', () => {
-  const removed = { source_path: 'veille/ia/a-synthese.md', deck: 'ia', content_hash: 'removed', cards: [] }
-  it('payload removed sans confirmation : erreur claire qui cite --confirm-delete', () => {
-    expect(() => assertDeleteConfirmed(removed, false)).toThrow(/--confirm-delete/)
-    expect(() => assertDeleteConfirmed(removed, false)).toThrow(/veille\/ia\/a-synthese\.md/)
+  const cards = [{ id: 'u1', front: 'Quelle est la première question ?' }, { id: 'u2', front: 'Deuxième' }]
+  it('aucune suppression : rien à confirmer', () => {
+    expect(() => assertDeleteConfirmed('a.md', [], null)).not.toThrow()
   })
-  it('payload removed avec confirmation : ok', () => {
-    expect(() => assertDeleteConfirmed(removed, true)).not.toThrow()
+  it('suppression sans flag : refus qui liste id + début de la question et le flag exact attendu', () => {
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/--confirm-delete=2/)
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/u1 : Quelle est la première question/)
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/u2 : Deuxième/)
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/a\.md/)
   })
-  it('payload normal : le flag n’est pas requis', () => {
-    expect(() => assertDeleteConfirmed({ ...removed, content_hash: 'abc' }, false)).not.toThrow()
+  it('flag avec le nombre exact : ok', () => {
+    expect(() => assertDeleteConfirmed('a.md', cards, 2)).not.toThrow()
+  })
+  it('flag avec un autre nombre (trop petit, trop grand, ou 0) : refus', () => {
+    for (const n of [0, 1, 3]) expect(() => assertDeleteConfirmed('a.md', cards, n)).toThrow(/--confirm-delete=2/)
+  })
+  it('flag alors que rien ne serait supprimé : refus (confirmation périmée)', () => {
+    expect(() => assertDeleteConfirmed('a.md', [], 3)).toThrow(/--confirm-delete=0/)
+  })
+  it('tronque une longue question et une longue liste', () => {
+    const many = Array.from({ length: 80 }, (_, i) => ({ id: 'c' + i, front: 'x'.repeat(200) }))
+    let msg = ''
+    try { assertDeleteConfirmed('a.md', many, null) } catch (e) { msg = (e as Error).message }
+    expect(msg).toMatch(/--confirm-delete=80/)
+    expect(msg).toMatch(/et 30 autres/)
+    expect(msg).not.toMatch(/x{100}/)
+  })
+})
+
+describe('parseArgs', () => {
+  it('commande + argument, sans flag', () => {
+    expect(parseArgs(['apply', 'f.json'])).toEqual({ command: 'apply', arg: 'f.json', confirmDelete: null })
+    expect(parseArgs(['scan'])).toEqual({ command: 'scan', arg: undefined, confirmDelete: null })
+  })
+  it('--confirm-delete=<n> pour apply, avant ou après le fichier', () => {
+    expect(parseArgs(['apply', 'f.json', '--confirm-delete=3']).confirmDelete).toBe(3)
+    expect(parseArgs(['apply', '--confirm-delete=12', 'f.json'])).toEqual({ command: 'apply', arg: 'f.json', confirmDelete: 12 })
+  })
+  it('--confirm-delete sans valeur ou avec une valeur invalide : refusé', () => {
+    for (const bad of ['--confirm-delete', '--confirm-delete=', '--confirm-delete=abc', '--confirm-delete=-1', '--confirm-delete=1.5', '--confirm-delete=true']) {
+      expect(() => parseArgs(['apply', 'f.json', bad]), bad).toThrow(/--confirm-delete=<n>/)
+    }
+  })
+  it('flag répété : refusé', () => {
+    expect(() => parseArgs(['apply', 'f.json', '--confirm-delete=1', '--confirm-delete=2'])).toThrow(/une seule fois/)
+  })
+  it('option inconnue : refusée', () => {
+    expect(() => parseArgs(['scan', '--foo'])).toThrow(/option inconnue : --foo/)
+  })
+  it('--confirm-delete réservé à apply', () => {
+    expect(() => parseArgs(['retag', 'f.json', '--confirm-delete=1'])).toThrow(/réservée à apply/)
+    expect(() => parseArgs(['scan', '--confirm-delete=1'])).toThrow(/réservée à apply/)
+  })
+  it('trop d’arguments : refusé', () => {
+    expect(() => parseArgs(['apply', 'a.json', 'b.json'])).toThrow(/usage/)
   })
 })
 

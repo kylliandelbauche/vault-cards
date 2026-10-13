@@ -128,13 +128,57 @@ export function validatePayload(p: unknown): ApplyPayload {
   return { source_path, deck, content_hash, cards }
 }
 
-/** Protection en profondeur : supprimer les cartes d'une note (payload `removed`) exige un flag explicite, posé après confirmation de Kyllian. */
-export function assertDeleteConfirmed(payload: Pick<ApplyPayload, 'source_path' | 'content_hash'>, confirmed: boolean): void {
-  if (payload.content_hash === REMOVED_HASH && !confirmed) {
-    throw new Error(
-      `suppression refusée pour ${payload.source_path} : ajouter --confirm-delete, uniquement après confirmation explicite de Kyllian`,
-    )
+const LIST_MAX = 50
+const FRONT_PREVIEW = 70
+
+/**
+ * Garde-fou central : l'IA ne supprime jamais de cartes d'elle-même, quelle qu'en soit la cause
+ * (note `removed`, carte retirée ou `cards: []` sur une note modifiée). Toute suppression exige
+ * `--confirm-delete=<n>` avec n = nombre EXACT de cartes concernées ; sinon refus avant toute écriture,
+ * avec la liste (id + début de la question) à montrer à Kyllian. Le flag reste passable par l'agent :
+ * il protège de l'oubli et du rejeu, et l'obligation de recopier n force à relire le chiffre présenté.
+ */
+export function assertDeleteConfirmed(source_path: string, toDelete: { id: string; front: string }[], confirmed: number | null): void {
+  const n = toDelete.length
+  if (confirmed === n || (n === 0 && confirmed === null)) return
+  const shown = toDelete.slice(0, LIST_MAX).map(c => {
+    const front = c.front.replace(/\s+/g, ' ')
+    return `  - ${c.id} : ${front.length > FRONT_PREVIEW ? front.slice(0, FRONT_PREVIEW) + '…' : front}`
+  })
+  if (n > LIST_MAX) shown.push(`  … et ${n - LIST_MAX} autres`)
+  const head = confirmed === null
+    ? `suppression refusée pour ${source_path} : ${n} carte(s) seraient supprimées`
+    : `--confirm-delete=${confirmed} ne correspond pas à ${source_path} : ${n} carte(s) seraient supprimées`
+  throw new Error(
+    `${head}${n > 0 ? ' :\n' + shown.join('\n') : ''}\n` +
+    `Montrer cette liste à Kyllian ; relancer avec --confirm-delete=${n} uniquement après sa confirmation explicite.`,
+  )
+}
+
+export const USAGE =
+  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json>'
+
+export interface ParsedArgs { command: string | undefined; arg: string | undefined; confirmDelete: number | null }
+
+/** Options : seule `--confirm-delete=<n>` (n entier), réservée à `apply`. */
+export function parseArgs(argv: string[]): ParsedArgs {
+  let confirmDelete: number | null = null
+  const positional: string[] = []
+  for (const a of argv) {
+    if (!a.startsWith('--')) {
+      positional.push(a)
+      continue
+    }
+    if (a !== '--confirm-delete' && !a.startsWith('--confirm-delete=')) throw new Error(`option inconnue : ${a}\n${USAGE}`)
+    const value = a.slice('--confirm-delete='.length)
+    if (!a.includes('=') || !/^\d+$/.test(value)) throw new Error(`${a} : valeur manquante ou invalide, attendu --confirm-delete=<n> (n entier)`)
+    if (confirmDelete !== null) throw new Error('--confirm-delete ne peut être passé qu’une seule fois')
+    confirmDelete = Number(value)
   }
+  if (positional.length > 2) throw new Error(USAGE)
+  const [command, arg] = positional
+  if (confirmDelete !== null && command !== 'apply') throw new Error(`option --confirm-delete réservée à apply\n${USAGE}`)
+  return { command, arg, confirmDelete }
 }
 
 /** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */

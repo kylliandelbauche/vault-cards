@@ -1,12 +1,12 @@
 // Outil local (Mac) : lit les notes de veille du vault et écrit les cartes dans Supabase avec la clé secrète.
-// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete] | retag <fichier.json>
+// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json>
 // Sortie : JSON sur stdout uniquement. Erreurs sur stderr, code 1. Aucune valeur de variable d'environnement n'est jamais affichée.
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, computeScan, countLiveCards, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, computeScan, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
@@ -73,12 +73,11 @@ async function scan(db: SupabaseClient) {
   return { changed, removed: countLiveCards(removed, live) }
 }
 
-async function apply(file: string, confirmDelete: boolean) {
+async function apply(file: string, confirmDelete: number | null) {
   // Contrôles locaux d'abord : rien n'est lu ni écrit en base si le payload est refusé.
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash } = payload
   assertDeckMatchesPath(source_path, deck)
-  assertDeleteConfirmed(payload, confirmDelete)
   if (content_hash !== REMOVED_HASH) {
     let current: string
     try {
@@ -91,6 +90,9 @@ async function apply(file: string, confirmDelete: boolean) {
   const db = connect()
   const existing = await fetchExisting(db, source_path)
   const { toInsert, toUpdate, toDelete } = diffCards(existing, payload.cards)
+  // Avant toute écriture : toute suppression (note removed OU carte retirée d'une note modifiée) exige --confirm-delete=<n exact>.
+  const deleted = existing.filter(c => toDelete.includes(c.id))
+  assertDeleteConfirmed(source_path, deleted, confirmDelete)
 
   // Chaque étape lève en cas d'échec : le hash de la note n'est alors pas écrit et elle sera retraitée au prochain scan.
   if (toInsert.length > 0) {
@@ -143,15 +145,8 @@ async function retag(db: SupabaseClient, file: string) {
   return { updated: toUpdate.length, unchanged }
 }
 
-const USAGE = 'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete] | retag <fichier.json>'
-
-const KNOWN_FLAGS = ['--confirm-delete']
-
 async function main(argv: string[]): Promise<unknown> {
-  const flags = argv.filter(a => a.startsWith('--'))
-  for (const f of flags) if (!KNOWN_FLAGS.includes(f)) throw new Error(`option inconnue : ${f}\n${USAGE}`)
-  const [command, arg] = argv.filter(a => !a.startsWith('--'))
-  if (flags.length > 0 && command !== 'apply') throw new Error(`option ${flags[0]} réservée à apply\n${USAGE}`)
+  const { command, arg, confirmDelete } = parseArgs(argv)
   switch (command) {
     case 'scan':
       return scan(connect())
@@ -162,7 +157,7 @@ async function main(argv: string[]): Promise<unknown> {
       return fetchAll(connect())
     case 'apply':
       if (!arg) throw new Error(USAGE)
-      return apply(arg, flags.includes('--confirm-delete'))
+      return apply(arg, confirmDelete)
     case 'retag':
       if (!arg) throw new Error(USAGE)
       return retag(connect(), arg)
