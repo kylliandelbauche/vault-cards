@@ -70,7 +70,7 @@ iPhone / navigateur : PWA (Vercel) ⇄ IndexedDB (Dexie) ⇄ Supabase (sync quan
 2. Pull : `cards` avec `updated_at > lastPull` (suppressions comprises) et `reviews` avec `inserted_at > lastPull`.
 3. Échec réseau : silencieux, on réessaie plus tard. Un petit indicateur montre l'état « non synchronisé ».
 
-**Lien source** : `obsidian://open?vault=Workspace&file=<source_path encodé>`.
+**Titre de la source** : chaque carte affiche, sur une ligne tronquée, le titre de sa note (`source_title` : premier H1 de la synthèse, à défaut le nom de fichier sans `-synthese.md`). Le chemin local n'est jamais affiché ; aucun lien vers Obsidian.
 
 **PWA** : manifest `display: standalone`, icônes, service worker `autoUpdate` qui met en cache l'app.
 
@@ -78,9 +78,10 @@ iPhone / navigateur : PWA (Vercel) ⇄ IndexedDB (Dexie) ⇄ Supabase (sync quan
 
 - **Skill** utilisateur : `~/.claude/skills/flashcards/SKILL.md` (source dans le repo, `skill/`), utilisable depuis n'importe quel dossier.
 - **Outil** `tools/cards` (Node, lit `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` dans `.env.local`, jamais commité) :
-  - `scan` → liste JSON des `*-synthese.md` de `~/Workspace/3-Resources/veille` nouvelles ou modifiées (hash ≠ `notes.content_hash`) ;
+  - `scan` → liste JSON des `*-synthese.md` de `~/Workspace/3-Resources/veille` nouvelles ou modifiées (hash ≠ `notes.content_hash`), avec le `title` de chaque note ;
   - `existing <path>` → cartes actuelles de cette note ;
-  - `apply <fichier.json>` → crée / met à jour / supprime les cartes d'une note et enregistre son hash.
+  - `apply <fichier.json>` → crée / met à jour / supprime les cartes d'une note (avec son `source_title`) et enregistre son hash ;
+  - `titles` → remplit `source_title` des cartes existantes depuis les notes sur disque, sans toucher au reste.
 - **Déroulé** : `scan` → pour chaque note, Claude lit la synthèse (et les cartes existantes) et écrit 3 à 8 cartes (question courte, réponse ≤ 3 phrases, en français) → `apply` → résumé (« 4 notes, +23 cartes, 2 modifiées, 1 supprimée »).
 - **Deck** = sous-dossier de `veille/` (`ia`, `software`, `web`, `concept`…). Les transcriptions sont ignorées.
 
