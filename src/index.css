@@ -110,8 +110,8 @@
   --tag-empty-fg: #58585d;
   /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
   --chip-glow: 16%;
-  --chip-rim: 50%; /* comme le bouton « Commencer à étudier » */
-  --chip-hover-mix: 12%; /* survol : lumière teintée de la couleur du tag */
+  --chip-rim: 41%; /* ~18 % plus doux que le bouton « Commencer à étudier » */
+  --chip-hover-mix: 10%; /* survol : lumière teintée de la couleur du tag */
   --chip-body: var(--glass-btn-bg);
   --chip-text: #111114; /* texte neutre, comme les boutons de notation */
   --chip-sheen: rgb(255 255 255 / 0.1);
@@ -179,8 +179,8 @@
    * garde sa couleur (sinon il faudrait le pousser vers le blanc pour rester ≥ 4,5:1).
    */
   --chip-glow: 22%;
-  --chip-rim: 60%; /* comme le bouton « Commencer à étudier » */
-  --chip-hover-mix: 16%;
+  --chip-rim: 49%; /* ~18 % plus doux que le bouton « Commencer à étudier » */
+  --chip-hover-mix: 13%;
   --chip-body: var(--glass-btn-bg); /* même verre que les boutons de notation : ne vole pas la vedette au bouton principal */
   --chip-text: #ffffff;
   --chip-sheen: rgb(255 255 255 / 0.04);
