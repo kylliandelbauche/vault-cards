@@ -11,7 +11,10 @@ const card = (id: string, tags: string[] = ['ia'], extra: Partial<Card> = {}): C
 })
 const rv = (card_id: string, at: string, rating: 1 | 2 | 3 = 3): Review =>
   ({ id: `${card_id}-${at}`, card_id, rating, reviewed_at: at, synced: 1 })
-const now = new Date('2026-10-12T10:00:00Z')
+// Midi, heure locale : « aujourd'hui » (jour local du quota) est le même jour dans tous les fuseaux.
+const now = new Date(2026, 9, 12, 12, 0)
+/** Instant `min` minutes avant `now` (même jour local). */
+const ago = (min: number) => new Date(now.getTime() - min * 60_000).toISOString()
 
 /** Historique de « Très bien » espacés : chaque note tombe à l'échéance de la précédente. */
 function goodStreak(id: string, start: string, n: number): Review[] {
@@ -28,7 +31,7 @@ describe('homeStats : compteurs', () => {
   it('À revoir = dues maintenant ; pas les cartes vues pas encore dues ; jamais les supprimées', () => {
     const s = homeStats(
       [card('due'), card('later'), card('gone', ['ia'], { deleted_at: '2026-10-02T00:00:00Z' })],
-      [rv('due', '2026-09-01T10:00:00Z'), rv('later', '2026-10-12T09:59:00Z'), rv('gone', '2026-09-01T10:00:00Z')],
+      [rv('due', '2026-09-01T10:00:00Z'), rv('later', ago(1)), rv('gone', '2026-09-01T10:00:00Z')],
       now,
     )
     expect(s.due).toBe(1)
@@ -38,14 +41,14 @@ describe('homeStats : compteurs', () => {
   it('Nouvelles = jamais vues, dans la limite de 20 par jour (celles déjà vues aujourd’hui décomptées)', () => {
     const cs = Array.from({ length: 30 }, (_, i) => card(`n${i}`))
     expect(homeStats(cs, [], now).fresh).toBe(20)
-    const seenToday = [rv('n0', '2026-10-12T08:00:00Z'), rv('n1', '2026-10-12T08:01:00Z')]
+    const seenToday = [rv('n0', ago(120)), rv('n1', ago(119))]
     expect(homeStats(cs, seenToday, now).fresh).toBe(18)
     expect(homeStats(cs.slice(0, 5), [], now).fresh).toBe(5)
   })
 
   it('cartes du jour = dues + nouvelles = taille exacte de la file « Commencer à étudier »', () => {
     const cs = [...Array.from({ length: 25 }, (_, i) => card(`n${i}`)), card('d1'), card('d2')]
-    const rs = [rv('d1', '2026-09-01T10:00:00Z'), rv('d2', '2026-09-02T10:00:00Z'), rv('n0', '2026-10-12T08:00:00Z')]
+    const rs = [rv('d1', '2026-09-01T10:00:00Z'), rv('d2', '2026-09-02T10:00:00Z'), rv('n0', ago(120))]
     const s = homeStats(cs, rs, now)
     expect(s.today).toBe(buildQueue(cs, rs, now).length)
     expect(s.today).toBe(s.due + s.fresh)
@@ -68,7 +71,7 @@ describe('homeStats : compteurs', () => {
 
   it('prochaine échéance : la plus proche à venir, null si aucune carte vue', () => {
     expect(homeStats([card('a')], [], now).nextDueAt).toBeNull()
-    const s = homeStats([card('a')], [rv('a', '2026-10-12T09:59:00Z')], now)
+    const s = homeStats([card('a')], [rv('a', ago(1))], now)
     expect(s.nextDueAt!.getTime()).toBeGreaterThan(now.getTime())
   })
 })
