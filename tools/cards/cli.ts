@@ -1,19 +1,22 @@
 // Outil local (Mac) : lit les notes de veille du vault et écrit les cartes dans Supabase avec la clé secrète.
-// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> | retag <fichier.json>
+// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json>
 // Sortie : JSON sur stdout uniquement. Erreurs sur stderr, code 1. Aucune valeur de variable d'environnement n'est jamais affichée.
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  computeScan, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
 const ENV_FILE = path.join(import.meta.dirname, '..', '..', '.env.local')
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY'] as const
 
-function connect(): SupabaseClient {
+/** Charge `.env.local` (une seule fois, aucun appel réseau) : à faire AVANT vaultRoot(), qui peut y lire VAULT_ROOT. */
+let envLoaded = false
+function loadEnv(): void {
+  if (envLoaded) return
   try {
     process.loadEnvFile(ENV_FILE)
   } catch {
@@ -22,6 +25,11 @@ function connect(): SupabaseClient {
   for (const name of REQUIRED_ENV) {
     if (!process.env[name]) throw new Error(`variable manquante dans .env.local : ${name}`)
   }
+  envLoaded = true
+}
+
+function connect(): SupabaseClient {
+  loadEnv()
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -58,18 +66,64 @@ async function fetchAll(db: SupabaseClient) {
   return data
 }
 
-async function scan(db: SupabaseClient) {
+/** Un `source_path` par carte vivante des notes données. Paquets de chemins (URL courte) et pagination (plafond PostgREST de 1000 lignes). */
+const PATHS_PER_QUERY = 20 // chemins longs + emojis encodés : on reste loin de la limite de longueur d'URL
+const PAGE_SIZE = 1000
+async function fetchLiveCardPaths(db: SupabaseClient, paths: string[]): Promise<{ source_path: string }[]> {
+  const rows: { source_path: string }[] = []
+  for (const group of chunk(paths, PATHS_PER_QUERY)) {
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await db
+        .from('cards')
+        .select('source_path')
+        .in('source_path', group)
+        .is('deleted_at', null)
+        .order('id')
+        .range(from, from + PAGE_SIZE - 1)
+      if (error) fail('lecture des cartes', error)
+      rows.push(...data)
+      if (data.length < PAGE_SIZE) break
+    }
+  }
+  return rows
+}
+
+async function scan() {
+  const db = connect() // charge .env.local avant vaultRoot()
   const files = await listSyntheses(vaultRoot())
   const { data, error } = await db.from('notes').select('source_path, content_hash')
   if (error) fail('lecture des notes', error)
-  return computeScan(files, data as NoteRow[])
+  const { changed, removed } = computeScan(files, data as NoteRow[])
+  // `removed` : chemin + nombre de cartes vivantes, pour que Kyllian sache ce qu'une suppression coûterait.
+  const live = await fetchLiveCardPaths(db, removed)
+  return { changed, removed: countLiveCards(removed, live) }
 }
 
-async function apply(db: SupabaseClient, file: string) {
+async function apply(file: string, confirmDelete: number | null) {
+  // Contrôles locaux d'abord : rien n'est lu ni écrit en base si le payload est refusé.
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash } = payload
+  assertDeckMatchesPath(source_path, deck)
+  loadEnv() // même vault que scan : VAULT_ROOT peut venir de .env.local
+  if (content_hash === REMOVED_HASH) {
+    const stillExists = await fs.access(resolveInVault(vaultRoot(), source_path)).then(() => true, () => false)
+    assertRemovedNoteGone(source_path, stillExists)
+  } else {
+    const abs = resolveInVault(vaultRoot(), source_path)
+    let current: string
+    try {
+      current = await fs.readFile(abs, 'utf8')
+    } catch {
+      throw new Error(`note introuvable dans le vault : ${source_path} (relancer scan)`)
+    }
+    assertContentHashFresh(content_hash, current)
+  }
+  const db = connect()
   const existing = await fetchExisting(db, source_path)
   const { toInsert, toUpdate, toDelete } = diffCards(existing, payload.cards)
+  // Avant toute écriture : toute suppression (note removed OU carte retirée d'une note modifiée) exige --confirm-delete=<n exact>.
+  const deleted = existing.filter(c => toDelete.includes(c.id))
+  assertDeleteConfirmed(source_path, deleted, confirmDelete)
 
   // Chaque étape lève en cas d'échec : le hash de la note n'est alors pas écrit et elle sera retraitée au prochain scan.
   if (toInsert.length > 0) {
@@ -122,13 +176,11 @@ async function retag(db: SupabaseClient, file: string) {
   return { updated: toUpdate.length, unchanged }
 }
 
-const USAGE = 'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> | retag <fichier.json>'
-
 async function main(argv: string[]): Promise<unknown> {
-  const [command, arg] = argv
+  const { command, arg, confirmDelete } = parseArgs(argv)
   switch (command) {
     case 'scan':
-      return scan(connect())
+      return scan()
     case 'existing':
       if (!arg) throw new Error(USAGE)
       return fetchExisting(connect(), arg)
@@ -136,7 +188,7 @@ async function main(argv: string[]): Promise<unknown> {
       return fetchAll(connect())
     case 'apply':
       if (!arg) throw new Error(USAGE)
-      return apply(connect(), arg)
+      return apply(arg, confirmDelete)
     case 'retag':
       if (!arg) throw new Error(USAGE)
       return retag(connect(), arg)

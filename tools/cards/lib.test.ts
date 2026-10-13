@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -122,6 +122,175 @@ describe('validatePayload', () => {
   })
   it('tags : doublon refusé', () => {
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] })).toThrow(/double/)
+  })
+  it('payload removed avec des cartes : refusé (il en insérerait tout en marquant la note supprimée)', () => {
+    expect(() => validatePayload({ ...base, content_hash: 'removed', cards: [{ front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/removed.*cards/)
+    expect(validatePayload({ ...base, content_hash: ' removed ', cards: [] }).content_hash).toBe('removed')
+  })
+  it('clé inconnue sur une carte : refusée, la clé est nommée (ex. ID au lieu de id)', () => {
+    expect(() => validatePayload({ ...base, cards: [{ ID: 'u1', front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/carte 1.*« ID »/)
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia'] }, { front: 'Q', back: 'R', tags: ['ia'], extra: 1 }] }))
+      .toThrow(/carte 2.*« extra »/)
+  })
+  it('clé inconnue au niveau payload : refusée, la clé est nommée', () => {
+    expect(() => validatePayload({ ...base, Deck: 'x', cards: [] })).toThrow(/payload.*« Deck »/)
+  })
+})
+
+describe('assertDeleteConfirmed', () => {
+  const cards = [{ id: 'u1', front: 'Quelle est la première question ?' }, { id: 'u2', front: 'Deuxième' }]
+  it('aucune suppression : rien à confirmer', () => {
+    expect(() => assertDeleteConfirmed('a.md', [], null)).not.toThrow()
+  })
+  it('suppression sans flag : refus qui liste id + début de la question et le flag exact attendu', () => {
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/--confirm-delete=2/)
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/u1 : Quelle est la première question/)
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/u2 : Deuxième/)
+    expect(() => assertDeleteConfirmed('a.md', cards, null)).toThrow(/a\.md/)
+  })
+  it('flag avec le nombre exact : ok', () => {
+    expect(() => assertDeleteConfirmed('a.md', cards, 2)).not.toThrow()
+  })
+  it('flag avec un autre nombre (trop petit, trop grand, ou 0) : refus', () => {
+    for (const n of [0, 1, 3]) expect(() => assertDeleteConfirmed('a.md', cards, n)).toThrow(/--confirm-delete=2/)
+  })
+  it('flag alors que rien ne serait supprimé : refus (confirmation périmée)', () => {
+    expect(() => assertDeleteConfirmed('a.md', [], 3)).toThrow(/--confirm-delete=0/)
+  })
+  it('tronque une longue question et une longue liste', () => {
+    const many = Array.from({ length: 80 }, (_, i) => ({ id: 'c' + i, front: 'x'.repeat(200) }))
+    let msg = ''
+    try { assertDeleteConfirmed('a.md', many, null) } catch (e) { msg = (e as Error).message }
+    expect(msg).toMatch(/--confirm-delete=80/)
+    expect(msg).toMatch(/et 30 autres/)
+    expect(msg).not.toMatch(/x{100}/)
+  })
+})
+
+describe('parseArgs', () => {
+  it('commande + argument, sans flag', () => {
+    expect(parseArgs(['apply', 'f.json'])).toEqual({ command: 'apply', arg: 'f.json', confirmDelete: null })
+    expect(parseArgs(['scan'])).toEqual({ command: 'scan', arg: undefined, confirmDelete: null })
+  })
+  it('--confirm-delete=<n> pour apply, avant ou après le fichier', () => {
+    expect(parseArgs(['apply', 'f.json', '--confirm-delete=3']).confirmDelete).toBe(3)
+    expect(parseArgs(['apply', '--confirm-delete=12', 'f.json'])).toEqual({ command: 'apply', arg: 'f.json', confirmDelete: 12 })
+  })
+  it('--confirm-delete sans valeur ou avec une valeur invalide : refusé', () => {
+    for (const bad of ['--confirm-delete', '--confirm-delete=', '--confirm-delete=abc', '--confirm-delete=-1', '--confirm-delete=1.5', '--confirm-delete=true']) {
+      expect(() => parseArgs(['apply', 'f.json', bad]), bad).toThrow(/--confirm-delete=<n>/)
+    }
+  })
+  it('flag répété : refusé', () => {
+    expect(() => parseArgs(['apply', 'f.json', '--confirm-delete=1', '--confirm-delete=2'])).toThrow(/une seule fois/)
+  })
+  it('option inconnue : refusée', () => {
+    expect(() => parseArgs(['scan', '--foo'])).toThrow(/option inconnue : --foo/)
+  })
+  it('--confirm-delete réservé à apply', () => {
+    expect(() => parseArgs(['retag', 'f.json', '--confirm-delete=1'])).toThrow(/réservée à apply/)
+    expect(() => parseArgs(['scan', '--confirm-delete=1'])).toThrow(/réservée à apply/)
+  })
+  it('trop d’arguments : refusé', () => {
+    expect(() => parseArgs(['apply', 'a.json', 'b.json'])).toThrow(/usage/)
+  })
+})
+
+describe('assertRemovedNoteGone', () => {
+  it('note removed encore présente sur le disque : refus', () => {
+    expect(() => assertRemovedNoteGone('veille/ia/a-synthese.md', true)).toThrow(/existe encore.*veille\/ia\/a-synthese\.md/)
+  })
+  it('note absente : ok', () => {
+    expect(() => assertRemovedNoteGone('veille/ia/a-synthese.md', false)).not.toThrow()
+  })
+})
+
+describe('chunk', () => {
+  it('découpe en paquets de taille donnée, le dernier plus petit', () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
+    expect(chunk([], 3)).toEqual([])
+  })
+  it('taille invalide : erreur (évite une boucle infinie)', () => {
+    expect(() => chunk([1], 0)).toThrow()
+  })
+})
+
+describe('countLiveCards', () => {
+  it('compte les cartes vivantes par note removed, 0 si aucune', () => {
+    const rows = [{ source_path: 'a.md' }, { source_path: 'a.md' }, { source_path: 'b.md' }, { source_path: 'autre.md' }]
+    expect(countLiveCards(['a.md', 'c.md'], rows)).toEqual([
+      { source_path: 'a.md', live_cards: 2 },
+      { source_path: 'c.md', live_cards: 0 },
+    ])
+  })
+})
+
+describe('assertContentHashFresh', () => {
+  it('hash identique à celui du contenu actuel : ok (même fonction que scan)', () => {
+    expect(() => assertContentHashFresh(hashContent('note'), 'note')).not.toThrow()
+  })
+  it('le content_hash émis par scan (listSyntheses) passe la vérification sur le même fichier, et échoue si le fichier change', async () => {
+    const notes = await listSyntheses(root, 'veille')
+    expect(notes.length).toBeGreaterThan(0)
+    for (const n of notes) {
+      const current = await fs.readFile(n.abs_path, 'utf8')
+      expect(() => assertContentHashFresh(n.content_hash, current)).not.toThrow()
+      expect(() => assertContentHashFresh(n.content_hash, current + '\n')).toThrow(/modifiée depuis le scan/)
+    }
+  })
+  it('contenu modifié depuis le scan : erreur claire', () => {
+    expect(() => assertContentHashFresh(hashContent('avant'), 'après')).toThrow(/note modifiée depuis le scan, relancer scan/)
+  })
+})
+
+describe('assertDeckMatchesPath', () => {
+  const ok = '3-Resources/veille/software/x/x-synthese.md'
+  it('deck = dossier qui suit 3-Resources/veille/ dans source_path', () => {
+    expect(() => assertDeckMatchesPath(ok, 'software')).not.toThrow()
+    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a-synthese.md', 'ia')).not.toThrow()
+    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/🛡️ x-synthese.md', 'software')).not.toThrow()
+  })
+  it('deck différent : erreur qui nomme le deck attendu', () => {
+    expect(() => assertDeckMatchesPath(ok, 'ia')).toThrow(/deck « ia ».*« software »/)
+  })
+  it('deck sensible à la casse et au sous-dossier', () => {
+    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a/a-synthese.md', 'IA')).toThrow(/deck/)
+    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a/a-synthese.md', 'a')).toThrow(/deck/)
+  })
+  it('même format que scan : préfixe 3-Resources/veille/, un dossier de deck, nom en *-synthese.md', () => {
+    for (const bad of [
+      'a.md',
+      'veille/ia/a-synthese.md', // préfixe 3-Resources/ manquant
+      'x/3-Resources/veille/ia/a-synthese.md', // préfixe pas en tête
+      '3-Resources/veille/a-synthese.md', // pas de dossier de deck
+      '3-Resources/veille/ia/a-transcription.md', // pas une synthèse
+      '3-Resources/veille/ia/a-synthese.md.bak',
+    ]) expect(() => assertDeckMatchesPath(bad, 'ia'), bad).toThrow(/source_path/)
+  })
+  it('refuse .., ., segments vides, chemins absolus et antislash', () => {
+    for (const bad of [
+      '3-Resources/veille/ia/../../../etc/x-synthese.md',
+      '3-Resources/veille/ia/./a-synthese.md',
+      '3-Resources/veille/ia//a-synthese.md',
+      '/3-Resources/veille/ia/a-synthese.md',
+      '3-Resources/veille/ia/a-synthese.md/',
+      '3-Resources/veille/ia/..\\a-synthese.md',
+    ]) expect(() => assertDeckMatchesPath(bad, 'ia'), bad).toThrow(/source_path/)
+  })
+  it('sous-dossier de veille configurable (comme listSyntheses)', () => {
+    expect(() => assertDeckMatchesPath('veille/ia/a-synthese.md', 'ia', 'veille')).not.toThrow()
+  })
+})
+
+describe('resolveInVault', () => {
+  it('résout dans le vault', () => {
+    expect(resolveInVault('/v', '3-Resources/veille/ia/a-synthese.md')).toBe('/v/3-Resources/veille/ia/a-synthese.md')
+  })
+  it('refuse tout chemin qui sort du vault', () => {
+    expect(() => resolveInVault('/v', '../etc/hosts')).toThrow(/hors du vault/)
+    expect(() => resolveInVault('/v', '/etc/hosts')).toThrow(/hors du vault/)
+    expect(() => resolveInVault('/v', 'a/../../w/x.md')).toThrow(/hors du vault/)
+    expect(() => resolveInVault('/v', '')).toThrow(/hors du vault/)
   })
 })
 

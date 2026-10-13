@@ -14,6 +14,9 @@ export interface NoteRow { source_path: string; content_hash: string }
 /** Hash stocké dans `notes` pour une note supprimée du vault (ses cartes sont supprimées). */
 export const REMOVED_HASH = 'removed'
 
+/** Dossier des notes de veille dans le vault ; le dossier suivant est le deck. */
+export const VEILLE_SUBDIR = '3-Resources/veille'
+
 const FRONT_MAX = 500
 const BACK_MAX = 1500
 
@@ -22,7 +25,7 @@ function toPosix(rel: string): string {
   return rel.split(path.sep).join('/').normalize('NFC')
 }
 
-export async function listSyntheses(vaultRoot: string, subdir = '3-Resources/veille'): Promise<NoteFile[]> {
+export async function listSyntheses(vaultRoot: string, subdir = VEILLE_SUBDIR): Promise<NoteFile[]> {
   const base = path.join(vaultRoot, subdir)
   const entries = await fs.readdir(base, { recursive: true, withFileTypes: true })
   const notes: NoteFile[] = []
@@ -98,8 +101,16 @@ function requireTags(obj: Record<string, unknown>, where: string): string[] {
   return [...v] as string[]
 }
 
+/** Une faute de frappe (`ID` au lieu de `id`) ferait traiter la carte comme nouvelle et perdre sa progression. */
+function rejectUnknownKeys(obj: Record<string, unknown>, allowed: readonly string[], where: string): void {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.includes(key)) throw new Error(`${where} : clé inconnue « ${key} » (attendues : ${allowed.join(', ')})`)
+  }
+}
+
 export function validatePayload(p: unknown): ApplyPayload {
   if (!isRecord(p)) throw new Error('payload invalide : objet JSON attendu')
+  rejectUnknownKeys(p, ['source_path', 'deck', 'content_hash', 'cards'], 'payload')
   const source_path = requireText(p, 'source_path', 'payload')
   const deck = requireText(p, 'deck', 'payload')
   const content_hash = requireText(p, 'content_hash', 'payload')
@@ -107,6 +118,7 @@ export function validatePayload(p: unknown): ApplyPayload {
   const cards = p.cards.map((raw: unknown, i: number): IncomingCard => {
     const where = `carte ${i + 1}`
     if (!isRecord(raw)) throw new Error(`${where} : objet {front, back} attendu`)
+    rejectUnknownKeys(raw, ['id', 'front', 'back', 'tags'], where)
     const front = requireText(raw, 'front', where)
     const back = requireText(raw, 'back', where)
     if (front.length > FRONT_MAX) throw new Error(`${where} : question trop longue (${front.length} > ${FRONT_MAX})`)
@@ -116,7 +128,121 @@ export function validatePayload(p: unknown): ApplyPayload {
     if (typeof raw.id !== 'string' || raw.id === '') throw new Error(`${where} : « id » doit être un texte (ou absent)`)
     return { id: raw.id, front, back, tags }
   })
+  if (content_hash === REMOVED_HASH && cards.length > 0) {
+    throw new Error('payload : un content_hash « removed » exige « cards » vide')
+  }
   return { source_path, deck, content_hash, cards }
+}
+
+/** Un payload `removed` n'est valable que si la note a réellement disparu du vault (vault mal monté mis à part, couvert par --confirm-delete). */
+export function assertRemovedNoteGone(source_path: string, stillExists: boolean): void {
+  if (stillExists) throw new Error(`note « removed » mais le fichier existe encore sur le disque : ${source_path} (relancer scan)`)
+}
+
+const LIST_MAX = 50
+const FRONT_PREVIEW = 70
+
+/**
+ * Garde-fou central : l'IA ne supprime jamais de cartes d'elle-même, quelle qu'en soit la cause
+ * (note `removed`, carte retirée ou `cards: []` sur une note modifiée). Toute suppression exige
+ * `--confirm-delete=<n>` avec n = nombre EXACT de cartes concernées ; sinon refus avant toute écriture,
+ * avec la liste (id + début de la question) à montrer à Kyllian. Le flag reste passable par l'agent :
+ * il protège de l'oubli et du rejeu, et l'obligation de recopier n force à relire le chiffre présenté.
+ */
+export function assertDeleteConfirmed(source_path: string, toDelete: { id: string; front: string }[], confirmed: number | null): void {
+  const n = toDelete.length
+  if (confirmed === n || (n === 0 && confirmed === null)) return
+  const shown = toDelete.slice(0, LIST_MAX).map(c => {
+    const front = c.front.replace(/\s+/g, ' ')
+    return `  - ${c.id} : ${front.length > FRONT_PREVIEW ? front.slice(0, FRONT_PREVIEW) + '…' : front}`
+  })
+  if (n > LIST_MAX) shown.push(`  … et ${n - LIST_MAX} autres`)
+  const head = confirmed === null
+    ? `suppression refusée pour ${source_path} : ${n} carte(s) seraient supprimées`
+    : `--confirm-delete=${confirmed} ne correspond pas à ${source_path} : ${n} carte(s) seraient supprimées`
+  throw new Error(
+    `${head}${n > 0 ? ' :\n' + shown.join('\n') : ''}\n` +
+    `Montrer cette liste à Kyllian ; relancer avec --confirm-delete=${n} uniquement après sa confirmation explicite.`,
+  )
+}
+
+export const USAGE =
+  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json>'
+
+export interface ParsedArgs { command: string | undefined; arg: string | undefined; confirmDelete: number | null }
+
+/** Options : seule `--confirm-delete=<n>` (n entier), réservée à `apply`. */
+export function parseArgs(argv: string[]): ParsedArgs {
+  let confirmDelete: number | null = null
+  const positional: string[] = []
+  for (const a of argv) {
+    if (!a.startsWith('--')) {
+      positional.push(a)
+      continue
+    }
+    if (a !== '--confirm-delete' && !a.startsWith('--confirm-delete=')) throw new Error(`option inconnue : ${a}\n${USAGE}`)
+    const value = a.slice('--confirm-delete='.length)
+    if (!a.includes('=') || !/^\d+$/.test(value)) throw new Error(`${a} : valeur manquante ou invalide, attendu --confirm-delete=<n> (n entier)`)
+    if (confirmDelete !== null) throw new Error('--confirm-delete ne peut être passé qu’une seule fois')
+    confirmDelete = Number(value)
+  }
+  if (positional.length > 2) throw new Error(USAGE)
+  const [command, arg] = positional
+  if (confirmDelete !== null && command !== 'apply') throw new Error(`option --confirm-delete réservée à apply\n${USAGE}`)
+  return { command, arg, confirmDelete }
+}
+
+/** Paquets de `size` éléments (URL PostgREST bornées : pas de `.in()` géant). */
+export function chunk<T>(items: T[], size: number): T[][] {
+  if (!Number.isInteger(size) || size < 1) throw new Error('chunk : taille invalide')
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
+/** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */
+export function countLiveCards(removed: string[], liveRows: { source_path: string }[]): { source_path: string; live_cards: number }[] {
+  const counts = new Map<string, number>()
+  for (const r of liveRows) counts.set(r.source_path, (counts.get(r.source_path) ?? 0) + 1)
+  return removed.map(source_path => ({ source_path, live_cards: counts.get(source_path) ?? 0 }))
+}
+
+/**
+ * Le hash du payload doit être celui du fichier tel qu'il est maintenant (même fonction que `scan`) :
+ * sinon les cartes ont été écrites pour une autre version de la note, ou le payload est un vieux fichier rejoué.
+ * Non applicable à REMOVED_HASH (le fichier n'existe plus).
+ */
+export function assertContentHashFresh(declared: string, currentContent: string): void {
+  if (declared !== hashContent(currentContent)) throw new Error('note modifiée depuis le scan, relancer scan')
+}
+
+/**
+ * `source_path` doit avoir exactement la forme produite par `scan` : `<subdir>/<deck>/…/<nom>-synthese.md`,
+ * relatif, sans `.`, `..` ni segment vide, et `deck` doit être le dossier qui suit `<subdir>/`
+ * (un deck erroné rangerait les cartes dans le mauvais paquet).
+ */
+export function assertDeckMatchesPath(source_path: string, deck: string, subdir = VEILLE_SUBDIR): void {
+  const invalid = (why: string): never => {
+    throw new Error(`source_path « ${source_path} » invalide : ${why} (attendu ${subdir}/<deck>/…/<nom>-synthese.md)`)
+  }
+  const parts = source_path.split('/')
+  if (source_path.includes('\\') || parts.some(p => p === '' || p === '.' || p === '..')) {
+    invalid('chemin absolu, segment vide, « . », « .. » ou antislash')
+  }
+  const prefix = subdir.split('/')
+  if (!prefix.every((seg, i) => parts[i] === seg)) invalid(`ne commence pas par ${subdir}/`)
+  const rest = parts.slice(prefix.length)
+  if (rest.length < 2) invalid('pas de dossier de deck')
+  if (!rest[rest.length - 1].endsWith('-synthese.md')) invalid('le nom ne finit pas par -synthese.md')
+  if (rest[0] !== deck) throw new Error(`deck « ${deck} » incohérent avec source_path « ${source_path} » : attendu « ${rest[0]} »`)
+}
+
+/** Chemin absolu d'une note ; refuse tout ce qui sortirait du vault (défense en profondeur après assertDeckMatchesPath). */
+export function resolveInVault(vaultRoot: string, source_path: string): string {
+  const root = path.resolve(vaultRoot)
+  const abs = path.resolve(root, source_path)
+  if (!abs.startsWith(root + path.sep)) throw new Error(`source_path « ${source_path} » hors du vault`)
+  return abs
 }
 
 /** Fichier de `retag` : liste de {id, tags}. Tout autre champ est ignoré (le texte n'est jamais modifié). */
