@@ -27,8 +27,6 @@ describe('index.css : replis du verre (#19)', () => {
 
   it.each([
     ['@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'],
-    ['@media (prefers-reduced-transparency: reduce)'],
-    ['@media (prefers-contrast: more)'],
   ])('fond opaque sous %s', prelude => {
     expect(block(prelude)).toMatch(/\.glass[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
   })
@@ -36,8 +34,6 @@ describe('index.css : replis du verre (#19)', () => {
   it('la carte en verre (#40) partage les replis opaques des barres, avec le même jeton', () => {
     for (const prelude of [
       '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))',
-      '@media (prefers-reduced-transparency: reduce)',
-      '@media (prefers-contrast: more)',
     ]) {
       expect(block(prelude)).toMatch(/\.glass-card[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
     }
@@ -45,18 +41,8 @@ describe('index.css : replis du verre (#19)', () => {
     for (const root of [':root {', '.dark {']) expect(block(root)).toContain('--glass-card-bg:')
   })
 
-  it('Réduire la transparence / Augmenter le contraste coupent aussi le flou et rendent la carte opaque', () => {
-    for (const prelude of ['@media (prefers-reduced-transparency: reduce)', '@media (prefers-contrast: more)']) {
-      const b = block(prelude)
-      expect(b).toMatch(/backdrop-filter:\s*none/)
-      expect(b).toMatch(/\.glass-card[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
-    }
-  })
-
   it.each([
     ['@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'],
-    ['@media (prefers-reduced-transparency: reduce)'],
-    ['@media (prefers-contrast: more)'],
   ])('boutons en verre (#39) : teinte opaque sous %s', prelude => {
     expect(block(prelude)).toMatch(/\.glass-btn\s*\{[^}]*background-color:\s*var\(--glass-btn-solid\)/)
   })
@@ -72,13 +58,8 @@ describe('index.css : replis du verre (#19)', () => {
     expect(block('.glass-btn-neutral {')).toContain('var(--glass-solid)')
   })
 
-  it('boutons en verre : Réduire la transparence / Augmenter le contraste coupent le flou et le reflet', () => {
-    for (const prelude of ['@media (prefers-reduced-transparency: reduce)', '@media (prefers-contrast: more)']) {
-      const b = block(prelude)
-      expect(b).toMatch(/\.glass-btn\s*\{[^}]*background-image:\s*none/)
-    }
-    expect(block('@media (prefers-reduced-transparency: reduce)')).toMatch(/\.glass-btn\s*\{[^}]*backdrop-filter:\s*none/)
-    expect(block('@media (prefers-contrast: more)')).toMatch(/\.glass-btn \{[^}]*border: 1px solid/)
+  it('full liquid glass (#39, demande de Kyllian) : replis Réduire la transparence / Augmenter le contraste reportés', () => {
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/prefers-reduced-transparency|prefers-contrast/)
   })
 
   it('« Réduire les animations » : aucune transition sur les boutons en verre', () => {

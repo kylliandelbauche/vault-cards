@@ -58,7 +58,6 @@
   --glass-card-bg: rgb(255 255 255 / 0.55); /* carte en verre : derrière elle, seul le fond décoratif (clair, maîtrisé) → texte noir ≥ 15:1 */
   --glass-card-sheen: linear-gradient(135deg, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 45%);
   --card-shadow: 0 1px 3px rgb(15 30 60 / 0.08); /* petite : la carte défile */
-  --contrast-border: #3c3c43;
 
   /*
    * Boutons en verre coloré (#39), libellé blanc. Teinte foncée à 84 % : ≥ 4,5:1 au pire cas réaliste
@@ -114,7 +113,6 @@
   --glass-card-bg: rgb(28 29 34 / 0.6); /* derrière la carte, seul le fond décoratif sombre → texte blanc ≥ 12:1 */
   --glass-card-sheen: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0) 45%);
   --card-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
-  --contrast-border: #dcdce0;
 
   /* Sombre : teinte plus vive à 70 % (le fond noir l'assombrit) ; pire cas = texte blanc de la carte flouté dessous. */
   --glass-btn-new: rgb(20 88 176 / 0.7);    --glass-btn-new-solid: #1458b0;
@@ -263,7 +261,11 @@ html.dark {
   color: #fff;
 }
 
-/* Replis opaques : navigateur sans backdrop-filter, « Réduire la transparence », « Augmenter le contraste ». */
+/*
+ * Seul repli conservé : navigateur sans backdrop-filter → verre opaque.
+ * « Réduire la transparence » et « Augmenter le contraste » : replis retirés à la demande de Kyllian
+ * (full liquid glass), reportés.
+ */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass,
   .glass-card {
@@ -271,47 +273,6 @@ html.dark {
   }
   .glass-btn {
     background-color: var(--glass-btn-solid);
-  }
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  .glass,
-  .glass-card {
-    background-color: var(--glass-solid);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-  .glass-btn {
-    background-color: var(--glass-btn-solid);
-    background-image: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
-@media (prefers-contrast: more) {
-  .glass,
-  .glass-card,
-  .glass-btn {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    box-shadow: none;
-    border: 1px solid var(--contrast-border);
-  }
-  .glass,
-  .glass-card {
-    background-color: var(--glass-solid);
-  }
-  .glass-btn {
-    background-color: var(--glass-btn-solid);
-    background-image: none;
-  }
-  /* L'appui reste visible sans ombre décorative : voile intérieur seul. */
-  .glass-btn:active:not(:disabled) {
-    box-shadow: inset 0 0 0 100vmax var(--glass-btn-press);
-  }
-  .app-backdrop {
-    background-image: none;
   }
 }
 
