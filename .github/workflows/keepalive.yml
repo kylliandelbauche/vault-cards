@@ -5,9 +5,10 @@ name: Keepalive Supabase
 #
 # Point d'API : GET /rest/v1/cards avec la clé publishable (rôle anon).
 # La table `cards` n'a volontairement AUCUN grant pour anon : PostgREST répond 401
-# (« permission denied »), mais la requête traverse bien la passerelle, PostgREST et
+# (« permission denied », code 42501), mais la requête traverse bien la passerelle, PostgREST et
 # Postgres, ce qui compte comme activité. On ne rouvre donc aucun accès anonyme.
-# Seuls un code >= 500 (projet en pause / en panne) ou l'absence de réponse font échouer le job.
+# Succès : 2xx, ou 401/403 dont le corps contient le code Postgres 42501 (refus de droit, donc
+# requête arrivée jusqu'à la base). Tout le reste (>= 500, clé invalide, timeout) fait échouer le job.
 on:
   schedule:
     - cron: '17 6 * * *'
@@ -30,13 +31,21 @@ jobs:
             echo "::error::Secrets manquants : SUPABASE_URL et SUPABASE_PUBLISHABLE_KEY doivent être définis."
             exit 1
           fi
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 30 \
+          body="$(mktemp)"
+          trap 'rm -f "$body"' EXIT
+          # Le corps de la réponse va dans un fichier temporaire et n'est jamais affiché.
+          code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 30 \
             "${SUPABASE_URL%/}/rest/v1/cards?select=id&limit=1" -H "apikey: $KEY") || {
             echo "::error::La requête n'a pas abouti (réseau ou timeout de 30 s)."
             exit 1
           }
           echo "HTTP $code"
-          if [ "$code" -ge 500 ] || [ "$code" -eq 0 ]; then
-            echo "::error::Réponse $code : projet probablement en pause ou en panne."
-            exit 1
-          fi
+          # Succès : 2xx, ou refus Postgres (42501) sur 401/403 = la requête a atteint la base.
+          # Un 401 sans ce code (clé invalide, refus de la passerelle) n'est PAS de l'activité base.
+          case "$code" in
+            2??) exit 0 ;;
+            401|403)
+              if grep -q '"code":"42501"' "$body"; then exit 0; fi ;;
+          esac
+          echo "::error::Réponse inattendue (HTTP $code) : la requête n'a pas atteint la base."
+          exit 1
