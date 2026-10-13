@@ -52,24 +52,42 @@ export function SignOutButton({ onClick }: { onClick(): void }) {
   )
 }
 
-/** Chevron « retour à l'accueil », en tête de la barre de révision. */
-export function BackButton({ onClick }: { onClick(): void }) {
+/** Emplacement du chevron (même taille, mêmes marges) : le titre ne bouge pas d'un écran à l'autre. */
+const BACK_SLOT = '-ms-2.5'
+
+/** Chevron « retour », en tête de la barre. `label` : l'écran de destination (« Accueil », « Mes tags »). */
+function BackButton({ onClick, label }: { onClick(): void; label: string }) {
   return (
-    <IconButton label="Accueil" onClick={onClick} className="-ms-2.5">
+    <IconButton label={label} onClick={onClick} className={BACK_SLOT}>
       <path d="M15 18l-6-6 6-6" strokeWidth="2.5" />
     </IconButton>
   )
 }
 
+interface TopBarProps {
+  /** Retour : chevron en tête ; sans lui, un emplacement vide de même taille garde le titre au même endroit. */
+  onBack?(): void
+  /** Nom accessible du chevron (l'écran de destination). */
+  backLabel?: string
+  children: ReactNode
+  extra?: ReactNode
+}
+
 /**
- * Barre du haut en verre (seule surface floutée de la barre), `sticky` : le contenu défile dessous.
- * `children` : la ligne principale (titre, synchro, actions) ; `extra` : ce qui va dessous (progression).
+ * Barre du haut en verre, la même sur tous les écrans (même conteneur, mêmes marges, titre au même x) ;
+ * seule surface floutée de la barre, `sticky` : le contenu défile dessous.
+ * `children` : le reste de la ligne (titre, synchro, actions) ; `extra` : ce qui va dessous (progression).
  */
-export function TopBar({ children, extra }: { children: ReactNode; extra?: ReactNode }) {
+export function TopBar({ onBack, backLabel = 'Accueil', children, extra }: TopBarProps) {
   return (
     <header className={`sticky top-0 z-20 shrink-0 pt-[max(12px,var(--k-safe-area-top))] pb-2 ${EDGES}`}>
       <div className="glass mx-auto max-w-xl rounded-[26px] px-4 py-2.5">
-        <div className="flex items-center gap-3">{children}</div>
+        <div className="flex items-center gap-3">
+          {onBack
+            ? <BackButton onClick={onBack} label={backLabel} />
+            : <span aria-hidden="true" data-back-slot className={`-my-2 size-11 shrink-0 ${BACK_SLOT}`} />}
+          {children}
+        </div>
         {extra}
       </div>
     </header>

@@ -1,6 +1,6 @@
 import { Page, Preloader, Progressbar } from 'konsta/react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
-import { BackButton, BarTitle, EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
+import { BarTitle, EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
@@ -15,8 +15,12 @@ interface Props {
   sync?: SyncIndicator
   /** Titre de la barre : nom du tag pour une session limitée à un tag. */
   title?: string
-  /** Retour à l'accueil (chevron de la barre, bouton de l'écran de fin). */
+  /** Retour à l'écran précédent (chevron de la barre). */
   onBack?(): void
+  /** Nom accessible du chevron : l'écran de destination. */
+  backLabel?: string
+  /** « Retour à l'accueil » de l'écran de fin (par défaut : onBack). */
+  onHome?(): void
 }
 
 function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
@@ -39,7 +43,7 @@ function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   )
 }
 
-export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack }: Props) {
+export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack, backLabel, onHome = onBack }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
 
@@ -49,6 +53,8 @@ export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
       <TopBar
+        onBack={onBack}
+        backLabel={backLabel}
         extra={status === 'reviewing' && (
           <Progressbar
             className="mt-2"
@@ -57,7 +63,6 @@ export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack
           />
         )}
       >
-        {onBack && <BackButton onClick={onBack} />}
         <BarTitle title={title} sync={sync} />
         {status === 'reviewing' && <Counters counts={session.counts} />}
       </TopBar>
@@ -80,7 +85,7 @@ export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack
           </p>
         )}
         {status === 'done' && (
-          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onHome={onBack} />
+          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onHome={onHome} />
         )}
         {current && <CardView card={current.card} revealed={revealed} onReveal={session.reveal} />}
       </main>
