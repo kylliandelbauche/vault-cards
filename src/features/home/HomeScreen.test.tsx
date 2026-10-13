@@ -87,14 +87,17 @@ describe('HomeScreen', () => {
     const { onStudy } = renderHome()
     const empty = screen.getByRole('button', { name: 'Sécurité, 0 carte' })
     expect(empty.getAttribute('aria-disabled')).toBe('true')
-    expect(empty.className).toContain('tag-btn-empty')
-    expect(empty.getAttribute('style')).toBeNull()
+    expect(empty.className).toContain('tag-chip-empty')
+    expect(empty.getAttribute('style') ?? '').not.toContain('--chip')
     await userEvent.setup().click(empty)
     expect(onStudy).not.toHaveBeenCalled()
     const ia = screen.getByRole('button', { name: 'IA & agents, 7 cartes' })
     expect(ia.hasAttribute('aria-disabled')).toBe(false)
-    expect(ia.getAttribute('style')).toContain('var(--tag-violet-bg)')
-    for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|size-11|h-14)\b/)
+    expect(ia.getAttribute('style')).toContain('--chip: var(--tag-violet-fg)')
+    // Verre imité (posé sur la carte « Mes tags ») : bouton en verre sans flou propre.
+    expect(ia.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'on-glass', 'tag-chip']))
+    expect((ia.firstElementChild as HTMLElement).style.backgroundColor).toBe('var(--tag-violet-bg)')
+    for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|min-h-12|size-11|h-14)\b/)
   })
 
   it('surfaces floutées : barre + carte du jour + carte des tags = 3, aucune imbriquée ; bouton, pastilles et compteurs sans flou', () => {
@@ -102,7 +105,8 @@ describe('HomeScreen', () => {
     expect(container.querySelectorAll(SURFACES)).toHaveLength(3)
     expect(container.querySelectorAll('.glass-card .glass-btn:not(.on-glass)')).toHaveLength(0)
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
-    for (const el of container.querySelectorAll('.tag-btn, dl div')) expect(el.className).not.toMatch(/glass|backdrop|blur/)
+    for (const el of container.querySelectorAll('dl div')) expect(el.className).not.toMatch(/glass|backdrop|blur/)
+    for (const el of container.querySelectorAll('.tag-chip')) expect(el.className).toContain('on-glass')
   })
 
   it('barre du haut en verre : titre, état de synchro, déconnexion ; pas de bouton « Créer une carte »', async () => {

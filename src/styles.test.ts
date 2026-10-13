@@ -57,7 +57,7 @@ describe('index.css : verre et repli (#19, #39)', () => {
 
   it('survol Liquid Glass : souris / trackpad seulement, éclaircissement en opacity sous le texte, soulèvement en scale', () => {
     const hover = block('@media (hover: hover) and (pointer: fine) {')
-    expect(hover).toMatch(/\.glass-btn:hover:not\(:disabled\)::before\s*\{[^}]*opacity:\s*1/)
+    expect(hover).toMatch(/\.glass-btn:hover:not\(:disabled\):not\(\[aria-disabled='true'\]\)::before\s*\{[^}]*opacity:\s*1/)
     const before = block('.glass-btn::before {')
     expect(before).toMatch(/opacity:\s*0/)
     expect(before).toMatch(/z-index:\s*-1/)
@@ -140,7 +140,10 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
       expect(block(root)).toMatch(/--tag-empty-fg:\s*#[0-9a-f]{6}/i)
     }
     expect(code).toMatch(/button:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
-    expect(code).toMatch(/\.tag-btn:focus-visible/)
+    expect(code).toMatch(/\.glass-btn:focus-visible/)
+    expect(code).toMatch(/\.tag-head:focus-visible/)
+    // aria-disabled : ni survol ni appui sur les boutons en verre.
+    expect(code).toMatch(/\.glass-btn:active:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
   })
 
   it('bouton en verre posé sur une carte (on-glass) : aucun backdrop-filter', () => {
@@ -149,7 +152,11 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(rule).toMatch(/[^-]backdrop-filter:\s*none/)
   })
 
-  it('pastilles opaques : jamais de flou', () => {
-    expect(block('.tag-btn {')).not.toMatch(/backdrop-filter|blur/)
+  it('pastilles en verre : lueur et liseré de la couleur du tag ; tag vide sans lueur, libellé gris', () => {
+    const chip = block('.tag-chip {')
+    expect(chip).toMatch(/--glass-btn-glow:[^;]*var\(--chip\)/)
+    expect(chip).toMatch(/--glass-btn-rim:[^;]*var\(--chip\)/)
+    expect(chip).not.toMatch(/backdrop-filter|blur\(/)
+    expect(block('.tag-chip-empty {')).toMatch(/color:\s*var\(--tag-empty-fg\)/)
   })
 })
