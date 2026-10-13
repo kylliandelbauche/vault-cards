@@ -1,0 +1,51 @@
+name: Keepalive Supabase
+
+# Les projets Supabase gratuits sont mis en pause après une semaine sans activité.
+# Ce ping quotidien génère une vraie requête sur l'API REST du projet.
+#
+# Point d'API : GET /rest/v1/cards avec la clé publishable (rôle anon).
+# La table `cards` n'a volontairement AUCUN grant pour anon : PostgREST répond 401
+# (« permission denied », code 42501), mais la requête traverse bien la passerelle, PostgREST et
+# Postgres, ce qui compte comme activité. On ne rouvre donc aucun accès anonyme.
+# Succès : 2xx, ou 401/403 dont le corps contient le code Postgres 42501 (refus de droit, donc
+# requête arrivée jusqu'à la base). Tout le reste (>= 500, clé invalide, timeout) fait échouer le job.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping de l'API Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${KEY:-}" ]; then
+            echo "::error::Secrets manquants : SUPABASE_URL et SUPABASE_PUBLISHABLE_KEY doivent être définis."
+            exit 1
+          fi
+          body="$(mktemp)"
+          trap 'rm -f "$body"' EXIT
+          # Le corps de la réponse va dans un fichier temporaire et n'est jamais affiché.
+          code=$(curl -sS -o "$body" -w '%{http_code}' --max-time 30 \
+            "${SUPABASE_URL%/}/rest/v1/cards?select=id&limit=1" -H "apikey: $KEY") || {
+            echo "::error::La requête n'a pas abouti (réseau ou timeout de 30 s)."
+            exit 1
+          }
+          echo "HTTP $code"
+          # Succès : 2xx, ou refus Postgres (42501) sur 401/403 = la requête a atteint la base.
+          # Un 401 sans ce code (clé invalide, refus de la passerelle) n'est PAS de l'activité base.
+          case "$code" in
+            2??) exit 0 ;;
+            401|403)
+              if grep -q '"code":"42501"' "$body"; then exit 0; fi ;;
+          esac
+          echo "::error::Réponse inattendue (HTTP $code) : la requête n'a pas atteint la base."
+          exit 1
