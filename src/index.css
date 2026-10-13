@@ -102,6 +102,9 @@
   --tag-rose-bg: #fce8f1;     --tag-rose-fg: #a2245f;     /* 6,08:1 */
   --tag-jaune-bg: #fbf3d0;    --tag-jaune-fg: #7a5a00;    /* 5,72:1 */
   --tag-grisbleu-bg: #e8edf2; --tag-grisbleu-fg: #3f5368; /* 6,73:1 */
+  /* Tag sans carte (accueil, #53) : voile neutre + gris lisible ; ratio sur la carte en verre : voir la PR #53. */
+  --tag-empty-bg: rgb(0 0 0 / 0.04);
+  --tag-empty-fg: #636366;
 }
 
 .dark {
@@ -157,6 +160,8 @@
   --tag-rose-bg: #3a1a2a;     --tag-rose-fg: #ff9cc8;     /* 7,97:1 */
   --tag-jaune-bg: #332b10;    --tag-jaune-fg: #f0cf5a;    /* 9,22:1 */
   --tag-grisbleu-bg: #222a33; --tag-grisbleu-fg: #b4c3d3; /* 8,08:1 */
+  --tag-empty-bg: rgb(255 255 255 / 0.06);
+  --tag-empty-fg: #aeaeb2;
 }
 
 /*
@@ -364,6 +369,29 @@ html.dark {
 }
 
 /*
+ * Pastilles de tags de l'accueil (#53) : opaques, jamais floutées (elles sont dans la carte en verre « Mes tags »).
+ * Survol (souris) : liseré de la couleur du texte ; appui : léger voile intérieur, instantané. Tag sans carte :
+ * grisé, aucun retour visuel, curseur par défaut (voir la règle `cursor` plus bas).
+ */
+.tag-btn {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.tag-btn-empty {
+  background-color: var(--tag-empty-bg);
+  color: var(--tag-empty-fg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tag-btn:not([aria-disabled='true']):hover {
+    box-shadow: inset 0 0 0 1.5px currentColor;
+  }
+}
+.tag-btn:not([aria-disabled='true']):active {
+  box-shadow: inset 0 0 0 100vmax rgb(0 0 0 / 0.06);
+}
+
+/*
  * Barre de progression sans transition de largeur (Konsta : 200 ms) : animer `width` sous le verre
  * repeindrait la barre floutée à chaque image après chaque note. Couvre aussi « Réduire les animations ».
  */
@@ -377,6 +405,7 @@ html.dark {
  */
 .k-button:focus-visible,
 .glass-btn:focus-visible,
+.tag-btn:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--new);
@@ -384,7 +413,7 @@ a:focus-visible,
 }
 
 /* Tailwind 4 ne met plus `cursor: pointer` sur les boutons : on le rétablit (survol à la souris). */
-button:not(:disabled),
+button:not(:disabled):not([aria-disabled='true']),
 [role='button']:not([aria-disabled='true']) {
   cursor: pointer;
 }

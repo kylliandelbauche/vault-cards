@@ -2,12 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import type { VaultDB } from '../../lib/db'
 import { pendingCount } from '../../lib/sync'
+import type { SyncIndicator } from '../../components/TopBar'
 import type { ReviewSession } from './useReviewSession'
 
 export type AutoSyncSession = Pick<ReviewSession, 'status' | 'stats' | 'restart'>
 type SyncResult = { pulledCards: number; pulledReviews: number }
+export type { SyncIndicator }
 export interface SyncState { syncing: boolean; lastSync: 'ok' | 'failed' | null }
-export type SyncIndicator = 'syncing' | 'synced' | 'unsynced'
+export interface AutoSync extends SyncState {
+  /** Lance un sync tout de suite (ex. retour à l'accueil au milieu d'une session : pousse les notes déjà données). */
+  syncNow(): void
+}
 
 /** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync par intervalle. */
 export const RESUME_SYNC_MIN_INTERVAL_MS = 30_000
@@ -30,8 +35,9 @@ const reloadable = ({ status, stats }: AutoSyncSession) =>
  * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS. Jamais deux syncs en parallèle.
  * Les erreurs sont avalées : hors ligne ou jeton expiré, on réessaiera au prochain déclencheur.
  * Si le sync a ramené des données alors que la session est rechargeable, appelle `restart()`.
+ * Session `idle` (écran d'accueil) : rien à recharger, l'accueil suit lui-même le cache local.
  */
-export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>): SyncState {
+export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>): AutoSync {
   const [state, setState] = useState<SyncState>({ syncing: false, lastSync: null })
   // Dernières valeurs, lues à la fin d'un sync sans en faire des dépendances.
   const io = useRef({ session, run })
@@ -99,7 +105,8 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
     if (status === 'done' && !canReload) void trigger()
   }, [status, canReload, trigger])
 
-  return state
+  const syncNow = useCallback(() => { void trigger() }, [trigger])
+  return { ...state, syncNow }
 }
 
 /** Nombre de reviews locales pas encore poussées, mis à jour en direct (liveQuery Dexie). */

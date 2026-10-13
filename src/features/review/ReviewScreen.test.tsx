@@ -180,28 +180,45 @@ describe('ReviewScreen', () => {
 
   it('fin de session : bilan sur une carte en verre, boutons en verre en dehors (4 surfaces, aucune imbriquée)', () => {
     const { container } = render(
-      <KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} sync="synced" onSignOut={vi.fn()} /></KApp>,
+      <KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} sync="synced" onBack={vi.fn()} /></KApp>,
     )
     const restart = screen.getByRole('button', { name: 'Réviser à nouveau' })
-    const signOut = screen.getByRole('button', { name: 'Se déconnecter' })
+    const home = screen.getByRole('button', { name: "Retour à l'accueil" })
     expect(restart.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new']))
-    expect(signOut.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-neutral']))
+    expect(home.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-neutral']))
     expect(container.querySelector('main .glass-card')?.textContent).toContain('Session terminée')
     expect(container.querySelectorAll(SURFACES)).toHaveLength(4)
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
   })
 
-  it('bouton de déconnexion dans la barre du haut : étiqueté, cible 44 px, appelle onSignOut', async () => {
-    const onSignOut = vi.fn()
-    const { container } = render(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} sync="synced" onSignOut={onSignOut} /></KApp>)
-    const btn = within(container.querySelector('header')!).getByRole('button', { name: 'Déconnexion' })
-    expect(btn.className).toMatch(/\bsize-11\b/)
-    await userEvent.setup().click(btn)
-    expect(onSignOut).toHaveBeenCalledTimes(1)
+  it('fin de session : « Retour à l’accueil » appelle onBack', async () => {
+    const onBack = vi.fn()
+    render(<KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} onBack={onBack} /></KApp>)
+    await userEvent.setup().click(screen.getByRole('button', { name: "Retour à l'accueil" }))
+    expect(onBack).toHaveBeenCalledTimes(1)
   })
 
-  it('sans onSignOut : pas de bouton de déconnexion', () => {
-    renderScreen(reviewing())
+  it('chevron retour en tête de la barre du haut : étiqueté « Accueil », cible 44 px, appelle onBack', async () => {
+    const onBack = vi.fn()
+    const { container } = render(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} sync="synced" onBack={onBack} /></KApp>)
+    const header = container.querySelector('header')!
+    const btn = within(header).getByRole('button', { name: 'Accueil' })
+    expect(btn.className).toMatch(/\bsize-11\b/)
+    expect(within(header).getAllByRole('button')[0]).toBe(btn)
+    await userEvent.setup().click(btn)
+    expect(onBack).toHaveBeenCalledTimes(1)
+  })
+
+  it('titre de la barre : « Vault Cards » par défaut, nom du tag pour une session par tag ; plus de déconnexion ici', () => {
+    const { container, rerender } = renderScreen(reviewing())
+    expect(container.querySelector('header p')?.textContent).toBe('Vault Cards')
+    rerender(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} title="🤖 IA & agents" onBack={vi.fn()} /></KApp>)
+    expect(container.querySelector('header p')?.textContent).toBe('🤖 IA & agents')
     expect(screen.queryByRole('button', { name: 'Déconnexion' })).toBeNull()
+  })
+
+  it('sans onBack : pas de chevron', () => {
+    renderScreen(reviewing())
+    expect(screen.queryByRole('button', { name: 'Accueil' })).toBeNull()
   })
 })
