@@ -36,12 +36,13 @@ export function CardView({ card, revealed, onReveal }: Props) {
   )
 }
 
-/** Pastilles emoji + label. Tag inconnu (liste locale plus ancienne que la base) : ignoré. */
-function TagPills({ slugs }: { slugs: readonly string[] | undefined }) {
-  const tags = (slugs ?? []).map(getTag).filter((t): t is TagDef => t !== undefined)
+/** Pastilles emoji + label. Tag inconnu (liste locale plus ancienne que la base) : ignoré. Doublon : affiché une fois. */
+function TagPills({ slugs }: { slugs: readonly string[] | null | undefined }) {
+  const tags = [...new Set(slugs ?? [])].map(getTag).filter((t): t is TagDef => t !== undefined)
   if (tags.length === 0) return null
   return (
-    <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Tags">
+    // role="list" : sans puces (preflight Tailwind), Safari/VoiceOver retire sinon la sémantique de liste.
+    <ul role="list" className="mt-2 flex flex-wrap gap-1.5" aria-label="Tags">
       {tags.map(t => (
         <li
           key={t.slug}
