@@ -136,7 +136,6 @@ describe('index.css : garde-fous de performance (#19)', () => {
 describe('index.css : pastilles de tags de l’accueil (#53)', () => {
   it('tag sans carte : jetons clair et sombre, pas de curseur main (aria-disabled), focus visible', () => {
     for (const root of [':root {', '.dark {']) {
-      expect(block(root)).toMatch(/--tag-empty-bg:/)
       expect(block(root)).toMatch(/--tag-empty-fg:\s*#[0-9a-f]{6}/i)
     }
     expect(code).toMatch(/button:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
@@ -152,11 +151,17 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(rule).toMatch(/[^-]backdrop-filter:\s*none/)
   })
 
-  it('pastilles en verre : lueur et liseré de la couleur du tag ; tag vide sans lueur, libellé gris', () => {
-    const chip = block('.tag-chip {')
-    expect(chip).toMatch(/--glass-btn-glow:[^;]*var\(--chip\)/)
-    expect(chip).toMatch(/--glass-btn-rim:[^;]*var\(--chip\)/)
-    expect(chip).not.toMatch(/backdrop-filter|blur\(/)
-    expect(block('.tag-chip-empty {')).toMatch(/color:\s*var\(--tag-empty-fg\)/)
+  it('tags par couleur : verre teinté de la couleur, texte de la couleur, liseré de la couleur, sans flou ; tag vide gris', () => {
+    const both = block('.tag-chip,\n.tag-pill {')
+    expect(both).toMatch(/background-color:\s*color-mix\(in srgb, var\(--chip-bg\) var\(--chip-tint\), transparent\)/)
+    expect(both).toMatch(/color:\s*var\(--chip-fg\)/)
+    expect(block('.tag-chip {')).toMatch(/--glass-btn-rim:[^;]*var\(--chip-fg\)/)
+    expect(block('.tag-pill {')).toMatch(/var\(--chip-fg\)/)
+    expect(both + block('.tag-chip {') + block('.tag-pill {')).not.toMatch(/backdrop-filter|blur\(/)
+    const empty = block('.tag-chip-empty {')
+    expect(empty).toMatch(/color:\s*var\(--tag-empty-fg\)/)
+    expect(empty).toMatch(/background-color:\s*transparent/)
+    expect(empty).toMatch(/outline:\s*1px dashed/)
+    for (const root of [':root {', '.dark {']) for (const v of ['--chip-tint', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
   })
 })

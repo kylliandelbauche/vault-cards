@@ -95,7 +95,11 @@ describe('HomeScreen', () => {
     expect(onStudy).not.toHaveBeenCalled()
     const ia = screen.getByRole('button', { name: 'IA & agents, 7 cartes' })
     expect(ia.hasAttribute('aria-disabled')).toBe(false)
-    expect(ia.getAttribute('style')).toContain('--chip: var(--tag-violet-fg)')
+    // Couleur propre au tag : verre teinté et texte dans la couleur du tag.
+    expect(ia.style.getPropertyValue('--chip-bg')).toBe('var(--tag-violet-bg)')
+    expect(ia.style.getPropertyValue('--chip-fg')).toBe('var(--tag-violet-fg)')
+    const dev = screen.getByRole('button', { name: 'Dev & outils, 3 cartes' })
+    expect(dev.style.getPropertyValue('--chip-fg')).toBe('var(--tag-bleu-fg)')
     // Verre imité (posé sur la carte « Mes tags ») : bouton en verre sans flou propre.
     expect(ia.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'on-glass', 'tag-chip']))
     for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|min-h-12|size-11|h-14)\b/)

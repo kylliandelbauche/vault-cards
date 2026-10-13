@@ -101,15 +101,14 @@
   --tag-vert-bg: #e4f3ea;     --tag-vert-fg: #1c6b3c;     /* 5,69:1 */
   --tag-rose-bg: #fce8f1;     --tag-rose-fg: #a2245f;     /* 6,08:1 */
   --tag-jaune-bg: #fbf3d0;    --tag-jaune-fg: #7a5a00;    /* 5,72:1 */
-  --tag-grisbleu-bg: #e8edf2; --tag-grisbleu-fg: #3f5368; /* 6,73:1 */
-  /* Tag sans carte (accueil, #53) : voile neutre + gris, sur la carte en verre ; pire cas (fond décoratif saturé) : 5,13:1. */
-  --tag-empty-bg: rgb(0 0 0 / 0.04);
+  --tag-turquoise-bg: #ddf3f0; --tag-turquoise-fg: #0d6b62; /* 5,51:1 (ex-grisbleu, trop proche d'un tag vide grisé : #53) */
+  /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
-  /*
-   * Lueur des pastilles de tags (part de la couleur du tag). Pire cas (lueur pleine sous le libellé, fond
-   * décoratif saturé, survol) : libellé noir 12,60:1, tag vide 6,38:1.
-   */
-  --chip-glow: 24%;
+  /* Pastilles de tags teintées (#53) : part de la couleur du tag dans le verre, reflets. */
+  --chip-tint: 85%;
+  --chip-sheen: rgb(255 255 255 / 0.1);
+  --chip-hover-sheen: rgb(255 255 255 / 0.16);
+  --chip-highlight: rgb(255 255 255 / 0.12);
 }
 
 .dark {
@@ -164,11 +163,14 @@
   --tag-vert-bg: #17311f;     --tag-vert-fg: #7fdca3;     /* 8,47:1 */
   --tag-rose-bg: #3a1a2a;     --tag-rose-fg: #ff9cc8;     /* 7,97:1 */
   --tag-jaune-bg: #332b10;    --tag-jaune-fg: #f0cf5a;    /* 9,22:1 */
-  --tag-grisbleu-bg: #222a33; --tag-grisbleu-fg: #b4c3d3; /* 8,08:1 */
-  --tag-empty-bg: rgb(255 255 255 / 0.06); /* pire cas : 4,97:1 */
+  --tag-turquoise-bg: #10302c; --tag-turquoise-fg: #6fd8ca; /* 8,34:1 */
+  /* Tag vide sur la carte, pire cas : 5,87:1. */
   --tag-empty-fg: #d1d1d6;
-  /* Sombre : couleurs de tag claires, lueur plus discrète. Pire cas : libellé blanc 5,15:1, tag vide 4,55:1. */
-  --chip-glow: 16%;
+  /* Sombre : voiles blancs réduits (ils éclaircissent le fond sous le texte clair du tag). */
+  --chip-tint: 85%;
+  --chip-sheen: rgb(255 255 255 / 0.04);
+  --chip-hover-sheen: rgb(255 255 255 / 0.04);
+  --chip-highlight: rgb(255 255 255 / 0.06);
 }
 
 /*
@@ -386,17 +388,41 @@ html.dark {
 }
 
 /*
- * Pastilles de tags (#53, accueil et page « Mes tags ») : boutons en verre imité (`.glass-btn.on-glass`, posés
- * sur une carte en verre) dont la lueur et le liseré prennent la couleur du tag (`--chip`, posée en ligne).
- * Tag sans carte : ni lueur ni liseré coloré, libellé gris (--tag-empty-fg), aucun retour au survol / à l'appui.
+ * Tags (#53) : chaque tag se reconnaît à sa couleur (jetons --tag-<color>-bg|fg, posés en ligne en --chip-bg /
+ * --chip-fg). Verre translucide teinté de la couleur, liseré de la couleur, reflet ; texte dans la couleur du tag.
+ * Posés sur une carte en verre : jamais de backdrop-filter propre.
+ * `.tag-chip` : bouton (accueil, page Mes tags), sur `.glass-btn.on-glass`. En sombre, reflet, survol et reflet
+ * Konsta plus discrets (un voile blanc éclaircit le fond sous le texte clair). Pire cas : voir la PR #53.
+ * `.tag-pill` : étiquette non interactive de la carte de révision, même matériau.
  */
-.tag-chip {
-  --glass-btn-glow: radial-gradient(90% 120% at 50% 135%, color-mix(in srgb, var(--chip) var(--chip-glow), transparent), transparent 75%);
-  --glass-btn-rim: color-mix(in srgb, var(--chip) 45%, transparent);
+.tag-chip,
+.tag-pill {
+  background-color: color-mix(in srgb, var(--chip-bg) var(--chip-tint), transparent);
+  color: var(--chip-fg);
 }
-.tag-chip-empty {
+.tag-chip {
   --glass-btn-glow: linear-gradient(transparent, transparent);
-  --glass-btn-rim: var(--glass-btn-edge);
+  --glass-btn-rim: color-mix(in srgb, var(--chip-fg) 40%, transparent);
+  --glass-btn-sheen: linear-gradient(180deg, var(--chip-sheen), transparent 60%);
+  --glass-btn-hover-sheen: var(--chip-hover-sheen);
+  --color-ios-hover-highlight: var(--chip-highlight);
+}
+.tag-pill {
+  background-image: linear-gradient(180deg, var(--chip-sheen), transparent 60%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-btn-edge),
+    inset 0 0 0 1px color-mix(in srgb, var(--chip-fg) 35%, transparent);
+}
+/*
+ * Tag sans carte : grisé et sans remplissage, contour en pointillés (jamais confondu avec un tag coloré),
+ * texte gris (--tag-empty-fg), ni survol ni appui. Le focus clavier (outline plein) reste prioritaire.
+ */
+.tag-chip-empty {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  outline: 1px dashed color-mix(in srgb, var(--tag-empty-fg) 55%, transparent);
+  outline-offset: -1px;
   color: var(--tag-empty-fg);
 }
 

@@ -1,6 +1,6 @@
-import type { CSSProperties } from 'react'
 import { GlassButton } from '../../components/GlassButton'
 import { cards, type TagCount } from '../../lib/home'
+import { tagColorVars } from '../../lib/tagColor'
 
 interface Props {
   tag: TagCount
@@ -10,15 +10,16 @@ interface Props {
 }
 
 /**
- * Pastille d'un tag en verre Liquid Glass, comme les boutons de notation : verre neutre translucide, lueur et
- * liseré de la couleur du tag (`--chip`), reflet, libellé seul (pas d'icône), neutre noir / blanc. Posée sur une carte en verre → `on-glass` : aucun backdrop-filter (pas de flou imbriqué).
- * Cible ≥ 44 px ; tap → session du tag. Tag sans carte : grisé, sans lueur, non cliquable (`aria-disabled`,
- * reste lisible et atteignable au clavier).
+ * Pastille d'un tag, reconnaissable à sa couleur (#53) : verre translucide teinté de la couleur du tag, liseré
+ * et reflet Liquid Glass, texte dans la couleur du tag (foncée en clair, claire en sombre). Libellé seul, pas
+ * d'icône. Posée sur une carte en verre → `on-glass` : aucun backdrop-filter (pas de flou imbriqué).
+ * Cible ≥ 44 px ; tap → session du tag. Tag sans carte : verre neutre, texte gris, non cliquable
+ * (`aria-disabled`, reste lisible et atteignable au clavier).
  */
 export function TagChip({ tag: t, onStudy, variant }: Props) {
   const empty = t.count === 0
   const detail = variant === 'row' && !empty ? `${t.today} à revoir aujourd'hui` : null
-  const style = empty ? undefined : ({ '--chip': `var(--tag-${t.color}-fg)` } as CSSProperties)
+  const style = empty ? undefined : tagColorVars(t.color)
   return (
     <GlassButton
       tone="neutral"
@@ -31,7 +32,6 @@ export function TagChip({ tag: t, onStudy, variant }: Props) {
       <span className="min-w-0 flex-1 text-[14px] leading-tight font-medium">{t.label}</span>
       <span className="flex shrink-0 flex-col items-end">
         <span className="text-[14px] leading-tight font-semibold tabular-nums">{variant === 'row' ? cards(t.count) : t.count}</span>
-        {/* Neutre comme le libellé : sur le verre teinté, un gris secondaire passerait sous 4,5:1 en sombre. */}
         {detail && <span className="text-[12px] leading-tight tabular-nums">{detail}</span>}
       </span>
     </GlassButton>

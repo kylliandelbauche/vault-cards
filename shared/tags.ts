@@ -20,7 +20,7 @@ export const TAGS = [
   { slug: 'argent', label: 'Argent & business', color: 'vert' },
   { slug: 'mental', label: 'Mental & psycho', color: 'rose' },
   { slug: 'productivite', label: 'Productivité', color: 'jaune' },
-  { slug: 'culture', label: 'Culture', color: 'grisbleu' },
+  { slug: 'culture', label: 'Culture', color: 'turquoise' },
 ] as const satisfies readonly TagDef[]
 
 export type TagSlug = (typeof TAGS)[number]['slug']
