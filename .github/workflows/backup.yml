@@ -1,0 +1,69 @@
+name: Backup Supabase
+
+# Sauvegarde hebdomadaire de la base (schéma + données), chiffrée en AES256 avec GPG.
+# Seul le fichier .gpg est publié comme artefact (conservé 90 jours).
+# Restauration : voir docs/restore.md.
+on:
+  schedule:
+    - cron: '23 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: supabase/setup-cli@v3.0.1
+        with:
+          version: 2.120.0
+
+      - name: Dump, archive et chiffrement
+        env:
+          DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          PASS: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in DB_URL PASS; do
+            if [ -z "${!name:-}" ]; then
+              case "$name" in
+                DB_URL) secret=SUPABASE_DB_URL ;;
+                PASS) secret=BACKUP_PASSPHRASE ;;
+              esac
+              echo "::error::Secret manquant : $secret (à définir avec « gh secret set $secret »)."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+          umask 077
+          work="$(mktemp -d)"
+          # Les fichiers en clair ne survivent jamais au script, même en cas d'erreur.
+          trap 'rm -rf "$work" backup.tgz' EXIT
+
+          supabase db dump --db-url "$DB_URL" -f "$work/schema.sql"
+          supabase db dump --db-url "$DB_URL" --data-only --use-copy -f "$work/data.sql"
+          # Rôles : non sauvegardés. Sur Supabase les rôles sont gérés par la plateforme
+          # et les grants sont dans les migrations (supabase/migrations/).
+
+          tar czf backup.tgz -C "$work" schema.sql data.sql
+
+          # La phrase de passe passe par l'entrée standard (--passphrase-fd 0) :
+          # elle n'apparaît ni dans les arguments ni dans les logs.
+          printf '%s' "$PASS" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --symmetric --cipher-algo AES256 \
+            --output backup.tgz.gpg backup.tgz
+
+          rm -rf "$work" backup.tgz
+          test -s backup.tgz.gpg
+          ls -l backup.tgz.gpg
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: backup-${{ github.run_id }}
+          path: backup.tgz.gpg
+          retention-days: 90
+          if-no-files-found: error
