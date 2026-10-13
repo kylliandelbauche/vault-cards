@@ -7,7 +7,7 @@ import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
   computeScan, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
-  type ExistingCard, type NoteRow, type RetagEntry,
+  type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
 const ENV_FILE = path.join(import.meta.dirname, '..', '..', '.env.local')
@@ -104,17 +104,20 @@ async function apply(db: SupabaseClient, file: string) {
 /** Ne modifie QUE la colonne tags, par id, des cartes vivantes. Jamais le texte ni l'id (progression intacte). */
 async function retag(db: SupabaseClient, file: string) {
   const entries = validateRetagPayload(JSON.parse(await fs.readFile(file, 'utf8')))
-  const existing: RetagEntry[] = []
+  // Lecture sans filtre deleted_at : planRetag (testé) refuse lui-même les cartes supprimées.
+  const existing: RetagTarget[] = []
   const ids = entries.map(e => e.id)
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error } = await db.from('cards').select('id, tags').in('id', ids.slice(i, i + 100)).is('deleted_at', null)
+    const { data, error } = await db.from('cards').select('id, tags, deleted_at').in('id', ids.slice(i, i + 100))
     if (error) fail('lecture des cartes', error)
-    existing.push(...(data as RetagEntry[]))
+    existing.push(...(data as RetagTarget[]))
   }
   const { toUpdate, unchanged } = planRetag(existing, entries)
+  // Pas de transaction, mais idempotent : après une erreur, relancer le même fichier (les cartes déjà à jour sont « unchanged »).
   for (const e of toUpdate) {
-    const { error } = await db.from('cards').update({ tags: e.tags }).eq('id', e.id).is('deleted_at', null)
+    const { data, error } = await db.from('cards').update({ tags: e.tags }).eq('id', e.id).is('deleted_at', null).select('id')
     if (error) fail(`re-tag de la carte ${e.id}`, error)
+    if (data.length === 0) throw new Error(`re-tag de la carte ${e.id} : aucune ligne modifiée (supprimée entre-temps ?)`)
   }
   return { updated: toUpdate.length, unchanged }
 }

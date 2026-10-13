@@ -8,6 +8,7 @@ export interface IncomingCard { id?: string; front: string; back: string; tags: 
 export interface ApplyPayload { source_path: string; deck: string; content_hash: string; cards: IncomingCard[] }
 export interface ExistingCard { id: string; front: string; back: string; tags: string[] }
 export interface RetagEntry { id: string; tags: string[] }
+export interface RetagTarget extends RetagEntry { deleted_at: string | null }
 export interface NoteRow { source_path: string; content_hash: string }
 
 /** Hash stocké dans `notes` pour une note supprimée du vault (ses cartes sont supprimées). */
@@ -132,14 +133,18 @@ export function validateRetagPayload(p: unknown): RetagEntry[] {
   })
 }
 
-/** Compare aux cartes vivantes : id inconnu = erreur (rien n'est écrit), tags identiques = ignorés. */
-export function planRetag(existing: RetagEntry[], entries: RetagEntry[]): { toUpdate: RetagEntry[]; unchanged: number } {
+/**
+ * Compare aux cartes en base (vivantes ou supprimées) : id inconnu ou carte supprimée = erreur
+ * (rien n'est écrit), tags identiques = ignorés.
+ */
+export function planRetag(existing: RetagTarget[], entries: RetagEntry[]): { toUpdate: RetagEntry[]; unchanged: number } {
   const byId = new Map(existing.map(c => [c.id, c]))
   const toUpdate: RetagEntry[] = []
   let unchanged = 0
   for (const e of entries) {
     const current = byId.get(e.id)
     if (!current) throw new Error('id inconnu: ' + e.id)
+    if (current.deleted_at !== null) throw new Error('carte supprimée: ' + e.id)
     if (sameTags(current.tags, e.tags)) unchanged++
     else toUpdate.push(e)
   }

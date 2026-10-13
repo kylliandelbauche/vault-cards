@@ -141,13 +141,20 @@ describe('validateRetagPayload', () => {
 })
 
 describe('planRetag', () => {
-  const existing = [{ id: 'u1', tags: [] }, { id: 'u2', tags: ['dev'] }]
+  const existing = [
+    { id: 'u1', tags: [], deleted_at: null },
+    { id: 'u2', tags: ['dev'], deleted_at: null },
+    { id: 'u3', tags: ['ia'], deleted_at: '2026-10-12T00:00:00Z' },
+  ]
   it('ne met à jour que les cartes dont les tags changent', () => {
     expect(planRetag(existing, [{ id: 'u1', tags: ['ia'] }, { id: 'u2', tags: ['dev'] }]))
       .toEqual({ toUpdate: [{ id: 'u1', tags: ['ia'] }], unchanged: 1 })
   })
-  it('id inconnu ou supprimé : erreur avant toute écriture', () => {
-    expect(() => planRetag(existing, [{ id: 'u9', tags: ['ia'] }])).toThrow(/id inconnu/)
+  it('id inconnu : erreur avant toute écriture', () => {
+    expect(() => planRetag(existing, [{ id: 'u1', tags: ['ia'] }, { id: 'u9', tags: ['ia'] }])).toThrow(/id inconnu: u9/)
+  })
+  it('id d’une carte supprimée : erreur avant toute écriture', () => {
+    expect(() => planRetag(existing, [{ id: 'u1', tags: ['ia'] }, { id: 'u3', tags: ['dev'] }])).toThrow(/carte supprimée: u3/)
   })
 })
 
