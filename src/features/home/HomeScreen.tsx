@@ -56,11 +56,12 @@ export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onSignOut }:
 function Today({ stats, now }: { stats: HomeStats; now: Date }) {
   if (stats.total === 0) {
     return (
-      <p className="glass-card rounded-[28px] p-6 text-center text-[17px] text-label-2">
+      // Seul titre de la page dans cet état : <h1> pour les lecteurs d'écran.
+      <h1 className="glass-card rounded-[28px] p-6 text-center text-[17px] font-normal text-label-2">
         {navigator.onLine === false
           ? 'Connecte-toi à internet pour la première synchronisation.'
           : "Aucune carte pour l'instant. Lance /flashcards sur le Mac."}
-      </p>
+      </h1>
     )
   }
   const counters = [

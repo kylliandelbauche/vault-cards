@@ -104,7 +104,7 @@ describe('HomeScreen', () => {
   it('aucune carte : message habituel, pas de bouton d’étude, tous les tags grisés', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     renderHome(ready({ today: 0, due: 0, fresh: 0, mastered: 0, total: 0, tags: TAGS.map(t => ({ ...t, count: 0 })) }))
-    expect(screen.getByText("Aucune carte pour l'instant. Lance /flashcards sur le Mac.")).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("Aucune carte pour l'instant. Lance /flashcards sur le Mac.")
     expect(screen.queryByRole('button', { name: /Commencer|Réviser/ })).toBeNull()
     const tags = within(screen.getByRole('region', { name: 'Mes tags' })).getAllByRole('button')
     expect(tags.every(b => b.getAttribute('aria-disabled') === 'true')).toBe(true)
