@@ -229,6 +229,15 @@ describe('assertContentHashFresh', () => {
   it('hash identique à celui du contenu actuel : ok (même fonction que scan)', () => {
     expect(() => assertContentHashFresh(hashContent('note'), 'note')).not.toThrow()
   })
+  it('le content_hash émis par scan (listSyntheses) passe la vérification sur le même fichier, et échoue si le fichier change', async () => {
+    const notes = await listSyntheses(root, 'veille')
+    expect(notes.length).toBeGreaterThan(0)
+    for (const n of notes) {
+      const current = await fs.readFile(n.abs_path, 'utf8')
+      expect(() => assertContentHashFresh(n.content_hash, current)).not.toThrow()
+      expect(() => assertContentHashFresh(n.content_hash, current + '\n')).toThrow(/modifiée depuis le scan/)
+    }
+  })
   it('contenu modifié depuis le scan : erreur claire', () => {
     expect(() => assertContentHashFresh(hashContent('avant'), 'après')).toThrow(/note modifiée depuis le scan, relancer scan/)
   })
