@@ -66,9 +66,11 @@
    * `-solid` = même teinte opaque pour les replis (≥ 9:1).
    */
   --glass-btn-new: rgb(6 63 138 / 0.84);    --glass-btn-new-solid: #063f8a;
-  --glass-btn-again: rgb(130 34 15 / 0.84); --glass-btn-again-solid: #82220f;
-  --glass-btn-hard: rgb(101 62 2 / 0.84);   --glass-btn-hard-solid: #653e02;
-  --glass-btn-good: rgb(15 78 42 / 0.84);   --glass-btn-good-solid: #0f4e2a;
+  /* Notes : verre teinté clair et translucide + libellé foncé de la même couleur (≥ 5,6:1 sur le fond réel, pressé compris). */
+  --glass-btn-again: rgb(255 59 48 / 0.16); --glass-btn-again-solid: #fde3e0; --glass-btn-again-fg: #7a1307;
+  --glass-btn-hard: rgb(255 159 10 / 0.2);  --glass-btn-hard-solid: #fcebcf;  --glass-btn-hard-fg: #5c3700;
+  --glass-btn-good: rgb(52 199 89 / 0.18);  --glass-btn-good-solid: #dcf3e2;  --glass-btn-good-fg: #0c4a22;
+  --glass-btn-tint-press: rgb(0 0 0 / 0.06);
   --glass-btn-edge: rgb(255 255 255 / 0.35);
   --glass-btn-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 60%);
   --glass-btn-shadow: 0 2px 8px rgb(15 30 60 / 0.16);
@@ -116,9 +118,11 @@
 
   /* Sombre : teinte plus vive à 70 % (le fond noir l'assombrit) ; pire cas = texte blanc de la carte flouté dessous. */
   --glass-btn-new: rgb(20 88 176 / 0.7);    --glass-btn-new-solid: #1458b0;
-  --glass-btn-again: rgb(163 50 34 / 0.7);  --glass-btn-again-solid: #a33222;
-  --glass-btn-hard: rgb(127 82 5 / 0.7);    --glass-btn-hard-solid: #7f5205;
-  --glass-btn-good: rgb(22 98 56 / 0.7);    --glass-btn-good-solid: #166238;
+  /* Notes, sombre : verre teinté translucide + libellé clair de la même couleur (≥ 4,6:1 sur le fond réel, pressé compris). */
+  --glass-btn-again: rgb(255 69 58 / 0.2);  --glass-btn-again-solid: #4a1d19; --glass-btn-again-fg: #ffb3ab;
+  --glass-btn-hard: rgb(255 179 64 / 0.2);  --glass-btn-hard-solid: #45330f; --glass-btn-hard-fg: #ffd38a;
+  --glass-btn-good: rgb(48 209 88 / 0.2);   --glass-btn-good-solid: #173f24; --glass-btn-good-fg: #9ff0b4;
+  --glass-btn-tint-press: rgb(0 0 0 / 0.18);
   --glass-btn-edge: rgb(255 255 255 / 0.22);
   --glass-btn-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
   --glass-btn-highlight: rgb(255 255 255 / 0.1);
@@ -215,7 +219,7 @@ html.dark {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
-  color: #fff;
+  color: var(--glass-btn-fg, #fff);
   background-color: var(--glass-btn-bg);
   background-image: var(--glass-btn-sheen);
   -webkit-backdrop-filter: blur(12px) saturate(150%);
@@ -244,9 +248,9 @@ html.dark {
 }
 
 .glass-btn-new { --glass-btn-bg: var(--glass-btn-new); --glass-btn-solid: var(--glass-btn-new-solid); }
-.glass-btn-again { --glass-btn-bg: var(--glass-btn-again); --glass-btn-solid: var(--glass-btn-again-solid); }
-.glass-btn-hard { --glass-btn-bg: var(--glass-btn-hard); --glass-btn-solid: var(--glass-btn-hard-solid); }
-.glass-btn-good { --glass-btn-bg: var(--glass-btn-good); --glass-btn-solid: var(--glass-btn-good-solid); }
+.glass-btn-again { --glass-btn-bg: var(--glass-btn-again); --glass-btn-solid: var(--glass-btn-again-solid); --glass-btn-fg: var(--glass-btn-again-fg); --glass-btn-press: var(--glass-btn-tint-press); }
+.glass-btn-hard { --glass-btn-bg: var(--glass-btn-hard); --glass-btn-solid: var(--glass-btn-hard-solid); --glass-btn-fg: var(--glass-btn-hard-fg); --glass-btn-press: var(--glass-btn-tint-press); }
+.glass-btn-good { --glass-btn-bg: var(--glass-btn-good); --glass-btn-solid: var(--glass-btn-good-solid); --glass-btn-fg: var(--glass-btn-good-fg); --glass-btn-press: var(--glass-btn-tint-press); }
 
 /* Neutre (action secondaire) : verre des barres, libellé noir / blanc. */
 .glass-btn-neutral {
