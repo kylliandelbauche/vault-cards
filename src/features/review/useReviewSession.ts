@@ -173,7 +173,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         saveFailed: false,
         processed: live.current.processed + 1,
         stats: { ...live.current.stats, [STAT_KEY[r]]: live.current.stats[STAT_KEY[r]] + 1 },
-        nextDueAt: finished ? nextDue(cards.current, reviews.current, t) : null,
+        nextDueAt: finished ? nextDue(cards.current, reviews.current, t, live.current.scope?.tag) : null,
         shownAt: t.getTime(),
       })
     } finally {

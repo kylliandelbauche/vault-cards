@@ -220,6 +220,22 @@ describe('useReviewSession', () => {
       expect(result.current.counts.learn + result.current.counts.due + result.current.counts.new).toBe(2)
     })
 
+    it('fin d’une session par tag : la prochaine échéance ne regarde que les cartes du tag', async () => {
+      // Carte « dev » vue juste avant (« Je ne sais pas ») : due dans ~1 min, plus tôt que la carte IA notée.
+      const t0 = fixedNow().getTime()
+      const devReview: Review = { id: 'r-dev', card_id: 'dev1', rating: 1, reviewed_at: new Date(t0).toISOString(), synced: 1 }
+      const base = memoryStore([tagged[0], tagged[1]])
+      const store: ReviewStore = { ...base, loadReviews: async () => [devReview, ...(await base.loadReviews())] }
+      const scope: SessionScope = { mode: 'due', tag: 'ia' }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(result.current.current!.card.id).toBe('ia1')
+      act(() => result.current.reveal()); await act(async () => result.current.rate(3))
+      expect(result.current.status).toBe('done')
+      // « Très bien » sur une nouvelle carte : prochaine étape d'apprentissage à 10 min, pas la carte dev à ~1 min.
+      expect(result.current.nextDueAt!.getTime() - t0).toBeGreaterThan(5 * 60_000)
+    })
+
     it('changer de scope relance une session (loading, puis la nouvelle file) ; null → idle', async () => {
       const store = memoryStore(tagged)
       const { result, rerender } = renderHook(({ scope }: Props) => useReviewSession(store, fixedNow, scope), { initialProps: { scope: { mode: 'due', tag: 'dev' } as SessionScope | null } })
