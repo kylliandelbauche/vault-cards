@@ -15,14 +15,11 @@ const RAW: [path: string, front: string, back: string][] = [
   ['Méthodo/Scrum.md', "Durée habituelle d'un sprint Scrum ?", 'Fixe, 1 mois maximum ; souvent 2 semaines.'],
 ]
 
-/** Tag de démo d'après le dossier (les vraies cartes sont taguées par l'outil). */
-const SAMPLE_TAGS: Record<string, string[]> = { 'Sécurité': ['securite'], 'Méthodo': ['productivite'] }
-
 export const SAMPLE_CARDS: Card[] = RAW.map(([source_path, front, back], i) => ({
   id: `sample-${i}`,
   deck: source_path.split('/')[0],
   source_path,
-  tags: SAMPLE_TAGS[source_path.split('/')[0]] ?? ['dev'],
+  tags: [],
   front,
   back,
   updated_at: '2026-10-12T00:00:00Z',
