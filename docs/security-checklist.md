@@ -26,7 +26,7 @@
 | 15 (ajouté) | Inscriptions fermées, vérifié à distance | OK |
 | 16 (ajouté) | Protection « leaked password » | N/A en plan Free, risque accepté |
 | — | Uploads, webhooks, CORS | N/A |
-| + | En-têtes de sécurité HTTP (hors checklist) | **À corriger** (issue `security` à créer) |
+| + | En-têtes de sécurité HTTP (hors checklist) | **OK** (corrigé par #51 via `vercel.json`, 2026-10-13 ; à revérifier sur la production après le merge) |
 | + | Site URL Supabase, longueur mini du mot de passe (hors checklist) | **À vérifier par Kyllian** |
 
 ## Preuves
@@ -177,11 +177,15 @@ Aucun fournisseur OAuth activé (seul `email`). Aucune requête d'inscription n'
 
 Aucun bucket Storage (0 bucket, 0 objet), aucune Edge Function (`GET /functions` renvoie `[]`), aucun webhook, `pg_graphql` désactivé. CORS : réglage par défaut de l'API Supabase, protégé par la clé et la RLS ; pas d'API maison.
 
-## En-têtes de sécurité HTTP : à corriger
+## En-têtes de sécurité HTTP : OK (#51)
 
-Réponse de production : seul `strict-transport-security` est présent. Il n'y a ni `Content-Security-Policy`, ni `X-Content-Type-Options`, ni `Referrer-Policy`, ni protection contre l'inclusion en iframe (`frame-ancestors` ou `X-Frame-Options`), ni `Permissions-Policy`. Il n'y a pas de `vercel.json` dans le dépôt.
+Constat de l'audit : en production, seul `strict-transport-security` était présent, sans `vercel.json`.
 
-Pourquoi c'est utile ici : la session Supabase est dans `localStorage`, donc une faille XSS permettrait de la lire. Une CSP stricte réduit ce risque (le code n'a aucun sink XSS aujourd'hui, c'est une défense en profondeur). Gravité faible à moyenne. Correctif à faire dans une issue `security` séparée : ajouter un `vercel.json` avec ces en-têtes (CSP avec `connect-src 'self' https://kowhaowawiqqnunxecyt.supabase.co`, `script-src 'self'`, etc.), à tester avec le service worker et le thème.
+Correctif (issue #51, 2026-10-13) : `vercel.json` ajoute à toutes les routes une `Content-Security-Policy` stricte, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` et une `Permissions-Policy` minimale (caméra, micro, géolocalisation, paiement et autres capteurs désactivés ; à rouvrir `camera` pour `self` quand l'étape photo #55 arrivera). La CSP : `default-src 'self'`, `script-src 'self'` (aucun script inline), `style-src 'self'` + `style-src-attr 'unsafe-inline'` (attributs `style` uniquement), `img-src 'self' data:`, `connect-src 'self' https://kowhaowawiqqnunxecyt.supabase.co` (pas de `wss://` : Realtime n'est pas utilisé), `frame-ancestors 'none'`, `base-uri 'self'`, `form-action 'self'`, `object-src 'none'`, `upgrade-insecure-requests`.
+
+Vérification : `dist/` servi en local avec ces en-têtes, ouvert dans Chrome headless : page de connexion rendue, aucune violation CSP en console, service worker activé et précache de 12 entrées, page contrôlée au second chargement ; un `fetch` vers un domaine tiers est bloqué, un `fetch` vers Supabase passe. Les écrans connectés (étiquettes colorées, etc.) n'ont pas pu être exercés sans identifiants : à regarder sur la preview.
+
+Pourquoi c'est utile ici : la session Supabase est dans `localStorage`, donc une faille XSS permettrait de la lire. La CSP réduit ce risque (le code n'a aucun sink XSS aujourd'hui, c'est une défense en profondeur).
 
 ## Actions pour Kyllian
 
@@ -197,7 +201,7 @@ Rien de ce qui suit n'a été modifié pendant l'audit. Les chemins du Dashboard
 
 - **Isolation par la seule fermeture des inscriptions.** Les policies RLS sont `using (true)` pour `authenticated` : le modèle est un seul utilisateur, sans `user_id` sur les lignes. Si les inscriptions étaient rouvertes, tout compte créé lirait toutes les cartes et pourrait ajouter des reviews. `disable_signup = true` est donc critique. Attention à la procédure de restauration (`docs/restore.md`, étape 4), qui demande de rouvrir temporairement les inscriptions : les refermer immédiatement et revérifier avec `GET /auth/v1/settings`.
 - **Leaked password protection indisponible en Free** : compensée par un mot de passe long, unique et géré par le gestionnaire de mots de passe.
-- **Jeton de session dans `localStorage`** (comportement par défaut de `supabase-js`) : exposé en cas de XSS ; réduit par l'absence de sink XSS et à réduire encore par la CSP (voir plus haut).
+- **Jeton de session dans `localStorage`** (comportement par défaut de `supabase-js`) : exposé en cas de XSS ; réduit par l'absence de sink XSS et par la CSP (voir « En-têtes de sécurité HTTP »).
 - **Pas de CAPTCHA ni de MFA** : un seul compte, rate limiting Supabase par IP, mot de passe long.
 - **Pas de protection de la branche `main`** : fonction payante pour un dépôt privé en Free. La règle « jamais de commit direct sur `main` » repose sur la discipline et sur la CI.
 - **Accès réseau à la base ouvert** (`0.0.0.0/0`, restrictions réseau non utilisées) : accès protégé par mot de passe et TLS (`ssl = on`). Les restrictions d'IP ne conviennent pas à GitHub Actions (IP variables).
