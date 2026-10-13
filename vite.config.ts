@@ -12,7 +12,7 @@ export default defineConfig({
       // autoUpdate : le nouveau service worker s'active tout de suite (skipWaiting + clientsClaim)
       // et les anciens précaches sont purgés ; l'app ne reste jamais bloquée sur un vieux index.html.
       registerType: 'autoUpdate',
-      // Icônes générées depuis public/logo.svg : `npm run generate-pwa-assets` (voir pwa-assets.config.ts).
+      // Icônes générées depuis design/brand/bleu/ (voir design/brand/README.md).
       // Pas d'includeAssets ni d'icônes du manifest ajoutées à part : globPatterns couvre déjà tout
       // public/ (sinon entrées en double dans le précache).
       includeManifestIcons: false,
