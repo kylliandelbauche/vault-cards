@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { renderHook, act, waitFor } from '@testing-library/react'
-import { useReviewSession, memoryStore, SCREEN_CHANGE_GUARD_MS } from './useReviewSession'
+import { useReviewSession, memoryStore, SCREEN_CHANGE_GUARD_MS, type ReviewStore, type SessionScope } from './useReviewSession'
 import type { Card, Review } from '../../lib/types'
 
 const cards: Card[] = ['a', 'b'].map(id => ({ id, deck: 'x', tags: [], source_path: `x/${id}.md`, front: id, back: id,
@@ -140,6 +140,15 @@ describe('useReviewSession', () => {
       return { store, result: hook.result }
     }
 
+    it('ouverture de session : une révélation juste après le chargement est ignorée (2e tap d’un double tap)', async () => {
+      const { result } = await setup()
+      t += SCREEN_CHANGE_GUARD_MS - 1
+      act(() => result.current.reveal())
+      expect(result.current.revealed).toBe(false)
+      t += 1
+      act(() => result.current.reveal())
+      expect(result.current.revealed).toBe(true)
+    })
     it('une note juste après la révélation est ignorée (aucune review)', async () => {
       const { store, result } = await setup()
       t += 1000
@@ -171,6 +180,101 @@ describe('useReviewSession', () => {
       act(() => result.current.reveal())
       expect(result.current.revealed).toBe(true)
       expect(result.current.current!.card.id).toBe(next)
+    })
+  })
+
+  describe('portée de la session (#53)', () => {
+    const tagged: Card[] = [
+      { ...cards[0], id: 'ia1', tags: ['ia'] },
+      { ...cards[0], id: 'dev1', tags: ['dev'] },
+      { ...cards[0], id: 'both', tags: ['ia', 'dev'] },
+    ]
+    const ids = (r: { current: ReturnType<typeof useReviewSession> }) => r.current.counts.new
+    type Props = { scope: SessionScope | null }
+
+    it('scope null : idle, rien n’est lu', async () => {
+      let loads = 0
+      const store: ReviewStore = { ...memoryStore(cards), loadCards: async () => { loads++; return cards } }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow, null))
+      await act(async () => {})
+      expect(result.current.status).toBe('idle')
+      expect(result.current.current).toBeNull()
+      expect(loads).toBe(0)
+    })
+
+    it('session limitée à un tag : seulement ses cartes ; restart() et reviewAll() gardent le tag', async () => {
+      const store = memoryStore(tagged)
+      const scope: SessionScope = { mode: 'due', tag: 'ia' }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(ids(result)).toBe(2)
+      const seen: string[] = []
+      for (let i = 0; i < 2; i++) {
+        seen.push(result.current.current!.card.id)
+        act(() => result.current.reveal()); await act(async () => result.current.rate(3))
+      }
+      expect(seen.sort()).toEqual(['both', 'ia1'])
+      expect(result.current.status).toBe('done')
+      act(() => result.current.reviewAll())
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(result.current.counts.learn + result.current.counts.due + result.current.counts.new).toBe(2)
+    })
+
+    it('fin d’une session par tag : la prochaine échéance ne regarde que les cartes du tag', async () => {
+      // Carte « dev » vue juste avant (« Je ne sais pas ») : due dans ~1 min, plus tôt que la carte IA notée.
+      const t0 = fixedNow().getTime()
+      const devReview: Review = { id: 'r-dev', card_id: 'dev1', rating: 1, reviewed_at: new Date(t0).toISOString(), synced: 1 }
+      const base = memoryStore([tagged[0], tagged[1]])
+      const store: ReviewStore = { ...base, loadReviews: async () => [devReview, ...(await base.loadReviews())] }
+      const scope: SessionScope = { mode: 'due', tag: 'ia' }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(result.current.current!.card.id).toBe('ia1')
+      act(() => result.current.reveal()); await act(async () => result.current.rate(3))
+      expect(result.current.status).toBe('done')
+      // « Très bien » sur une nouvelle carte : prochaine étape d'apprentissage à 10 min, pas la carte dev à ~1 min.
+      expect(result.current.nextDueAt!.getTime() - t0).toBeGreaterThan(5 * 60_000)
+    })
+
+    it('changer de scope relance une session (loading, puis la nouvelle file) ; null → idle', async () => {
+      const store = memoryStore(tagged)
+      const { result, rerender } = renderHook(({ scope }: Props) => useReviewSession(store, fixedNow, scope), { initialProps: { scope: { mode: 'due', tag: 'dev' } as SessionScope | null } })
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      act(() => result.current.reveal())
+      rerender({ scope: null })
+      expect(result.current.status).toBe('idle')
+      rerender({ scope: { mode: 'due' } })
+      expect(result.current.status).toBe('loading')
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(result.current.revealed).toBe(false)
+      expect(ids(result)).toBe(3)
+    })
+
+    it('un nouvel objet scope identique relance la session (re-entrer dans « Commencer à étudier »)', async () => {
+      let loads = 0
+      const store: ReviewStore = { ...memoryStore(tagged), loadCards: async () => { loads++; return tagged } }
+      const { result, rerender } = renderHook(({ scope }: Props) => useReviewSession(store, fixedNow, scope), { initialProps: { scope: { mode: 'due' } as SessionScope | null } })
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      rerender({ scope: { mode: 'due' } })
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(loads).toBe(2)
+    })
+
+    it('un chargement lent d’une session quittée ne s’applique pas sur la suivante', async () => {
+      let release!: () => void
+      const gate = new Promise<void>(r => { release = r })
+      let calls = 0
+      const store: ReviewStore = {
+        ...memoryStore(tagged),
+        // 1er chargement (session A, toutes les cartes) lent ; 2e (session B) immédiat.
+        loadCards: async () => { if (calls++ === 0) await gate; return tagged },
+      }
+      const { result, rerender } = renderHook(({ scope }: Props) => useReviewSession(store, fixedNow, scope), { initialProps: { scope: { mode: 'due' } as SessionScope | null } })
+      rerender({ scope: { mode: 'due', tag: 'ia' } })
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      expect(ids(result)).toBe(2)
+      await act(async () => { release(); await gate })
+      expect(ids(result)).toBe(2)
     })
   })
 })

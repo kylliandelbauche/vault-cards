@@ -6,7 +6,8 @@ interface Props {
   nextDueAt: Date | null
   now: Date
   onRestart(): void
-  onSignOut?(): void
+  /** Retour à l'accueil. */
+  onHome?(): void
 }
 
 /**
@@ -14,7 +15,7 @@ interface Props {
  * (jamais dans la carte : pas de flou imbriqué). Chiffres en noir / blanc, la couleur va dans le symbole
  * (sur le verre de la carte, une couleur de note en texte passerait sous 4,5:1 en sombre).
  */
-export function DoneScreen({ stats, nextDueAt, now, onRestart, onSignOut }: Props) {
+export function DoneScreen({ stats, nextDueAt, now, onRestart, onHome }: Props) {
   return (
     <div className="my-auto flex flex-col items-center gap-4">
       <section className="glass-card flex w-full flex-col items-center gap-6 rounded-[28px] px-5 py-8 text-center text-black dark:text-white">
@@ -29,9 +30,9 @@ export function DoneScreen({ stats, nextDueAt, now, onRestart, onSignOut }: Prop
         </p>
       </section>
       <GlassButton tone="new" className={`${GLASS_PRIMARY} max-w-xs`} onClick={onRestart}>Réviser à nouveau</GlassButton>
-      {onSignOut && (
-        <GlassButton tone="neutral" className="min-h-11 rounded-full px-5 text-[15px] font-medium" onClick={onSignOut}>
-          Se déconnecter
+      {onHome && (
+        <GlassButton tone="neutral" className="min-h-11 rounded-full px-5 text-[15px] font-medium" onClick={onHome}>
+          Retour à l'accueil
         </GlassButton>
       )}
     </div>

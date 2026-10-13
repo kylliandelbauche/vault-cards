@@ -114,13 +114,13 @@ describe('useAutoSync : état du dernier sync', () => {
   it('syncing pendant le sync, puis ok', async () => {
     const d = deferred<Result>()
     const { result } = renderHook(() => useAutoSync(sessionIn('reviewing'), vi.fn().mockReturnValue(d.promise)))
-    await waitFor(() => expect(result.current).toEqual({ syncing: true, lastSync: null }))
+    await waitFor(() => expect(result.current).toMatchObject({ syncing: true, lastSync: null }))
     await act(async () => { d.resolve(NOTHING) })
-    expect(result.current).toEqual({ syncing: false, lastSync: 'ok' })
+    expect(result.current).toMatchObject({ syncing: false, lastSync: 'ok' })
   })
   it('échec : failed', async () => {
     const { result } = renderHook(() => useAutoSync(sessionIn('reviewing'), vi.fn().mockRejectedValue(new Error('hors ligne'))))
-    await waitFor(() => expect(result.current).toEqual({ syncing: false, lastSync: 'failed' }))
+    await waitFor(() => expect(result.current).toMatchObject({ syncing: false, lastSync: 'failed' }))
   })
 })
 
@@ -214,5 +214,25 @@ describe('usePendingCount', () => {
     await waitFor(() => expect(result.current).toBe(1))
     await act(async () => { await db.reviews.update('r1', { synced: 1 }) })
     await waitFor(() => expect(result.current).toBe(0))
+  })
+})
+
+describe('useAutoSync : écran d’accueil (#53)', () => {
+  it('session idle : un sync qui ramène des données ne relance aucune session', async () => {
+    const restart = vi.fn()
+    const run = vi.fn().mockResolvedValue(CARDS)
+    renderHook(() => useAutoSync(sessionIn('idle', ZERO, restart), run))
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(restart).not.toHaveBeenCalled()
+  })
+
+  it('syncNow() lance un sync tout de suite', async () => {
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const { result } = renderHook(() => useAutoSync(sessionIn('idle'), run))
+    await flush()
+    act(() => result.current.syncNow())
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2)
   })
 })

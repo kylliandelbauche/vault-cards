@@ -1,11 +1,11 @@
 import { Page, Preloader, Progressbar } from 'konsta/react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
+import { BarTitle, EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
 import { RatingBar } from './RatingBar'
 import { useReviewKeys } from './useReviewKeys'
-import type { SyncIndicator } from './useAutoSync'
 import type { ReviewSession } from './useReviewSession'
 
 interface Props {
@@ -13,11 +13,15 @@ interface Props {
   now: () => Date
   /** État de la synchro, affiché sous le titre. */
   sync?: SyncIndicator
-  onSignOut?(): void
+  /** Titre de la barre : nom du tag pour une session limitée à un tag. */
+  title?: string
+  /** Retour à l'écran précédent (chevron de la barre). */
+  onBack?(): void
+  /** Nom accessible du chevron : l'écran de destination. */
+  backLabel?: string
+  /** « Retour à l'accueil » de l'écran de fin (par défaut : onBack). */
+  onHome?(): void
 }
-
-/** Marges latérales : 12 px, ou la zone sûre en paysage (encoche, Dynamic Island). */
-const EDGES = 'ps-[max(12px,var(--k-safe-area-left))] pe-[max(12px,var(--k-safe-area-right))]'
 
 function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   const pills = [
@@ -39,45 +43,7 @@ function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
   )
 }
 
-const SYNC_BADGE: Record<SyncIndicator, { label: string; dot: string }> = {
-  synced: { label: 'Synchronisé', dot: 'bg-good' },
-  unsynced: { label: 'Non synchronisé', dot: 'bg-muted' },
-  syncing: { label: 'Synchronisation…', dot: 'bg-muted motion-safe:animate-pulse' },
-}
-
-/**
- * Point de couleur + libellé (jamais la couleur seule). Sur le verre, le texte reste neutre et opaque
- * (pas de couleur sémantique ni d'opacité) : ≥ 4,5:1 en clair comme en sombre, quel que soit le contenu dessous.
- */
-function SyncBadge({ sync }: { sync: SyncIndicator }) {
-  const { label, dot } = SYNC_BADGE[sync]
-  return (
-    <span role="status" className="flex items-center gap-1.5 text-[13px] leading-4 text-label-2">
-      <span aria-hidden className={`size-2 shrink-0 rounded-full ${dot}`} />
-      {label}
-    </span>
-  )
-}
-
-/** Icône seule, cible 44 px ; marges négatives pour ne pas agrandir la barre (la page doit tenir sans scroll). */
-function SignOutButton({ onClick }: { onClick(): void }) {
-  return (
-    <button
-      type="button"
-      aria-label="Déconnexion"
-      onClick={onClick}
-      className="-my-2 -me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-label-2 hover:bg-black/5 active:bg-black/10 dark:hover:bg-white/10 dark:active:bg-white/15"
-    >
-      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-        <path d="M16 17l5-5-5-5" />
-        <path d="M21 12H9" />
-      </svg>
-    </button>
-  )
-}
-
-export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
+export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack, backLabel, onHome = onBack }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
 
@@ -86,25 +52,20 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
   // longue défile sous les barres, qui restent en place.
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
-      <header className={`sticky top-0 z-20 shrink-0 pt-[max(12px,var(--k-safe-area-top))] pb-2 ${EDGES}`}>
-        <div className="glass mx-auto max-w-xl rounded-[26px] px-4 py-2.5">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[17px] leading-tight font-semibold text-black dark:text-white">Vault Cards</p>
-              {sync && <SyncBadge sync={sync} />}
-            </div>
-            {status === 'reviewing' && <Counters counts={session.counts} />}
-            {onSignOut && <SignOutButton onClick={onSignOut} />}
-          </div>
-          {status === 'reviewing' && (
-            <Progressbar
-              className="mt-2"
-              progress={session.progress}
-              colors={{ trackBgIos: 'bg-black/6 dark:bg-white/15', activeBgIos: 'bg-primary dark:bg-new' }}
-            />
-          )}
-        </div>
-      </header>
+      <TopBar
+        onBack={onBack}
+        backLabel={backLabel}
+        extra={status === 'reviewing' && (
+          <Progressbar
+            className="mt-2"
+            progress={session.progress}
+            colors={{ trackBgIos: 'bg-black/6 dark:bg-white/15', activeBgIos: 'bg-primary dark:bg-new' }}
+          />
+        )}
+      >
+        <BarTitle title={title} sync={sync} />
+        {status === 'reviewing' && <Counters counts={session.counts} />}
+      </TopBar>
 
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col py-2 ${EDGES}`}>
         {status === 'loading' && <div className="my-auto flex justify-center"><Preloader /></div>}
@@ -124,7 +85,7 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
           </p>
         )}
         {status === 'done' && (
-          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onSignOut={onSignOut} />
+          <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onHome={onHome} />
         )}
         {current && <CardView card={current.card} revealed={revealed} onReveal={session.reveal} />}
       </main>

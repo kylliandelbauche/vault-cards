@@ -57,7 +57,7 @@ describe('index.css : verre et repli (#19, #39)', () => {
 
   it('survol Liquid Glass : souris / trackpad seulement, éclaircissement en opacity sous le texte, soulèvement en scale', () => {
     const hover = block('@media (hover: hover) and (pointer: fine) {')
-    expect(hover).toMatch(/\.glass-btn:hover:not\(:disabled\)::before\s*\{[^}]*opacity:\s*1/)
+    expect(hover).toMatch(/\.glass-btn:hover:not\(:disabled\):not\(\[aria-disabled='true'\]\)::before\s*\{[^}]*opacity:\s*1/)
     const before = block('.glass-btn::before {')
     expect(before).toMatch(/opacity:\s*0/)
     expect(before).toMatch(/z-index:\s*-1/)
@@ -130,5 +130,46 @@ describe('index.css : garde-fous de performance (#19)', () => {
 
   it('progression sans transition de largeur sous le verre', () => {
     expect(block('.k-progressbar > * {')).toMatch(/transition:\s*none/)
+  })
+})
+
+describe('index.css : pastilles de tags de l’accueil (#53)', () => {
+  it('tag sans carte : jetons clair et sombre, pas de curseur main (aria-disabled), focus visible', () => {
+    for (const root of [':root {', '.dark {']) {
+      expect(block(root)).toMatch(/--tag-empty-fg:\s*#[0-9a-f]{6}/i)
+    }
+    expect(code).toMatch(/button:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
+    expect(code).toMatch(/\.glass-btn:focus-visible/)
+    expect(code).toMatch(/\.tag-head:focus-visible/)
+    // aria-disabled : ni survol ni appui sur les boutons en verre.
+    expect(code).toMatch(/\.glass-btn:active:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
+  })
+
+  it('bouton en verre posé sur une carte (on-glass) : aucun backdrop-filter', () => {
+    const rule = block('.glass-btn.on-glass {')
+    expect(rule).toMatch(/-webkit-backdrop-filter:\s*none/)
+    expect(rule).toMatch(/[^-]backdrop-filter:\s*none/)
+  })
+
+  it('tags : verre neutre comme les notes, liseré et lueur discrets de la couleur du tag, texte de la couleur, sans flou', () => {
+    const both = block('.tag-chip,\n.tag-pill {')
+    expect(both).toMatch(/--glass-btn-glow:\s*radial-gradient\([^;]*var\(--chip-fg\) var\(--chip-glow\)/)
+    expect(both).toMatch(/--glass-btn-rim:\s*color-mix\(in srgb, var\(--chip-fg\) var\(--chip-rim\), transparent\)/)
+    expect(both).toMatch(/color:\s*var\(--chip-fg\)/)
+    expect(both).not.toMatch(/background-color/) // pas de remplissage coloré : le verre neutre de .glass-btn
+    const pill = block('}\n.tag-pill {')
+    expect(pill).toMatch(/background-color:\s*var\(--chip-body\)/)
+    expect(block('}\n.tag-chip {')).toMatch(/background-color:\s*var\(--chip-body\)/)
+    expect(both + block('}\n.tag-chip {') + pill).not.toMatch(/backdrop-filter|blur\(/)
+    for (const root of [':root {', '.dark {']) {
+      // Plus discret que les boutons de notation (lueur 20-30 %, liseré 50-60 %).
+      expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(15)
+      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(35)
+      for (const v of ['--chip-body', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
+    }
+    const empty = block('.tag-chip-empty {')
+    expect(empty).toMatch(/color:\s*var\(--tag-empty-fg\)/)
+    expect(empty).toMatch(/background-color:\s*transparent/)
+    expect(empty).toMatch(/outline:\s*1px dashed/)
   })
 })

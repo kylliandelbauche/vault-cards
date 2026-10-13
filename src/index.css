@@ -93,15 +93,28 @@
   --hard-pill: #c07300;
   --good-pill: #1f8a3c;
 
-  /* Pastilles de tags (shared/tags.ts → clé `color`). Ratio texte / fond (WCAG, AA ≥ 4,5:1) en commentaire. */
-  --tag-violet-bg: #efe9fb;   --tag-violet-fg: #5b2ea6;   /* 7,43:1 */
-  --tag-bleu-bg: #e3eefb;     --tag-bleu-fg: #0b4f9e;     /* 6,81:1 */
-  --tag-rouge-bg: #fbeae6;    --tag-rouge-fg: #a3301f;    /* 6,00:1 */
-  --tag-orange-bg: #fdeedd;   --tag-orange-fg: #94470a;   /* 5,83:1 */
-  --tag-vert-bg: #e4f3ea;     --tag-vert-fg: #1c6b3c;     /* 5,69:1 */
-  --tag-rose-bg: #fce8f1;     --tag-rose-fg: #a2245f;     /* 6,08:1 */
-  --tag-jaune-bg: #fbf3d0;    --tag-jaune-fg: #7a5a00;    /* 5,72:1 */
-  --tag-grisbleu-bg: #e8edf2; --tag-grisbleu-fg: #3f5368; /* 6,73:1 */
+  /*
+   * Couleur des tags (shared/tags.ts → clé `color`, #53) : teintes douces et désaturées, de simples repères.
+   * Texte du tag, liseré et lueur des pastilles en verre neutre. Ratio = pire cas sur le fond réel (fond décoratif
+   * saturé, carte en verre, verre de la pastille, lueur pleine sous le texte, survol / appui compris), AA ≥ 4,5:1.
+   */
+  --tag-violet-fg: #483465; /* 6,95:1 */
+  --tag-bleu-fg: #2b3e54; /* 7,08:1 */
+  --tag-rouge-fg: #5b332f; /* 6,93:1 */
+  --tag-orange-fg: #4f3929; /* 6,97:1 */
+  --tag-vert-fg: #24452f; /* 6,91:1 */
+  --tag-rose-fg: #5b2f45; /* 7,00:1 */
+  --tag-jaune-fg: #453c24; /* 7,06:1 */
+  --tag-turquoise-fg: #234340; /* 6,98:1 */
+  /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
+  --tag-empty-fg: #58585d;
+  /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
+  --chip-glow: 12%;
+  --chip-rim: 30%;
+  --chip-body: var(--glass-btn-bg);
+  --chip-sheen: rgb(255 255 255 / 0.1);
+  --chip-hover-sheen: rgb(255 255 255 / 0.16);
+  --chip-highlight: rgb(255 255 255 / 0.12);
 }
 
 .dark {
@@ -148,15 +161,27 @@
   --hard-glass: #ffd685;
   --good-glass: #93f0ad;
 
-  /* Pastilles de tags, sombre : fond foncé teinté + texte clair. */
-  --tag-violet-bg: #2a2145;   --tag-violet-fg: #c7b2ff;   /* 8,02:1 */
-  --tag-bleu-bg: #132a45;     --tag-bleu-fg: #8cc4ff;     /* 7,93:1 */
-  --tag-rouge-bg: #3a1f1a;    --tag-rouge-fg: #ff9f8c;    /* 7,61:1 */
-  --tag-orange-bg: #3a2614;   --tag-orange-fg: #ffb672;   /* 8,31:1 */
-  --tag-vert-bg: #17311f;     --tag-vert-fg: #7fdca3;     /* 8,47:1 */
-  --tag-rose-bg: #3a1a2a;     --tag-rose-fg: #ff9cc8;     /* 7,97:1 */
-  --tag-jaune-bg: #332b10;    --tag-jaune-fg: #f0cf5a;    /* 9,22:1 */
-  --tag-grisbleu-bg: #222a33; --tag-grisbleu-fg: #b4c3d3; /* 8,08:1 */
+  /* Couleur des tags, sombre : teintes claires et douces. */
+  --tag-violet-fg: #ded5f8; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-bleu-fg: #c5dbf7; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-rouge-fg: #f7d0d1; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-orange-fg: #f7d3b7; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-vert-fg: #a8e8c0; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-rose-fg: #f5cee3; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-jaune-fg: #f1d876; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-turquoise-fg: #a2e5de; /* pastel, ≥ 6,5:1 au pire cas */
+  /* Tag vide sur la carte, pire cas : 5,87:1. */
+  --tag-empty-fg: #d1d1d6;
+  /*
+   * Sombre : verre neutre un peu plus foncé que celui des boutons et voiles blancs réduits, pour que le texte
+   * garde sa couleur (sinon il faudrait le pousser vers le blanc pour rester ≥ 4,5:1).
+   */
+  --chip-glow: 12%;
+  --chip-rim: 30%;
+  --chip-body: rgb(10 11 14 / 0.88); /* verre plus sombre : texte pastel coloré ET lisible */
+  --chip-sheen: rgb(255 255 255 / 0.04);
+  --chip-hover-sheen: rgb(255 255 255 / 0.04);
+  --chip-highlight: rgb(255 255 255 / 0.06);
 }
 
 /*
@@ -262,7 +287,17 @@ html.dark {
   }
 }
 
-.glass-btn:active:not(:disabled) {
+/*
+ * Bouton en verre posé sur une carte en verre (#53 : « Commencer à étudier », pastilles de tags) : verre imité,
+ * même teinte translucide, lueur, liseré et reflet, mais sans backdrop-filter (jamais de flou imbriqué ; derrière
+ * lui, la carte est déjà floutée). Ne compte pas comme surface floutée.
+ */
+.glass-btn.on-glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.glass-btn:active:not(:disabled):not([aria-disabled='true']) {
   box-shadow:
     inset 0 0 0 100vmax var(--glass-btn-press),
     inset 0 1px 0 var(--glass-btn-edge),
@@ -297,10 +332,10 @@ html.dark {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .glass-btn:hover:not(:disabled)::before {
+  .glass-btn:hover:not(:disabled):not([aria-disabled='true'])::before {
     opacity: 1;
   }
-  .glass-btn:hover:not(:disabled) {
+  .glass-btn:hover:not(:disabled):not([aria-disabled='true']) {
     box-shadow:
       inset 0 1px 0 var(--glass-btn-edge),
       inset 0 0 0 1px var(--glass-btn-rim, var(--glass-btn-edge)),
@@ -317,10 +352,10 @@ html.dark {
   .glass-btn::before {
     transition: opacity 180ms ease-out;
   }
-  .glass-btn:hover:not(:disabled) {
+  .glass-btn:hover:not(:disabled):not([aria-disabled='true']) {
     scale: 1.02;
   }
-  .glass-btn:hover:active:not(:disabled) {
+  .glass-btn:hover:active:not(:disabled):not([aria-disabled='true']) {
     scale: 1;
   }
 }
@@ -364,6 +399,46 @@ html.dark {
 }
 
 /*
+ * Tags (#53) : même matériau que les boutons de notation, en plus discret. Corps en verre neutre translucide,
+ * liseré et petite lueur (depuis le bas) de la couleur du tag (`--tag-<color>-fg`, posée en ligne en `--chip-fg`),
+ * reflet en haut ; texte dans la couleur du tag. Posés sur une carte en verre : jamais de backdrop-filter propre.
+ * `.tag-chip` : bouton (accueil, page Mes tags), sur `.glass-btn.on-glass`. En sombre, reflet, survol et reflet
+ * Konsta plus discrets (un voile blanc éclaircit le fond sous le texte clair).
+ * `.tag-pill` : étiquette non interactive de la carte de révision, même matériau.
+ */
+.tag-chip,
+.tag-pill {
+  --glass-btn-glow: radial-gradient(90% 120% at 50% 135%, color-mix(in srgb, var(--chip-fg) var(--chip-glow), transparent), transparent 75%);
+  --glass-btn-rim: color-mix(in srgb, var(--chip-fg) var(--chip-rim), transparent);
+  --glass-btn-sheen: linear-gradient(180deg, var(--chip-sheen), transparent 60%);
+  color: var(--chip-fg);
+}
+.tag-chip {
+  background-color: var(--chip-body);
+  --glass-btn-hover-sheen: var(--chip-hover-sheen);
+  --color-ios-hover-highlight: var(--chip-highlight);
+}
+.tag-pill {
+  background-color: var(--chip-body);
+  background-image: var(--glass-btn-glow), var(--glass-btn-sheen);
+  box-shadow:
+    inset 0 1px 0 var(--glass-btn-edge),
+    inset 0 0 0 1px var(--glass-btn-rim);
+}
+/*
+ * Tag sans carte : grisé et sans remplissage, contour en pointillés (jamais confondu avec un tag coloré),
+ * texte gris (--tag-empty-fg), ni survol ni appui. Le focus clavier (outline plein) reste prioritaire.
+ */
+.tag-chip-empty {
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+  outline: 1px dashed color-mix(in srgb, var(--tag-empty-fg) 55%, transparent);
+  outline-offset: -1px;
+  color: var(--tag-empty-fg);
+}
+
+/*
  * Barre de progression sans transition de largeur (Konsta : 200 ms) : animer `width` sous le verre
  * repeindrait la barre floutée à chaque image après chaque note. Couvre aussi « Réduire les animations ».
  */
@@ -377,6 +452,7 @@ html.dark {
  */
 .k-button:focus-visible,
 .glass-btn:focus-visible,
+.tag-head:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--new);
@@ -384,7 +460,7 @@ a:focus-visible,
 }
 
 /* Tailwind 4 ne met plus `cursor: pointer` sur les boutons : on le rétablit (survol à la souris). */
-button:not(:disabled),
+button:not(:disabled):not([aria-disabled='true']),
 [role='button']:not([aria-disabled='true']) {
   cursor: pointer;
 }

@@ -1,6 +1,7 @@
 import type { Card as CardData } from '../../lib/types'
 import { humanizeFileName } from '../../../shared/source-title'
 import { getTag, type TagDef } from '../../../shared/tags'
+import { tagColorVars } from '../../lib/tagColor'
 
 interface Props {
   card: CardData
@@ -33,7 +34,7 @@ export function CardView({ card, revealed, onReveal }: Props) {
   )
 }
 
-/** Pastilles emoji + label. Tag inconnu (liste locale plus ancienne que la base) : ignoré. Doublon : affiché une fois. */
+/** Pastilles de texte (libellé seul, pas d'icône). Tag inconnu (liste locale plus ancienne que la base) : ignoré. Doublon : affiché une fois. */
 function TagPills({ slugs }: { slugs: readonly string[] | null | undefined }) {
   const tags = [...new Set(slugs ?? [])].map(getTag).filter((t): t is TagDef => t !== undefined)
   if (tags.length === 0) return null
@@ -43,10 +44,10 @@ function TagPills({ slugs }: { slugs: readonly string[] | null | undefined }) {
       {tags.map(t => (
         <li
           key={t.slug}
-          className="rounded-full px-2 py-0.5 text-xs leading-5 font-medium"
-          style={{ backgroundColor: `var(--tag-${t.color}-bg)`, color: `var(--tag-${t.color}-fg)` }}
+          className="tag-pill rounded-full px-2 py-0.5 text-xs leading-5 font-medium"
+          style={tagColorVars(t.color)}
         >
-          <span aria-hidden="true">{t.emoji}</span> {t.label}
+          {t.label}
         </li>
       ))}
     </ul>
