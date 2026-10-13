@@ -140,6 +140,15 @@ describe('useReviewSession', () => {
       return { store, result: hook.result }
     }
 
+    it('ouverture de session : une révélation juste après le chargement est ignorée (2e tap d’un double tap)', async () => {
+      const { result } = await setup()
+      t += SCREEN_CHANGE_GUARD_MS - 1
+      act(() => result.current.reveal())
+      expect(result.current.revealed).toBe(false)
+      t += 1
+      act(() => result.current.reveal())
+      expect(result.current.revealed).toBe(true)
+    })
     it('une note juste après la révélation est ignorée (aucune review)', async () => {
       const { store, result } = await setup()
       t += 1000

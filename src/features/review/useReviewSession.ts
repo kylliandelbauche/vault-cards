@@ -116,6 +116,9 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         status: queue.length ? 'reviewing' : hasLiveCards ? 'done' : 'empty',
         queue,
         nextDueAt: queue.length ? null : nextDue(cs, rs, t, target.tag),
+        // Ouverture de la session = changement d'écran : le 2e tap d'un double tap sur « Commencer à étudier »
+        // (ou un tag) tomberait sur la carte et révélerait la réponse.
+        shownAt: t.getTime(),
       })
     }, () => {
       if (gen === generation.current) commit(failed(target))
