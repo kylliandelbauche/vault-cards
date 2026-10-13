@@ -95,7 +95,7 @@ describe('index.css : replis du verre (#19)', () => {
   })
 
   it('variantes claire et sombre du fond et du verre', () => {
-    for (const token of ['--bg-base', '--glass-bg', '--glass-solid', '--card-bg', '--card-solid']) {
+    for (const token of ['--bg-base', '--glass-bg', '--glass-solid', '--glass-card-bg']) {
       expect(block(':root {')).toContain(`${token}:`)
       expect(block('.dark {')).toContain(`${token}:`)
     }
