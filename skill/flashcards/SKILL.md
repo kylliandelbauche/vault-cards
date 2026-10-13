@@ -47,4 +47,5 @@ Le tag dépend du contenu de la carte, pas du dossier de la note.
 Sans toucher au texte ni à l'id (la progression est conservée) :
 1. `all` → toutes les cartes vivantes `{id, source_path, front, back, tags}`.
 2. Choisir les tags d'après question + réponse, écrire `[{id, tags}, ...]` dans un fichier de `$TMPDIR/vault-cards/` (ids recopiés tels quels).
-3. `retag <fichier>` → `{updated, unchanged}`. Seule la colonne `tags` est modifiée ; un id inconnu ou un tag invalide fait tout refuser avant écriture.
+3. `retag <fichier>` → `{updated, unchanged}`. Seule la colonne `tags` est modifiée ; un id inconnu, une carte supprimée ou un tag invalide fait tout refuser avant écriture.
+   `retag` n'est **pas transactionnel** (une carte à la fois) mais **idempotent** : en cas d'erreur en cours de route, relancer la même commande avec le même fichier est sans danger (les cartes déjà à jour sont comptées `unchanged`).
