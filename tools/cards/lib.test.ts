@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertDeckMatchesPath, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -130,6 +130,15 @@ describe('validatePayload', () => {
   })
   it('clé inconnue au niveau payload : refusée, la clé est nommée', () => {
     expect(() => validatePayload({ ...base, Deck: 'x', cards: [] })).toThrow(/payload.*« Deck »/)
+  })
+})
+
+describe('assertContentHashFresh', () => {
+  it('hash identique à celui du contenu actuel : ok (même fonction que scan)', () => {
+    expect(() => assertContentHashFresh(hashContent('note'), 'note')).not.toThrow()
+  })
+  it('contenu modifié depuis le scan : erreur claire', () => {
+    expect(() => assertContentHashFresh(hashContent('avant'), 'après')).toThrow(/note modifiée depuis le scan, relancer scan/)
   })
 })
 

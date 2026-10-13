@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  assertDeckMatchesPath, computeScan, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, computeScan, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
@@ -69,6 +69,15 @@ async function apply(db: SupabaseClient, file: string) {
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash } = payload
   assertDeckMatchesPath(source_path, deck)
+  if (content_hash !== REMOVED_HASH) {
+    let current: string
+    try {
+      current = await fs.readFile(path.join(vaultRoot(), source_path), 'utf8')
+    } catch {
+      throw new Error(`note introuvable dans le vault : ${source_path} (relancer scan)`)
+    }
+    assertContentHashFresh(content_hash, current)
+  }
   const existing = await fetchExisting(db, source_path)
   const { toInsert, toUpdate, toDelete } = diffCards(existing, payload.cards)
 

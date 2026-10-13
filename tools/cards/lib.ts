@@ -129,6 +129,15 @@ export function validatePayload(p: unknown): ApplyPayload {
 }
 
 /**
+ * Le hash du payload doit être celui du fichier tel qu'il est maintenant (même fonction que `scan`) :
+ * sinon les cartes ont été écrites pour une autre version de la note, ou le payload est un vieux fichier rejoué.
+ * Non applicable à REMOVED_HASH (le fichier n'existe plus).
+ */
+export function assertContentHashFresh(declared: string, currentContent: string): void {
+  if (declared !== hashContent(currentContent)) throw new Error('note modifiée depuis le scan, relancer scan')
+}
+
+/**
  * `deck` doit être le dossier qui suit `veille/` dans `source_path` (comme dans `scan`) :
  * un deck erroné rangerait les cartes dans le mauvais paquet.
  */
