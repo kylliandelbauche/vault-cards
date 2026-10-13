@@ -17,7 +17,7 @@ Outil : `node tools/cards/cli.ts` depuis `~/Workspace/1-Projects/vault-cards` (l
 ## Procédure
 Une exécution complète : dossier temporaire → scan → notes `changed` → demandes de confirmation de suppression, dans la **même** exécution → nettoyage → résumé.
 
-1. `RUN_DIR=$(mktemp -d)` puis afficher et noter le chemin.
+1. `RUN_DIR=$(mktemp -d); echo "$RUN_DIR"` (en un seul appel), puis noter le chemin affiché.
 2. `scan` → `{changed, removed}`. `changed` : `{source_path, deck, content_hash, abs_path}` ; `removed` : `{source_path, live_cards}`. Si les deux sont vides : nettoyage puis « Rien de nouveau », fin.
 3. Pour chaque note `changed` :
    a. Lire le fichier (`abs_path`).
