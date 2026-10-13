@@ -89,13 +89,45 @@ describe('ReviewScreen', () => {
     expect(s.rate).toHaveBeenCalledWith(3)
   })
 
-  it('notation : appui sans opacité sur le texte, cibles ≥ 44 px', () => {
+  it('notation : 3 boutons en verre indépendants (lueur rouge, ambre, vert), cibles ≥ 44 px, sans opacité', () => {
     renderScreen(reviewing({ revealed: true }))
-    for (const b of within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')) {
+    const buttons = within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')
+    expect(buttons.map(b => b.className.match(/glass-btn-(\w+)/)?.[1])).toEqual(['again', 'hard', 'good'])
+    for (const b of buttons) {
+      expect(b.tagName).toBe('BUTTON')
+      expect(b.getAttribute('type')).toBe('button')
+      expect(b.className.split(' ')).toContain('glass-btn')
       expect(b.className).not.toMatch(/opacity/)
-      expect(b.className).toMatch(/active:bg-(again|hard|good)-fill-pressed/)
-      expect(b.className).toMatch(/min-h-14/)
+      expect(b.className).toContain('min-h-[76px]')
+      expect(b.className.split(' ')).toContain('rating-btn')
+      expect(b.closest('.glass, .glass-card')).toBeNull()
     }
+  })
+
+  it('notation : pastille d’icône opaque, libellé neutre, intervalle dans la couleur de la note', () => {
+    renderScreen(reviewing({ revealed: true }))
+    const buttons = within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')
+    for (const [b, tone] of buttons.map((b, i) => [b, ['again', 'hard', 'good'][i]] as const)) {
+      const [pill, label, interval] = [...b.children] as HTMLElement[]
+      expect(pill.getAttribute('aria-hidden')).toBe('true')
+      expect(pill.className).toContain(`bg-${tone}-pill`)
+      expect(pill.className).not.toMatch(/glass|backdrop/)
+      expect(label.className).toBe('')
+      expect(interval.className).toContain(`text-${tone}-glass`)
+      expect(interval.textContent).toMatch(/\d/)
+    }
+  })
+
+  it('« Afficher la réponse » : bouton en verre bleu indépendant, 56 px', () => {
+    renderScreen(reviewing())
+    const btn = screen.getByRole('button', { name: 'Afficher la réponse' })
+    expect(btn.getAttribute('type')).toBe('button')
+    expect(btn.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new', 'h-14']))
+    // Libellé seul, centré : plus de chevron ni de pastille.
+    expect(btn.querySelector('svg, span')).toBeNull()
+    expect(btn.textContent).toBe('Afficher la réponse')
+    expect(btn.closest('footer')?.className).toContain('action-dock')
+    expect(btn.closest('.glass, .glass-card')).toBeNull()
   })
 
   it('compteurs lisibles par VoiceOver : le libellé est dans le texte, pas dans un aria-label', () => {
@@ -117,7 +149,7 @@ describe('ReviewScreen', () => {
     expect(dot.className.split(' ')).not.toContain('animate-pulse')
   })
 
-  it('barres en verre superposées au contenu, marges de zone sûre gauche/droite', () => {
+  it('barres superposées au contenu, marges de zone sûre gauche/droite ; barre du haut en verre, bas transparent', () => {
     const { container } = renderScreen(reviewing())
     const header = container.querySelector('header')!
     const footer = container.querySelector('footer')!
@@ -125,14 +157,38 @@ describe('ReviewScreen', () => {
       expect(bar.className).toMatch(/\bsticky\b/)
       expect(bar.className).toMatch(/--k-safe-area-left/)
       expect(bar.className).toMatch(/--k-safe-area-right/)
-      expect(bar.querySelector('.glass')).toBeTruthy()
     }
+    expect(header.querySelector('.glass')).toBeTruthy()
+    // #39 : plus de barre en verre autour des boutons, chacun est son propre verre.
+    expect(footer.querySelector('.glass, .glass-card')).toBeNull()
+    expect(footer.querySelectorAll('.glass-btn')).toHaveLength(1)
     expect(container.querySelector('main')!.className).toMatch(/--k-safe-area-left/)
-    // Carte en verre (#40) : 3 surfaces floutées au total (2 barres + la carte), aucune imbriquée.
-    expect(container.querySelector('main .glass')).toBeNull()
+  })
+
+  const SURFACES = '.glass, .glass-card, .glass-btn'
+  const NESTED = ['.glass', '.glass-card', '.glass-btn'].flatMap(a => ['.glass', '.glass-card', '.glass-btn'].map(b => `${a} ${b}`)).join(', ')
+
+  it.each([
+    ['avant dévoilement', false, 3], // barre du haut + carte + « Afficher la réponse »
+    ['après dévoilement', true, 5], // barre du haut + carte + 3 notes
+  ])('surfaces floutées %s : %i, aucune imbriquée', (_, revealed, n) => {
+    const { container } = renderScreen(reviewing({ revealed }))
     expect(container.querySelectorAll('main .glass-card')).toHaveLength(1)
-    expect(container.querySelectorAll('.glass, .glass-card')).toHaveLength(3)
-    expect(container.querySelectorAll('.glass .glass, .glass .glass-card, .glass-card .glass, .glass-card .glass-card')).toHaveLength(0)
+    expect(container.querySelectorAll(SURFACES)).toHaveLength(n)
+    expect(container.querySelectorAll(NESTED)).toHaveLength(0)
+  })
+
+  it('fin de session : bilan sur une carte en verre, boutons en verre en dehors (4 surfaces, aucune imbriquée)', () => {
+    const { container } = render(
+      <KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} sync="synced" onSignOut={vi.fn()} /></KApp>,
+    )
+    const restart = screen.getByRole('button', { name: 'Réviser à nouveau' })
+    const signOut = screen.getByRole('button', { name: 'Se déconnecter' })
+    expect(restart.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new']))
+    expect(signOut.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-neutral']))
+    expect(container.querySelector('main .glass-card')?.textContent).toContain('Session terminée')
+    expect(container.querySelectorAll(SURFACES)).toHaveLength(4)
+    expect(container.querySelectorAll(NESTED)).toHaveLength(0)
   })
 
   it('bouton de déconnexion dans la barre du haut : étiqueté, cible 44 px, appelle onSignOut', async () => {

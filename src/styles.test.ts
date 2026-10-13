@@ -18,55 +18,83 @@ function block(prelude: string): string {
   throw new Error('bloc non fermé')
 }
 
-describe('index.css : replis du verre (#19)', () => {
+/** CSS sans commentaires (les commentaires citent ce qu'on s'interdit). */
+const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
+
+describe('index.css : verre et repli (#19, #39)', () => {
   it('le verre floute avec et sans préfixe WebKit', () => {
     const glass = block('.glass,\n.glass-card {')
     expect(glass).toMatch(/-webkit-backdrop-filter:\s*blur/)
     expect(glass).toMatch(/[^-]backdrop-filter:\s*blur/)
   })
 
-  it.each([
-    ['@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'],
-    ['@media (prefers-reduced-transparency: reduce)'],
-    ['@media (prefers-contrast: more)'],
-  ])('fond opaque sous %s', prelude => {
-    expect(block(prelude)).toMatch(/\.glass[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
+  it('seul repli conservé : verre opaque (barres, carte, boutons) sans backdrop-filter', () => {
+    const b = block('@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))')
+    expect(b).toMatch(/\.glass,\s*\.glass-card\s*\{[^}]*background-color:\s*var\(--glass-solid\)/)
+    expect(b).toMatch(/\.glass-btn\s*\{[^}]*background-color:\s*var\(--glass-solid\);[^}]*background-image:\s*none/)
   })
 
-  it('la carte en verre (#40) partage les replis opaques des barres, avec le même jeton', () => {
-    for (const prelude of [
-      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))',
-      '@media (prefers-reduced-transparency: reduce)',
-      '@media (prefers-contrast: more)',
-    ]) {
-      expect(block(prelude)).toMatch(/\.glass-card[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
-    }
-    expect(block('.glass-card {')).not.toMatch(/touch-action/)
-    for (const root of [':root {', '.dark {']) expect(block(root)).toContain('--glass-card-bg:')
+  it('full liquid glass (#39, demande de Kyllian) : replis Réduire la transparence / Augmenter le contraste reportés', () => {
+    expect(code).not.toMatch(/prefers-reduced-transparency/)
+    expect(code).not.toMatch(/prefers-contrast/)
   })
 
-  it('Réduire la transparence / Augmenter le contraste coupent aussi le flou et rendent la carte opaque', () => {
-    for (const prelude of ['@media (prefers-reduced-transparency: reduce)', '@media (prefers-contrast: more)']) {
-      const b = block(prelude)
-      expect(b).toMatch(/backdrop-filter:\s*none/)
-      expect(b).toMatch(/background-color:\s*var\(--card-solid\)/)
+  it('boutons en verre : verre neutre translucide + lueur et liseré colorés, en clair et en sombre', () => {
+    for (const root of [':root {', '.dark {']) {
+      expect(block(root)).toMatch(/--glass-btn-bg:\s*rgb\([^)]*\/ 0\.[3-6]\d*\)/)
+      for (const tone of ['new', 'again', 'hard', 'good']) {
+        expect(block(root)).toMatch(new RegExp(`--glow-${tone}:\\s*rgb\\([^)]*/ 0\\.\\d+\\)`))
+        expect(block(root)).toContain(`--rim-${tone}:`)
+      }
+      for (const tone of ['again', 'hard', 'good']) expect(block(root)).toContain(`--${tone}-glass:`)
     }
+    for (const tone of ['new', 'again', 'hard', 'good']) {
+      const rule = block(`.glass-btn-${tone} {`)
+      expect(rule).toContain(`var(--glow-${tone})`)
+      expect(rule).toContain(`var(--rim-${tone})`)
+    }
+  })
+
+  it('survol Liquid Glass : souris / trackpad seulement, éclaircissement en opacity sous le texte, soulèvement en scale', () => {
+    const hover = block('@media (hover: hover) and (pointer: fine) {')
+    expect(hover).toMatch(/\.glass-btn:hover:not\(:disabled\)::before\s*\{[^}]*opacity:\s*1/)
+    const before = block('.glass-btn::before {')
+    expect(before).toMatch(/opacity:\s*0/)
+    expect(before).toMatch(/z-index:\s*-1/)
+    expect(before).toMatch(/pointer-events:\s*none/)
+    const motion = block('@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)')
+    expect(motion).toMatch(/scale:\s*1\.02/)
+    expect(motion).toMatch(/transition:\s*opacity 1\d0ms ease-out/)
+    // Aucun :hover hors de ces blocs (pas d'effet de survol collant au doigt).
+    expect(code.replace(/@media \(hover: hover\)[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/g, '')).not.toMatch(/:hover/)
+  })
+
+  it('notes plus carrées si la hauteur le permet ; zone d’action remontée sur desktop seulement', () => {
+    expect(block('@media (min-height: 740px)')).toMatch(/\.rating-btn\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*1;[^}]*max-height:\s*116px/)
+    expect(block('@media (hover: hover) and (pointer: fine), (min-width: 768px) and (min-height: 700px)')).toMatch(/\.action-dock\s*\{[^}]*padding-bottom:\s*max\(32px/)
+  })
+
+  it('« Réduire les animations » : aucune transition sur les boutons en verre', () => {
+    expect(block('@media (prefers-reduced-motion: reduce)')).toMatch(/\.glass-btn\s*\{[^}]*transition-property:\s*none/)
+  })
+
+  it('reflet Konsta adouci sur le verre teinté (50 % par défaut rendrait le libellé illisible)', () => {
+    expect(block('.glass-btn {')).toMatch(/--color-ios-hover-highlight:\s*var\(--glass-btn-highlight\)/)
   })
 
   it('focus visible sur les boutons Konsta (qui posent focus:outline-none)', () => {
     expect(block('.k-button:focus-visible')).toMatch(/outline:\s*2px solid/)
+    expect(css).toMatch(/\.glass-btn:focus-visible,[\s\S]*?\{\s*outline:\s*2px solid/)
   })
 
   it('variantes claire et sombre du fond et du verre', () => {
-    for (const token of ['--bg-base', '--glass-bg', '--glass-solid', '--card-bg', '--card-solid']) {
+    for (const token of ['--bg-base', '--glass-bg', '--glass-solid', '--glass-card-bg']) {
       expect(block(':root {')).toContain(`${token}:`)
       expect(block('.dark {')).toContain(`${token}:`)
     }
   })
 })
 
-/** CSS sans commentaires (les commentaires citent ce qu'on s'interdit). */
-const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('index.css : garde-fous de performance (#19)', () => {
   it('flou modéré (≤ 20 px) et zone repeinte limitée sur le verre', () => {
@@ -74,6 +102,23 @@ describe('index.css : garde-fous de performance (#19)', () => {
     for (const m of glass.matchAll(/blur\((\d+)px\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(20)
     expect(glass).toMatch(/contain:\s*layout paint/)
     expect(code).not.toMatch(/will-change/)
+  })
+
+  it('boutons en verre : flou plus léger (≤ 16 px), zone repeinte limitée, défilement et tap natifs', () => {
+    const btn = block('.glass-btn {')
+    const blurs = [...btn.matchAll(/blur\((\d+)px\)/g)].map(m => Number(m[1]))
+    expect(blurs.length).toBe(2)
+    for (const b of blurs) expect(b).toBeLessThanOrEqual(16)
+    expect(btn).toMatch(/contain:\s*layout paint/)
+    // Remplace le touch-none de Konsta : la page défile même si le geste commence sur un bouton.
+    expect(btn).toMatch(/touch-action:\s*manipulation/)
+    // Seul `scale` (reflet Konsta) peut être animé : jamais l'ombre, le fond ou le flou.
+    expect(btn).toMatch(/transition-property:\s*scale;/)
+    expect(code).not.toMatch(/transition(-property)?:\s*(all|background|backdrop)/)
+    // L'ombre ne s'anime qu'au survol à la souris (desktop), jamais au doigt.
+    const transitions = [...code.matchAll(/transition:[^;]*box-shadow/g)]
+    expect(transitions).toHaveLength(1)
+    expect(block('@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)')).toMatch(/transition:[^;]*box-shadow/)
   })
 
   it('fond : un calque fixe sans background-attachment: fixed ni filtre', () => {

@@ -10,6 +10,7 @@ import { db } from './lib/db'
 import { supabase } from './lib/supabase'
 import { pendingCount, supabaseRemote, sync } from './lib/sync'
 import { TRANSPARENT_PAGE } from './lib/theme'
+import { useReducedMotion } from './lib/useReducedMotion'
 
 // Hors du rendu : le store, l'horloge et le sync doivent rester stables pour les hooks.
 // Le hook ne relit le store qu'au montage et à restart() : useAutoSync appelle restart()
@@ -32,8 +33,10 @@ function Review({ onSignOut }: { onSignOut(): void }) {
 
 export default function App() {
   const { status, signIn, signOut } = useAuth()
+  // Reflet des boutons en verre (lumière + grossissement à l'appui) coupé sous « Réduire les animations ».
+  const reducedMotion = useReducedMotion()
   return (
-    <KApp theme="ios" safeAreas>
+    <KApp theme="ios" safeAreas iosHoverHighlight={!reducedMotion}>
       {/* Fond décoratif statique, sous toutes les pages (Page a un fond transparent). */}
       <div aria-hidden="true" className="app-backdrop" />
       {status === 'loading' && <Page colors={TRANSPARENT_PAGE} />}
