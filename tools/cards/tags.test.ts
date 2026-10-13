@@ -24,12 +24,12 @@ describe('alignement des tags', () => {
     expect(sqlSlugs.sort()).toEqual(TAGS.map(t => t.slug).sort())
   })
 
-  it('chaque couleur a ses variables --tag-<color>-bg|fg en clair (:root) et en sombre (.dark)', () => {
+  it('chaque couleur a sa variable --tag-<color>-fg en clair (:root) et en sombre (.dark)', () => {
     const css = read('src/index.css')
     for (const selector of [':root', '.dark']) {
       const body = block(css, selector)
       for (const { color } of TAGS) {
-        for (const kind of ['bg', 'fg']) {
+        for (const kind of ['fg']) {
           expect(body, `${selector} --tag-${color}-${kind}`).toMatch(new RegExp(`--tag-${color}-${kind}:\\s*#[0-9a-f]{6}`, 'i'))
         }
       }

@@ -36,7 +36,7 @@ describe('CardView : tags', () => {
     expect(pills.map(p => p.textContent)).toEqual(['IA & agents', 'Sécurité'])
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     expect(pills[0].className).toContain('tag-pill')
-    expect(pills[0].style.getPropertyValue('--chip-bg')).toBe('var(--tag-violet-bg)')
+    expect(pills[0].style.getPropertyValue('--chip-fg')).toBe('var(--tag-violet-fg)')
     expect(pills[1].style.getPropertyValue('--chip-fg')).toBe('var(--tag-rouge-fg)')
     expect(screen.queryByText(/mon-deck/)).toBeNull()
   })

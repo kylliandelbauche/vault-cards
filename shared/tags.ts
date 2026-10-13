@@ -1,14 +1,14 @@
 /**
  * Tags thématiques : source unique, importée par l'app (src/) et par l'outil (tools/cards).
  * Ajouter un tag = l'ajouter ici + nouvelle migration qui élargit la contrainte `cards_tags_check`
- * + (si nouvelle couleur) variables CSS `--tag-<color>-bg|fg` en clair ET en `.dark` dans src/index.css :
+ * + (si nouvelle couleur) variable CSS `--tag-<color>-fg` en clair ET en `.dark` dans src/index.css :
  * elles sont indexées par la clé `color`, pas par le slug. Le test tools/cards/tags.test.ts vérifie l'alignement.
  * Pas d'icône (#53) : un tag est reconnu à son libellé et à sa couleur (un futur tag créé dans l'app n'aura pas d'icône).
  */
 export interface TagDef {
   slug: string
   label: string
-  /** Clé de couleur : suffixe des variables CSS `--tag-<color>-bg` / `--tag-<color>-fg`. */
+  /** Clé de couleur : suffixe de la variable CSS `--tag-<color>-fg` (texte, liseré et lueur du tag). */
   color: string
 }
 

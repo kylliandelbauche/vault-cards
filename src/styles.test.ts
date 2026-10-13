@@ -151,17 +151,25 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(rule).toMatch(/[^-]backdrop-filter:\s*none/)
   })
 
-  it('tags par couleur : verre teinté de la couleur, texte de la couleur, liseré de la couleur, sans flou ; tag vide gris', () => {
+  it('tags : verre neutre comme les notes, liseré et lueur discrets de la couleur du tag, texte de la couleur, sans flou', () => {
     const both = block('.tag-chip,\n.tag-pill {')
-    expect(both).toMatch(/background-color:\s*color-mix\(in srgb, var\(--chip-bg\) var\(--chip-tint\), transparent\)/)
+    expect(both).toMatch(/--glass-btn-glow:\s*radial-gradient\([^;]*var\(--chip-fg\) var\(--chip-glow\)/)
+    expect(both).toMatch(/--glass-btn-rim:\s*color-mix\(in srgb, var\(--chip-fg\) var\(--chip-rim\), transparent\)/)
     expect(both).toMatch(/color:\s*var\(--chip-fg\)/)
-    expect(block('.tag-chip {')).toMatch(/--glass-btn-rim:[^;]*var\(--chip-fg\)/)
-    expect(block('.tag-pill {')).toMatch(/var\(--chip-fg\)/)
-    expect(both + block('.tag-chip {') + block('.tag-pill {')).not.toMatch(/backdrop-filter|blur\(/)
+    expect(both).not.toMatch(/background-color/) // pas de remplissage coloré : le verre neutre de .glass-btn
+    const pill = block('}\n.tag-pill {')
+    expect(pill).toMatch(/background-color:\s*var\(--chip-body\)/)
+    expect(block('}\n.tag-chip {')).toMatch(/background-color:\s*var\(--chip-body\)/)
+    expect(both + block('}\n.tag-chip {') + pill).not.toMatch(/backdrop-filter|blur\(/)
+    for (const root of [':root {', '.dark {']) {
+      // Plus discret que les boutons de notation (lueur 20-30 %, liseré 50-60 %).
+      expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(15)
+      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(35)
+      for (const v of ['--chip-body', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
+    }
     const empty = block('.tag-chip-empty {')
     expect(empty).toMatch(/color:\s*var\(--tag-empty-fg\)/)
     expect(empty).toMatch(/background-color:\s*transparent/)
     expect(empty).toMatch(/outline:\s*1px dashed/)
-    for (const root of [':root {', '.dark {']) for (const v of ['--chip-tint', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
   })
 })
