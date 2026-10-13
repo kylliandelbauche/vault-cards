@@ -109,9 +109,10 @@
   /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
   /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
-  --chip-glow: 12%;
-  --chip-rim: 30%;
+  --chip-glow: 16%;
+  --chip-rim: 45%;
   --chip-body: var(--glass-btn-bg);
+  --chip-text: #111114; /* texte neutre, comme les boutons de notation */
   --chip-sheen: rgb(255 255 255 / 0.1);
   --chip-hover-sheen: rgb(255 255 255 / 0.16);
   --chip-highlight: rgb(255 255 255 / 0.12);
@@ -176,9 +177,10 @@
    * Sombre : verre neutre un peu plus foncé que celui des boutons et voiles blancs réduits, pour que le texte
    * garde sa couleur (sinon il faudrait le pousser vers le blanc pour rester ≥ 4,5:1).
    */
-  --chip-glow: 12%;
-  --chip-rim: 30%;
-  --chip-body: rgb(10 11 14 / 0.88); /* verre plus sombre : texte pastel coloré ET lisible */
+  --chip-glow: 16%;
+  --chip-rim: 45%;
+  --chip-body: var(--glass-btn-bg); /* même verre que les boutons de notation : ne vole pas la vedette au bouton principal */
+  --chip-text: #ffffff;
   --chip-sheen: rgb(255 255 255 / 0.04);
   --chip-hover-sheen: rgb(255 255 255 / 0.04);
   --chip-highlight: rgb(255 255 255 / 0.06);
@@ -401,7 +403,7 @@ html.dark {
 /*
  * Tags (#53) : même matériau que les boutons de notation, en plus discret. Corps en verre neutre translucide,
  * liseré et petite lueur (depuis le bas) de la couleur du tag (`--tag-<color>-fg`, posée en ligne en `--chip-fg`),
- * reflet en haut ; texte dans la couleur du tag. Posés sur une carte en verre : jamais de backdrop-filter propre.
+ * reflet en haut ; texte neutre (noir/blanc) comme les boutons de notation : la couleur ne sert qu'au liseré et à la lueur. Posés sur une carte en verre : jamais de backdrop-filter propre.
  * `.tag-chip` : bouton (accueil, page Mes tags), sur `.glass-btn.on-glass`. En sombre, reflet, survol et reflet
  * Konsta plus discrets (un voile blanc éclaircit le fond sous le texte clair).
  * `.tag-pill` : étiquette non interactive de la carte de révision, même matériau.
@@ -411,7 +413,7 @@ html.dark {
   --glass-btn-glow: radial-gradient(90% 120% at 50% 135%, color-mix(in srgb, var(--chip-fg) var(--chip-glow), transparent), transparent 75%);
   --glass-btn-rim: color-mix(in srgb, var(--chip-fg) var(--chip-rim), transparent);
   --glass-btn-sheen: linear-gradient(180deg, var(--chip-sheen), transparent 60%);
-  color: var(--chip-fg);
+  color: var(--chip-text);
 }
 .tag-chip {
   background-color: var(--chip-body);

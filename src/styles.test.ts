@@ -151,11 +151,11 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(rule).toMatch(/[^-]backdrop-filter:\s*none/)
   })
 
-  it('tags : verre neutre comme les notes, liseré et lueur discrets de la couleur du tag, texte de la couleur, sans flou', () => {
+  it('tags : verre neutre comme les notes, liseré et lueur discrets de la couleur du tag, texte neutre, sans flou', () => {
     const both = block('.tag-chip,\n.tag-pill {')
     expect(both).toMatch(/--glass-btn-glow:\s*radial-gradient\([^;]*var\(--chip-fg\) var\(--chip-glow\)/)
     expect(both).toMatch(/--glass-btn-rim:\s*color-mix\(in srgb, var\(--chip-fg\) var\(--chip-rim\), transparent\)/)
-    expect(both).toMatch(/color:\s*var\(--chip-fg\)/)
+    expect(both).toMatch(/color:\s*var\(--chip-text\)/) // texte neutre, comme les boutons de notation (#61)
     expect(both).not.toMatch(/background-color/) // pas de remplissage coloré : le verre neutre de .glass-btn
     const pill = block('}\n.tag-pill {')
     expect(pill).toMatch(/background-color:\s*var\(--chip-body\)/)
@@ -163,9 +163,9 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(both + block('}\n.tag-chip {') + pill).not.toMatch(/backdrop-filter|blur\(/)
     for (const root of [':root {', '.dark {']) {
       // Plus discret que les boutons de notation (lueur 20-30 %, liseré 50-60 %).
-      expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(15)
-      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(35)
-      for (const v of ['--chip-body', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
+      expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(20)
+      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(50)
+      for (const v of ['--chip-body', '--chip-text', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
     }
     const empty = block('.tag-chip-empty {')
     expect(empty).toMatch(/color:\s*var\(--tag-empty-fg\)/)
