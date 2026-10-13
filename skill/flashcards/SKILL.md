@@ -18,15 +18,15 @@ Outil : `node tools/cards/cli.ts` depuis `~/Workspace/1-Projects/vault-cards` (l
 Une exécution complète : dossier temporaire → scan → notes `changed` → demandes de confirmation de suppression, dans la **même** exécution → nettoyage → résumé.
 
 1. `RUN_DIR=$(mktemp -d); echo "$RUN_DIR"` (en un seul appel), puis noter le chemin affiché.
-2. `scan` → `{changed, removed}`. `changed` : `{source_path, deck, content_hash, abs_path}` ; `removed` : `{source_path, live_cards}`. Si les deux sont vides : nettoyage puis « Rien de nouveau », fin.
+2. `scan` → `{changed, removed}`. `changed` : `{source_path, deck, content_hash, title, abs_path}` ; `removed` : `{source_path, live_cards}`. Si les deux sont vides : nettoyage puis « Rien de nouveau », fin.
 3. Pour chaque note `changed` :
    a. Lire le fichier (`abs_path`).
    b. `existing <source_path>` → cartes actuelles.
-   c. Écrire les cartes (règles ci-dessous) dans un fichier de `$RUN_DIR` au format `{source_path, deck, content_hash, cards: [{id?, front, back, tags}]}`. Recopier **uniquement** `source_path`, `deck` et `content_hash` depuis `scan`, tels quels (ni `abs_path`, ni `live_cards`). Garder l'`id` d'une carte existante encore pertinente (même si reformulée) ; ne jamais inventer d'id. Chaque carte porte 1 ou 2 tags (section « Tags ») ; reprendre les tags renvoyés par `existing` sauf s'ils ne conviennent plus. **Une carte existante absente de la liste serait supprimée** (donc soumise à confirmation, voir « Garde-fous »). Pour ne rien supprimer, la garder dans la liste.
+   c. Écrire les cartes (règles ci-dessous) dans un fichier de `$RUN_DIR` au format `{source_path, deck, content_hash, source_title, cards: [{id?, front, back, tags}]}`. Recopier **uniquement** `source_path`, `deck` et `content_hash` depuis `scan`, tels quels, et `source_title` = le `title` de `scan` (H1 de la note, ou nom de fichier si elle n'en a pas ; ne pas le réécrire). Ni `abs_path`, ni `live_cards`, ni `title` sous ce nom. `source_title` est obligatoire pour une note modifiée et **interdit** dans le payload d'une note `removed`. Il s'écrit sur toutes les cartes de la note, y compris celles conservées. Garder l'`id` d'une carte existante encore pertinente (même si reformulée) ; ne jamais inventer d'id. Chaque carte porte 1 ou 2 tags (section « Tags ») ; reprendre les tags renvoyés par `existing` sauf s'ils ne conviennent plus. **Une carte existante absente de la liste serait supprimée** (donc soumise à confirmation, voir « Garde-fous »). Pour ne rien supprimer, la garder dans la liste.
    d. `apply <fichier>` → `{added, updated, deleted}`. En cas d'erreur, corriger le JSON et relancer : le hash n'est enregistré que si tout a réussi. L'outil refuse aussi une clé inconnue, un `source_path` ou un `deck` incohérent, et un `content_hash` périmé (« note modifiée depuis le scan, relancer scan » : relancer `scan`, ne pas forcer). S'il refuse pour cause de suppression : procédure des garde-fous. Si la suppression n'est pas confirmée, ne pas appliquer cette note (son hash n'est pas enregistré, elle sera retraitée au prochain `scan`).
 4. Notes `removed` (une fois les `changed` traités, dans la même exécution). Une note absente du vault peut aussi venir d'un vault vide, mal monté ou d'un mauvais `VAULT_ROOT` : ne rien supposer.
    a. Lister à Kyllian chaque note `removed` (chemin + `live_cards`) et lui demander s'il veut supprimer leurs cartes.
-   b. Pour chaque note dont il confirme la suppression : écrire dans `$RUN_DIR` `{source_path, deck, content_hash: "removed", cards: []}` (`source_path` recopié depuis `scan`, `deck` = dossier qui suit `3-Resources/veille/` dans `source_path`), lancer `apply <fichier>` **sans** flag, montrer la liste du refus à Kyllian, et seulement après sa confirmation explicite relancer avec `--confirm-delete=<n>`.
+   b. Pour chaque note dont il confirme la suppression : écrire dans `$RUN_DIR` `{source_path, deck, content_hash: "removed", cards: []}` (sans `source_title` ; `source_path` recopié depuis `scan`, `deck` = dossier qui suit `3-Resources/veille/` dans `source_path`), lancer `apply <fichier>` **sans** flag, montrer la liste du refus à Kyllian, et seulement après sa confirmation explicite relancer avec `--confirm-delete=<n>`.
    c. Notes non confirmées : rien à faire, les rappeler dans le résumé.
    d. Si Kyllian ne répond qu'après la fin de l'exécution : repartir à zéro (nouveau `mktemp -d`, nouveau `scan`, ne traiter que ce qui y figure encore comme `removed`, même procédure b), jamais avec un `scan` ou un JSON de l'exécution précédente.
 5. Nettoyage de `$RUN_DIR` (voir « Garde-fous »).
@@ -61,3 +61,13 @@ Sans toucher au texte ni à l'id (la progression est conservée). Même règle d
 2. Choisir les tags d'après question + réponse, écrire `[{id, tags}, ...]` dans un fichier du dossier de l'exécution (ids recopiés tels quels).
 3. `retag <fichier>` → `{updated, unchanged}`. Seule la colonne `tags` est modifiée ; un id inconnu, une carte supprimée ou un tag invalide fait tout refuser avant écriture.
    `retag` n'est **pas transactionnel** (une carte à la fois) mais **idempotent** : en cas d'erreur en cours de route, relancer la même commande avec le même fichier est sans danger (les cartes déjà à jour sont comptées `unchanged`).
+
+## Titre de la source
+Chaque carte porte `source_title` : le titre de sa note (premier `# ` H1, frontmatter ignoré ; à défaut le nom de fichier sans `-synthese.md`, tirets en espaces). L'app l'affiche à la place du chemin local. `scan` le calcule (`title`), `apply` l'écrit.
+
+### Remplir les cartes existantes
+Commande sans fichier ni argument : `titles`. Elle relit chaque note source sur le disque et ne modifie **que** la colonne `source_title` des cartes vivantes (jamais id, texte ni tags : la progression est conservée).
+1. `titles` → `{updated, unchanged}`.
+2. Idempotent et rejouable : une carte déjà au bon titre est comptée `unchanged`, et un titre de note modifié depuis est mis à jour.
+3. Si un fichier source est introuvable (note déplacée ou supprimée du vault, vault mal monté), l'outil refuse **avant toute écriture** et liste les notes concernées : les montrer à Kyllian, ne rien forcer.
+4. Vérifier ensuite avec `all` (champ `source_title` de chaque carte).

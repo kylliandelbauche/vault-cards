@@ -3,12 +3,31 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { CardView } from './CardView'
 import type { Card } from '../../lib/types'
 
-const card = (tags: string[]): Card => ({
-  id: 'a', deck: 'mon-deck', source_path: '3-Resources/veille/ia/a-synthese.md', tags,
+const card = (tags: string[], source_title?: string | null): Card => ({
+  id: 'a', deck: 'mon-deck', source_path: '3-Resources/veille/ia/prompt-caching-synthese.md', source_title, tags,
   front: 'Question ?', back: 'Réponse.', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null,
 })
 
 afterEach(cleanup)
+
+describe('CardView : titre de la source', () => {
+  it('affiche le titre sur une ligne tronquée, jamais le chemin local', () => {
+    render(<CardView card={card(['ia'], 'Prompt caching : mesurer le gain')} revealed={false} onReveal={() => {}} />)
+    const title = screen.getByText('Prompt caching : mesurer le gain')
+    expect(title.className).toContain('truncate')
+    expect(screen.queryByText(/3-Resources/)).toBeNull()
+    expect(document.body.textContent).not.toMatch(/veille|-synthese\.md/)
+  })
+
+  it('titre absent, null ou vide : repli sur le nom de fichier humanisé (sans chemin)', () => {
+    for (const t of [undefined, null, '', '   ']) {
+      render(<CardView card={card(['ia'], t)} revealed={false} onReveal={() => {}} />)
+      expect(screen.getByText('Prompt caching').className).toContain('truncate')
+      expect(document.body.textContent).not.toMatch(/3-Resources|-synthese\.md/)
+      cleanup()
+    }
+  })
+})
 
 describe('CardView : tags', () => {
   it('affiche une pastille emoji + label par tag, et jamais le deck', () => {
@@ -17,7 +36,6 @@ describe('CardView : tags', () => {
     expect(pills.map(p => p.textContent)).toEqual(['🤖 IA & agents', '🔐 Sécurité'])
     expect(pills[0].style.backgroundColor).toBe('var(--tag-violet-bg)')
     expect(screen.queryByText(/mon-deck/)).toBeNull()
-    expect(screen.getByText('3-Resources/veille/ia/a-synthese.md')).toBeTruthy()
   })
 
   it('ignore un tag inconnu sans planter', () => {
@@ -58,11 +76,11 @@ describe('CardView : zones de tap', () => {
     expect(onReveal).toHaveBeenCalledTimes(2)
   })
 
-  it('chemin source affiché en texte, sans lien ; un tap dessus révèle aussi', () => {
+  it('titre de la source affiché en texte, sans lien ; un tap dessus révèle aussi', () => {
     const onReveal = vi.fn()
-    render(<CardView card={card([])} revealed={false} onReveal={onReveal} />)
+    render(<CardView card={card([], 'Mon titre')} revealed={false} onReveal={onReveal} />)
     expect(screen.queryByRole('link')).toBeNull()
-    fireEvent.click(screen.getByText('3-Resources/veille/ia/a-synthese.md'))
+    fireEvent.click(screen.getByText('Mon titre'))
     expect(onReveal).toHaveBeenCalledTimes(1)
   })
 

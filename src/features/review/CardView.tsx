@@ -1,4 +1,5 @@
 import type { Card as CardData } from '../../lib/types'
+import { humanizeFileName } from '../../../shared/source-title'
 import { getTag, type TagDef } from '../../../shared/tags'
 
 interface Props {
@@ -9,15 +10,16 @@ interface Props {
 
 /**
  * Carte = contenu : surface givrée dense, sans verre. Toute la carte révèle la réponse.
- * Chemin source en simple texte tronqué (remplacé par le titre de la source dans #35).
+ * Titre de la source sur une ligne tronquée ; sans titre (cache d'avant #35), nom de fichier humanisé. Jamais le chemin local.
  */
 export function CardView({ card, revealed, onReveal }: Props) {
+  const title = card.source_title?.trim() || humanizeFileName(card.source_path)
   return (
     <article
       className={`card-surface my-auto shrink-0 rounded-[28px] p-5 text-black dark:text-white ${revealed ? '' : 'cursor-pointer'}`}
       onClick={onReveal}
     >
-      <p className="truncate font-mono text-xs text-muted">{card.source_path}</p>
+      <p className="truncate text-xs text-muted">{title}</p>
       <TagPills slugs={card.tags} />
       <p className="mt-3 whitespace-pre-wrap text-[22px] leading-snug font-semibold">{card.front}</p>
       {revealed && (

@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -21,6 +21,12 @@ describe('listSyntheses', () => {
     const a = notes.find(n => n.deck === 'ia')!
     const text = await fs.readFile(a.abs_path, 'utf8')
     expect(a.content_hash).toBe(hashContent(text))
+  })
+
+  it('title = H1 de la note (frontmatter ignoré), sinon nom de fichier humanisé', async () => {
+    const notes = await listSyntheses(root, 'veille')
+    expect(notes.find(n => n.deck === 'ia')!.title).toBe('Note A')
+    expect(notes.find(n => n.deck === 'software')!.title).toBe('Note B')
   })
 
   it('accepte un nom de fichier qui commence par un emoji + espace', async () => {
@@ -92,7 +98,8 @@ describe('diffCards', () => {
 })
 
 describe('validatePayload', () => {
-  const base = { source_path: 'a.md', deck: 'ia', content_hash: 'h' }
+  const base = { source_path: 'a.md', deck: 'ia', content_hash: 'h', source_title: 'Titre' }
+  const removedBase = { source_path: 'a.md', deck: 'ia', content_hash: 'removed' }
   it('refuse une carte vide ou trop longue', () => {
     expect(() => validatePayload({ ...base, cards: [{ front: '', back: 'R', tags: ['ia'] }] })).toThrow()
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'x'.repeat(1501), tags: ['ia'] }] })).toThrow()
@@ -124,8 +131,22 @@ describe('validatePayload', () => {
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] })).toThrow(/double/)
   })
   it('payload removed avec des cartes : refusé (il en insérerait tout en marquant la note supprimée)', () => {
-    expect(() => validatePayload({ ...base, content_hash: 'removed', cards: [{ front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/removed.*cards/)
-    expect(validatePayload({ ...base, content_hash: ' removed ', cards: [] }).content_hash).toBe('removed')
+    expect(() => validatePayload({ ...removedBase, cards: [{ front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/removed.*cards/)
+    expect(validatePayload({ ...removedBase, content_hash: ' removed ', cards: [] }).content_hash).toBe('removed')
+  })
+  it('source_title : obligatoire pour une note modifiée, trimé', () => {
+    expect(validatePayload({ ...base, source_title: '  Mon titre ', cards: [] }).source_title).toBe('Mon titre')
+    expect(() => validatePayload({ ...base, source_title: undefined, cards: [] })).toThrow(/source_title/)
+    expect(() => validatePayload({ ...base, source_title: '  ', cards: [] })).toThrow(/source_title/)
+    expect(() => validatePayload({ ...base, source_title: 42, cards: [] })).toThrow(/source_title/)
+  })
+  it('source_title : 200 caractères au plus (contrainte SQL)', () => {
+    expect(validatePayload({ ...base, source_title: 'x'.repeat(200), cards: [] }).source_title).toHaveLength(200)
+    expect(() => validatePayload({ ...base, source_title: 'x'.repeat(201), cards: [] })).toThrow(/source_title.*201/)
+  })
+  it('source_title : interdit pour une note removed, absent du résultat', () => {
+    expect(() => validatePayload({ ...removedBase, source_title: 'Titre', cards: [] })).toThrow(/source_title.*removed/)
+    expect(validatePayload({ ...removedBase, cards: [] })).toEqual({ ...removedBase, cards: [] })
   })
   it('clé inconnue sur une carte : refusée, la clé est nommée (ex. ID au lieu de id)', () => {
     expect(() => validatePayload({ ...base, cards: [{ ID: 'u1', front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/carte 1.*« ID »/)
@@ -329,7 +350,7 @@ describe('planRetag', () => {
 
 describe('computeScan', () => {
   const file = (source_path: string, content_hash: string) =>
-    ({ source_path, deck: 'ia', content_hash, abs_path: '/v/' + source_path })
+    ({ source_path, deck: 'ia', content_hash, title: 'T', abs_path: '/v/' + source_path })
   it('changed = notes nouvelles ou au hash différent ; removed = notes absentes du disque', () => {
     const files = [file('a.md', 'h1'), file('b.md', 'h2'), file('c.md', 'h3')]
     const rows = [
@@ -347,5 +368,46 @@ describe('computeScan', () => {
   it('une note marquée "removed" qui réapparaît est changed', () => {
     const s = computeScan([file('gone.md', 'h1')], [{ source_path: 'gone.md', content_hash: 'removed' }])
     expect(s.changed.map(f => f.source_path)).toEqual(['gone.md'])
+  })
+})
+
+describe('planTitles', () => {
+  const cards = [
+    { id: 'u1', source_path: 'n/a.md', source_title: null },
+    { id: 'u2', source_path: 'n/a.md', source_title: 'Ancien' },
+    { id: 'u3', source_path: 'n/b.md', source_title: 'B' },
+  ]
+  const titles = new Map([['n/a.md', 'Titre A'], ['n/b.md', 'B']])
+  it('met à jour les cartes sans titre ou au titre différent, ignore celles déjà à jour', () => {
+    expect(planTitles(cards, titles)).toEqual({ toUpdate: [{ source_title: 'Titre A', ids: ['u1', 'u2'] }], unchanged: 1 })
+  })
+  it('idempotent : un second passage ne trouve plus rien à faire', () => {
+    const done = cards.map(c => ({ ...c, source_title: titles.get(c.source_path)! }))
+    expect(planTitles(done, titles)).toEqual({ toUpdate: [], unchanged: 3 })
+  })
+  it('fichier source introuvable : refus qui liste les notes, rien à écrire', () => {
+    const partial = new Map([['n/a.md', 'Titre A']])
+    expect(() => planTitles(cards, partial)).toThrow(/introuvable.*n\/b\.md/s)
+  })
+  it('regroupe les ids par titre (un seul update par titre)', () => {
+    const two = [
+      { id: 'u1', source_path: 'n/a.md', source_title: null },
+      { id: 'u2', source_path: 'n/c.md', source_title: null },
+      { id: 'u3', source_path: 'n/d.md', source_title: null },
+    ]
+    const t = new Map([['n/a.md', 'X'], ['n/c.md', 'X'], ['n/d.md', 'Y']])
+    expect(planTitles(two, t).toUpdate).toEqual([{ source_title: 'X', ids: ['u1', 'u2'] }, { source_title: 'Y', ids: ['u3'] }])
+  })
+})
+
+describe('cardsNeedingTitle', () => {
+  it('cartes conservées au titre différent, hors cartes déjà écrites ou supprimées', () => {
+    const existing = [
+      { id: '1', source_title: null },
+      { id: '2', source_title: 'T' },
+      { id: '3', source_title: 'Ancien' },
+      { id: '4', source_title: null },
+    ]
+    expect(cardsNeedingTitle(existing, 'T', new Set(['3']), new Set(['4']))).toEqual(['1'])
   })
 })
