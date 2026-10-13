@@ -58,17 +58,12 @@ describe('CardView : zones de tap', () => {
     expect(onReveal).toHaveBeenCalledTimes(2)
   })
 
-  it('le lien Obsidian a sa propre zone (≥ 44 px), hors de la zone qui révèle', () => {
+  it('chemin source affiché en texte, sans lien ; un tap dessus révèle aussi', () => {
     const onReveal = vi.fn()
     render(<CardView card={card([])} revealed={false} onReveal={onReveal} />)
-    const link = screen.getByRole('link', { name: '3-Resources/veille/ia/a-synthese.md' })
-    expect(link.getAttribute('href')).toMatch(/^obsidian:\/\//)
-    expect(link.className).toMatch(/\bmin-h-11\b/)
-    expect(link.className).toMatch(/\btext-muted\b/)
-    link.addEventListener('click', e => e.preventDefault())
-    fireEvent.click(link)
-    fireEvent.click(link.parentElement!)
-    expect(onReveal).not.toHaveBeenCalled()
+    expect(screen.queryByRole('link')).toBeNull()
+    fireEvent.click(screen.getByText('3-Resources/veille/ia/a-synthese.md'))
+    expect(onReveal).toHaveBeenCalledTimes(1)
   })
 
   it('réponse séparée par un trait une fois révélée', () => {
