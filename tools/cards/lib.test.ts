@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -123,6 +123,10 @@ describe('validatePayload', () => {
   it('tags : doublon refusé', () => {
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] })).toThrow(/double/)
   })
+  it('payload removed avec des cartes : refusé (il en insérerait tout en marquant la note supprimée)', () => {
+    expect(() => validatePayload({ ...base, content_hash: 'removed', cards: [{ front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/removed.*cards/)
+    expect(validatePayload({ ...base, content_hash: ' removed ', cards: [] }).content_hash).toBe('removed')
+  })
   it('clé inconnue sur une carte : refusée, la clé est nommée (ex. ID au lieu de id)', () => {
     expect(() => validatePayload({ ...base, cards: [{ ID: 'u1', front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/carte 1.*« ID »/)
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia'] }, { front: 'Q', back: 'R', tags: ['ia'], extra: 1 }] }))
@@ -189,6 +193,15 @@ describe('parseArgs', () => {
   })
   it('trop d’arguments : refusé', () => {
     expect(() => parseArgs(['apply', 'a.json', 'b.json'])).toThrow(/usage/)
+  })
+})
+
+describe('assertRemovedNoteGone', () => {
+  it('note removed encore présente sur le disque : refus', () => {
+    expect(() => assertRemovedNoteGone('veille/ia/a-synthese.md', true)).toThrow(/existe encore.*veille\/ia\/a-synthese\.md/)
+  })
+  it('note absente : ok', () => {
+    expect(() => assertRemovedNoteGone('veille/ia/a-synthese.md', false)).not.toThrow()
   })
 })
 

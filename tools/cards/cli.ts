@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, computeScan, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, computeScan, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
@@ -78,7 +78,10 @@ async function apply(file: string, confirmDelete: number | null) {
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash } = payload
   assertDeckMatchesPath(source_path, deck)
-  if (content_hash !== REMOVED_HASH) {
+  if (content_hash === REMOVED_HASH) {
+    const stillExists = await fs.access(path.join(vaultRoot(), source_path)).then(() => true, () => false)
+    assertRemovedNoteGone(source_path, stillExists)
+  } else {
     let current: string
     try {
       current = await fs.readFile(path.join(vaultRoot(), source_path), 'utf8')

@@ -125,7 +125,15 @@ export function validatePayload(p: unknown): ApplyPayload {
     if (typeof raw.id !== 'string' || raw.id === '') throw new Error(`${where} : « id » doit être un texte (ou absent)`)
     return { id: raw.id, front, back, tags }
   })
+  if (content_hash === REMOVED_HASH && cards.length > 0) {
+    throw new Error('payload : un content_hash « removed » exige « cards » vide')
+  }
   return { source_path, deck, content_hash, cards }
+}
+
+/** Un payload `removed` n'est valable que si la note a réellement disparu du vault (vault mal monté mis à part, couvert par --confirm-delete). */
+export function assertRemovedNoteGone(source_path: string, stillExists: boolean): void {
+  if (stillExists) throw new Error(`note « removed » mais le fichier existe encore sur le disque : ${source_path} (relancer scan)`)
 }
 
 const LIST_MAX = 50
