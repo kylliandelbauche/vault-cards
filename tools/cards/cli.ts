@@ -146,8 +146,11 @@ async function apply(file: string, confirmDelete: number | null) {
     ? []
     : cardsNeedingTitle(existing, source_title, new Set(toUpdate.map(c => c.id)), new Set(toDelete))
   if (titleIds.length > 0) {
-    const { error } = await db.from('cards').update({ source_title }).in('id', titleIds).eq('source_path', source_path).is('deleted_at', null)
+    const { data, error } = await db.from('cards').update({ source_title }).in('id', titleIds).eq('source_path', source_path).is('deleted_at', null).select('id')
     if (error) fail('mise à jour du titre des cartes', error)
+    if (data.length !== titleIds.length) {
+      throw new Error(`mise à jour du titre des cartes de ${source_path} : ${data.length} ligne(s) modifiée(s) sur ${titleIds.length} (cartes supprimées entre-temps ? relancer apply)`)
+    }
   }
   if (toDelete.length > 0) {
     const { error } = await db
