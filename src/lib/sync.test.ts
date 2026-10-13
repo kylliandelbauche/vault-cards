@@ -137,6 +137,24 @@ describe('sync : pull des cartes', () => {
     expect(queue.map(i => i.card.id).sort()).toEqual(['a', 'c'])
   })
 
+  it('sans curseur (remis à zéro par un upgrade) : pull complet qui écrase le cache avec tags + source_title, reviews intactes', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a', tags: ['ia'], source_title: 'Mon titre' })
+    server.putCard({ id: 'b', tags: ['dev', 'securite'], source_title: 'Autre' })
+    // Cache d'avant la mise à niveau : cartes sans tags ni titre, pas de curseur cartes, une review à pousser.
+    await db.cards.bulkPut([
+      { id: 'a', deck: 'd', source_path: 'd/a.md', front: 'a', back: 'a', tags: [], source_title: null, updated_at: '2019-01-01T00:00:00.000Z', deleted_at: null },
+      { id: 'b', deck: 'd', source_path: 'd/b.md', front: 'b', back: 'b', tags: [], source_title: null, updated_at: '2019-01-01T00:00:00.000Z', deleted_at: null },
+    ])
+    await db.reviews.put(review('r1', 'a', 0))
+    await sync(db, server.remote)
+    expect(server.remote.pullCards).toHaveBeenCalledWith(null)
+    expect(await db.cards.get('a')).toMatchObject({ tags: ['ia'], source_title: 'Mon titre' })
+    expect(await db.cards.get('b')).toMatchObject({ tags: ['dev', 'securite'], source_title: 'Autre' })
+    expect(await db.reviews.get('r1')).toEqual(review('r1', 'a', 1)) // seule la poussée la marque synced, rien d'autre ne change
+    expect(server.reviews.has('r1')).toBe(true)
+  })
+
   it('curseur égal : une carte au même updated_at coupée du premier pull arrive au suivant', async () => {
     const server = fakeServer()
     const same = '2020-06-01T00:00:00.000Z'
