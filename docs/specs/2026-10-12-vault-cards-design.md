@@ -20,7 +20,7 @@ Réviser le contenu de mon second cerveau Obsidian (`~/Workspace`) dans les temp
 - **US-3** Je note ma réponse avec 3 boutons — *Je ne sais pas* / *Moyen* / *Très bien* — et chaque bouton affiche quand la carte reviendra.
 - **US-4** Les cartes reviennent selon l'algorithme FSRS ; une carte ratée revient dans la même session.
 - **US-5** Je vois les compteurs (nouvelles / à revoir / dues) et une barre de progression.
-- **US-6** Je vois le chemin de la note source ; sur Mac, il ouvre la note dans Obsidian.
+- **US-6** Je vois le titre de la note source (pas de chemin local, pas de lien Obsidian — cf. section 7).
 - **US-7** Fin de session : écran « Session terminée » avec le bilan et la prochaine échéance.
 - **US-8** Sans réseau, je révise quand même ; mes réponses partent à la prochaine connexion.
 - **US-9** Je révise sur iPhone puis sur Mac : la progression est la même partout.
@@ -97,7 +97,16 @@ iPhone / navigateur : PWA (Vercel) ⇄ IndexedDB (Dexie) ⇄ Supabase (sync quan
 - Suivi dans un GitHub Project (Kanban) + jalon « MVP ». Les bugs trouvés deviennent des issues `bug`.
 - Tests : Vitest sur la logique (file de session, FSRS, synchro, outil `cards`) ; test manuel sur iPhone à la fin de chaque tranche visible.
 
-## 11. Tranches prévues
+## 11. Évolutions depuis le MVP (octobre 2026)
+
+- **Tags thématiques** (#26) : 8 tags fixes, 1–2 par carte, texte seul (pas d'emoji) ; étude par tag depuis l'accueil (#53).
+- **Écran d'accueil** (#53) : cartes du jour + « Commencer à étudier », compteurs À revoir / Nouvelles / Maîtrisées (stabilité FSRS ≥ 21 j), 4 tags + page « Mes tags ».
+- **Liquid Glass** (#19, #39, #40, #61) : fond décoratif, barres/carte/boutons en verre, clair/sombre selon l'appareil ; pas de replis « Réduire la transparence / Augmenter le contraste » (choix MVP).
+- **Garde-fous `/flashcards`** (#24) : aucune suppression sans confirmation explicite, dossier temporaire unique par exécution.
+- **Ops et sécurité** : ping anti-pause + sauvegarde chiffrée hebdomadaire (#9, `docs/restore.md`), audit (#7, `docs/security-checklist.md`), en-têtes HTTP/CSP (#51).
+- **Feuille de route** : création de cartes à la main (#54), boîte de réception IA traitée par `/flashcards` (#55) ; plus tard : statistiques, recherche, gestionnaire de tags (#56), voix (#48).
+
+## 12. Tranches prévues
 
 1. Socle : Vite + React + TS, Tailwind + Konsta, ESLint, Vitest, CI, `CLAUDE.md`, déploiement Vercel.
 2. Écran de révision + FSRS avec cartes d'exemple, en local (US-2 à US-7).
