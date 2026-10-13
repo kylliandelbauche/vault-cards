@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -202,6 +202,16 @@ describe('assertRemovedNoteGone', () => {
   })
   it('note absente : ok', () => {
     expect(() => assertRemovedNoteGone('veille/ia/a-synthese.md', false)).not.toThrow()
+  })
+})
+
+describe('chunk', () => {
+  it('découpe en paquets de taille donnée, le dernier plus petit', () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
+    expect(chunk([], 3)).toEqual([])
+  })
+  it('taille invalide : erreur (évite une boucle infinie)', () => {
+    expect(() => chunk([1], 0)).toThrow()
   })
 })
 

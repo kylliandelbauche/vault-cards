@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, computeScan, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
@@ -66,6 +66,28 @@ async function fetchAll(db: SupabaseClient) {
   return data
 }
 
+/** Un `source_path` par carte vivante des notes données. Paquets de chemins (URL courte) et pagination (plafond PostgREST de 1000 lignes). */
+const PATHS_PER_QUERY = 20 // chemins longs + emojis encodés : on reste loin de la limite de longueur d'URL
+const PAGE_SIZE = 1000
+async function fetchLiveCardPaths(db: SupabaseClient, paths: string[]): Promise<{ source_path: string }[]> {
+  const rows: { source_path: string }[] = []
+  for (const group of chunk(paths, PATHS_PER_QUERY)) {
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await db
+        .from('cards')
+        .select('source_path')
+        .in('source_path', group)
+        .is('deleted_at', null)
+        .order('id')
+        .range(from, from + PAGE_SIZE - 1)
+      if (error) fail('lecture des cartes', error)
+      rows.push(...data)
+      if (data.length < PAGE_SIZE) break
+    }
+  }
+  return rows
+}
+
 async function scan() {
   const db = connect() // charge .env.local avant vaultRoot()
   const files = await listSyntheses(vaultRoot())
@@ -73,12 +95,7 @@ async function scan() {
   if (error) fail('lecture des notes', error)
   const { changed, removed } = computeScan(files, data as NoteRow[])
   // `removed` : chemin + nombre de cartes vivantes, pour que Kyllian sache ce qu'une suppression coûterait.
-  let live: { source_path: string }[] = []
-  if (removed.length > 0) {
-    const res = await db.from('cards').select('source_path').in('source_path', removed).is('deleted_at', null)
-    if (res.error) fail('lecture des cartes', res.error)
-    live = res.data
-  }
+  const live = await fetchLiveCardPaths(db, removed)
   return { changed, removed: countLiveCards(removed, live) }
 }
 

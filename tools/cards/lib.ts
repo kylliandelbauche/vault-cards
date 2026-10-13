@@ -189,6 +189,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return { command, arg, confirmDelete }
 }
 
+/** Paquets de `size` éléments (URL PostgREST bornées : pas de `.in()` géant). */
+export function chunk<T>(items: T[], size: number): T[][] {
+  if (!Number.isInteger(size) || size < 1) throw new Error('chunk : taille invalide')
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
 /** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */
 export function countLiveCards(removed: string[], liveRows: { source_path: string }[]): { source_path: string; live_cards: number }[] {
   const counts = new Map<string, number>()
