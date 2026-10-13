@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { SOURCE_TITLE_MAX, extractTitle } from '../../shared/source-title.ts'
 import { MAX_TAGS, isTagSlug } from '../../shared/tags.ts'
 
-export interface NoteFile { source_path: string; deck: string; content_hash: string; abs_path: string }
+export interface NoteFile { source_path: string; deck: string; content_hash: string; title: string; abs_path: string }
 export interface IncomingCard { id?: string; front: string; back: string; tags: string[] }
-export interface ApplyPayload { source_path: string; deck: string; content_hash: string; cards: IncomingCard[] }
+/** `source_title` : présent pour une note modifiée, absent pour une note `removed`. */
+export interface ApplyPayload { source_path: string; deck: string; content_hash: string; source_title?: string; cards: IncomingCard[] }
 export interface ExistingCard { id: string; front: string; back: string; tags: string[] }
 export interface RetagEntry { id: string; tags: string[] }
 export interface RetagTarget extends RetagEntry { deleted_at: string | null }
@@ -39,6 +41,7 @@ export async function listSyntheses(vaultRoot: string, subdir = VEILLE_SUBDIR): 
       source_path: toPosix(path.relative(vaultRoot, abs_path)),
       deck: inSubdir[0],
       content_hash: hashContent(content),
+      title: extractTitle(content, entry.name),
       abs_path,
     })
   }
@@ -110,7 +113,7 @@ function rejectUnknownKeys(obj: Record<string, unknown>, allowed: readonly strin
 
 export function validatePayload(p: unknown): ApplyPayload {
   if (!isRecord(p)) throw new Error('payload invalide : objet JSON attendu')
-  rejectUnknownKeys(p, ['source_path', 'deck', 'content_hash', 'cards'], 'payload')
+  rejectUnknownKeys(p, ['source_path', 'deck', 'content_hash', 'source_title', 'cards'], 'payload')
   const source_path = requireText(p, 'source_path', 'payload')
   const deck = requireText(p, 'deck', 'payload')
   const content_hash = requireText(p, 'content_hash', 'payload')
@@ -128,10 +131,16 @@ export function validatePayload(p: unknown): ApplyPayload {
     if (typeof raw.id !== 'string' || raw.id === '') throw new Error(`${where} : « id » doit être un texte (ou absent)`)
     return { id: raw.id, front, back, tags }
   })
-  if (content_hash === REMOVED_HASH && cards.length > 0) {
-    throw new Error('payload : un content_hash « removed » exige « cards » vide')
+  if (content_hash === REMOVED_HASH) {
+    if (cards.length > 0) throw new Error('payload : un content_hash « removed » exige « cards » vide')
+    if (p.source_title !== undefined) throw new Error('payload : « source_title » interdit pour une note « removed »')
+    return { source_path, deck, content_hash, cards }
   }
-  return { source_path, deck, content_hash, cards }
+  const source_title = requireText(p, 'source_title', 'payload')
+  if (source_title.length > SOURCE_TITLE_MAX) {
+    throw new Error(`payload : « source_title » trop long (${source_title.length} > ${SOURCE_TITLE_MAX})`)
+  }
+  return { source_path, deck, content_hash, source_title, cards }
 }
 
 /** Un payload `removed` n'est valable que si la note a réellement disparu du vault (vault mal monté mis à part, couvert par --confirm-delete). */
@@ -167,7 +176,7 @@ export function assertDeleteConfirmed(source_path: string, toDelete: { id: strin
 }
 
 export const USAGE =
-  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json>'
+  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles'
 
 export interface ParsedArgs { command: string | undefined; arg: string | undefined; confirmDelete: number | null }
 
@@ -275,6 +284,36 @@ export function planRetag(existing: RetagTarget[], entries: RetagEntry[]): { toU
     else toUpdate.push(e)
   }
   return { toUpdate, unchanged }
+}
+
+export interface TitledCard { id: string; source_path: string; source_title: string | null }
+
+/**
+ * Plan de `titles` : pour chaque carte vivante, le titre de sa note sur disque (`titles`, par source_path).
+ * Une note introuvable fait tout refuser (rien n'est écrit) en les listant. Ne concerne ni id, ni texte, ni tags.
+ * Cartes déjà à jour = `unchanged` (idempotent) ; ids regroupés par titre pour limiter les écritures.
+ */
+export function planTitles(cards: TitledCard[], titles: Map<string, string>): { toUpdate: { source_title: string; ids: string[] }[]; unchanged: number } {
+  const missing = [...new Set(cards.map(c => c.source_path).filter(p => !titles.has(p)))].sort()
+  if (missing.length > 0) {
+    throw new Error(`fichier source introuvable pour ${missing.length} note(s), rien n'a été écrit :\n${missing.map(p => '  - ' + p).join('\n')}`)
+  }
+  const groups = new Map<string, string[]>()
+  let unchanged = 0
+  for (const c of cards) {
+    const title = titles.get(c.source_path)!
+    if (c.source_title === title) {
+      unchanged++
+      continue
+    }
+    groups.set(title, [...(groups.get(title) ?? []), c.id])
+  }
+  return { toUpdate: [...groups].map(([source_title, ids]) => ({ source_title, ids })), unchanged }
+}
+
+/** `apply` : cartes conservées dont seul le titre change (celles insérées/modifiées/supprimées sont déjà traitées par ailleurs). */
+export function cardsNeedingTitle(existing: { id: string; source_title: string | null }[], title: string, written: Set<string>, deleted: Set<string>): string[] {
+  return existing.filter(c => !written.has(c.id) && !deleted.has(c.id) && c.source_title !== title).map(c => c.id)
 }
 
 /** changed = notes nouvelles ou modifiées ; removed = notes en base absentes du disque (pas déjà marquées removed). */
