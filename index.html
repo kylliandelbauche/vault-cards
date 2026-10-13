@@ -7,15 +7,16 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <meta name="color-scheme" content="light dark" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <!-- = --bg-base de index.css : la barre d'état se raccorde au fond, en clair comme en sombre. -->
+    <!-- = --bg-base de index.css (Safari, et la barre d'état en PWA si iOS l'applique : à confirmer). -->
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#eef1f8" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#06080f" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <!--
       `default` et pas `black-translucent` : ce dernier force un texte de barre d'état blanc, illisible
-      sur le fond clair. Avec `default`, l'app démarre sous la barre d'état et iOS en choisit la couleur
-      du texte selon le thème ; rien ne passe sous la barre d'état (safe-area-inset-top = 0).
+      sur le fond clair. Avec `default`, l'app démarre sous la barre d'état (safe-area-inset-top = 0) :
+      rien ne passe dessous. À confirmer en PWA installée : que la barre d'état reprenne theme-color
+      (sinon, liseré système blanc/noir au-dessus du fond) et que son texte suive le thème.
     -->
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Vault Cards</title>
