@@ -65,7 +65,7 @@ function SignOutButton({ onClick }: { onClick(): void }) {
       type="button"
       aria-label="Déconnexion"
       onClick={onClick}
-      className="-my-2 -me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-label-2 active:bg-black/5 dark:active:bg-white/10"
+      className="-my-2 -me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-label-2 hover:bg-black/5 active:bg-black/10 dark:hover:bg-white/10 dark:active:bg-white/15"
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

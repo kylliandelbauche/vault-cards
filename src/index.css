@@ -66,7 +66,8 @@
   --glass-edge: rgb(255 255 255 / 0.7);
   --glass-hairline: rgb(0 0 0 / 0.06);
   --glass-shadow: 0 4px 16px rgb(15 30 60 / 0.1);
-  --glass-card-bg: rgb(255 255 255 / 0.9); /* teint de la carte en verre : texte ≥ 4,78:1 même sur un fond noir pur */
+  --glass-card-bg: rgb(255 255 255 / 0.55); /* carte en verre : derrière elle, seul le fond décoratif (clair, maîtrisé) → texte noir ≥ 15:1 */
+  --glass-card-sheen: linear-gradient(135deg, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0) 45%);
   --card-bg: rgb(255 255 255 / 0.9);
   --card-solid: #ffffff;
   --card-edge: rgb(255 255 255 / 0.8);
@@ -111,7 +112,8 @@
   --glass-edge: rgb(255 255 255 / 0.12);
   --glass-hairline: rgb(0 0 0 / 0.4);
   --glass-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
-  --glass-card-bg: rgb(28 29 34 / 0.92); /* texte ≥ 6,03:1 même sur un fond blanc pur */
+  --glass-card-bg: rgb(28 29 34 / 0.6); /* derrière la carte, seul le fond décoratif sombre → texte blanc ≥ 12:1 */
+  --glass-card-sheen: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0) 45%);
   --card-bg: rgb(28 29 34 / 0.92);
   --card-solid: #1c1d22;
   --card-edge: rgb(255 255 255 / 0.08);
@@ -181,14 +183,16 @@ html.dark {
 }
 
 /*
- * Carte principale (#40) : même matériau, mêmes jetons et mêmes replis que les barres, mais teint plus
- * opaque (le texte de la carte est long et doit rester ≥ 4,5:1 sur tout fond) et ombre plus petite
+ * Carte principale (#40) : même matériau, mêmes jetons et mêmes replis que les barres, mais teint propre
+ * (seul le fond décoratif maîtrisé est derrière elle : contraste calculé sur ce fond) + reflet ; ombre plus petite
  * (la carte défile). Jamais de `.glass` dedans (pas de flou imbriqué) ; pas de touch-action : le
  * défilement de la page reste celui du navigateur.
  */
 .glass-card {
   background-color: var(--glass-card-bg);
+  background-image: var(--glass-card-sheen);
   box-shadow:
+    inset 0 1px 0 var(--glass-edge),
     inset 0 0 0 0.5px var(--glass-edge),
     0 0 0 0.5px var(--glass-hairline),
     var(--card-shadow);
@@ -260,4 +264,10 @@ a:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--new);
   outline-offset: 2px;
+}
+
+/* Tailwind 4 ne met plus `cursor: pointer` sur les boutons : on le rétablit (survol à la souris). */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
 }
