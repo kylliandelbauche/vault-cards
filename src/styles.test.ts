@@ -55,6 +55,11 @@ describe('index.css : verre et repli (#19, #39)', () => {
     }
   })
 
+  it('notes plus carrées si la hauteur le permet ; zone d’action remontée sur desktop seulement', () => {
+    expect(block('@media (min-height: 740px)')).toMatch(/\.rating-btn\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*1;[^}]*max-height:\s*116px/)
+    expect(block('@media (hover: hover) and (pointer: fine), (min-width: 768px) and (min-height: 700px)')).toMatch(/\.action-dock\s*\{[^}]*padding-bottom:\s*max\(32px/)
+  })
+
   it('« Réduire les animations » : aucune transition sur les boutons en verre', () => {
     expect(block('@media (prefers-reduced-motion: reduce)')).toMatch(/\.glass-btn\s*\{[^}]*transition-property:\s*none/)
   })

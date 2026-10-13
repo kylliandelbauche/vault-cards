@@ -35,7 +35,7 @@ export function RatingBar({ state, now, onRate }: Props) {
         <GlassButton
           key={rating}
           tone={tone}
-          className="flex min-h-[76px] flex-col items-center justify-center rounded-[24px] px-0.5 py-1.5 text-[15px] leading-tight font-semibold"
+          className="rating-btn flex min-h-[76px] flex-col items-center justify-center rounded-[24px] px-0.5 py-1.5 text-[15px] leading-tight font-semibold"
           onClick={() => onRate(rating)}
         >
           <span aria-hidden="true" className={`mb-1 flex size-7 shrink-0 items-center justify-center rounded-full text-white ${pill}`}>

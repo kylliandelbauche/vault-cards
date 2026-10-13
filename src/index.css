@@ -274,6 +274,28 @@ html.dark {
 /* .glass-btn-neutral : verre seul, sans lueur ni liseré coloré. */
 
 /*
+ * Boutons de notation plus carrés quand la hauteur le permet (iPhone hors SE, desktop) : hauteur = largeur,
+ * plafonnée à 116 px. Sur 375×667 (zone visible 647 px), on garde ~79 px pour tenir sans scroll, alerte comprise.
+ */
+@media (min-height: 740px) {
+  .rating-btn {
+    width: 100%; /* largeur de la colonne (sinon max-height se reporterait sur la largeur via aspect-ratio) */
+    aspect-ratio: 1;
+    max-height: 116px;
+  }
+}
+
+/*
+ * Desktop / tablette (pas un téléphone) : zone d'action un peu remontée. L'iPhone (pointeur grossier,
+ * hauteur < 700 px en paysage) n'est pas concerné.
+ */
+@media (hover: hover) and (pointer: fine), (min-width: 768px) and (min-height: 700px) {
+  .action-dock {
+    padding-bottom: max(32px, var(--k-safe-area-bottom));
+  }
+}
+
+/*
  * Seul repli conservé : navigateur sans backdrop-filter → verre opaque, sans lueur.
  * « Réduire la transparence » et « Augmenter le contraste » : replis retirés à la demande de Kyllian
  * (full liquid glass), reportés.

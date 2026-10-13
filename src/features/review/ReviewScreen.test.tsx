@@ -99,6 +99,7 @@ describe('ReviewScreen', () => {
       expect(b.className.split(' ')).toContain('glass-btn')
       expect(b.className).not.toMatch(/opacity/)
       expect(b.className).toContain('min-h-[76px]')
+      expect(b.className.split(' ')).toContain('rating-btn')
       expect(b.closest('.glass, .glass-card')).toBeNull()
     }
   })
@@ -122,6 +123,10 @@ describe('ReviewScreen', () => {
     const btn = screen.getByRole('button', { name: 'Afficher la réponse' })
     expect(btn.getAttribute('type')).toBe('button')
     expect(btn.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new', 'h-14']))
+    // Libellé seul, centré : plus de chevron ni de pastille.
+    expect(btn.querySelector('svg, span')).toBeNull()
+    expect(btn.textContent).toBe('Afficher la réponse')
+    expect(btn.closest('footer')?.className).toContain('action-dock')
     expect(btn.closest('.glass, .glass-card')).toBeNull()
   })
 
