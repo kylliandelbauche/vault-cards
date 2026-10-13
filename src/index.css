@@ -55,7 +55,7 @@
 
   /*
    * Fond décoratif et matériaux (#19). Ratios calculés au pire cas (fond le plus clair / le plus
-   * sombre, formes superposées) : voir la PR #19. Le verre n'existe que sur les barres (2 surfaces).
+   * sombre, formes superposées) : voir la PR #19. Le verre : barres (2 surfaces) + carte principale (1) = 3 surfaces floutées au plus.
    */
   --bg-base: #eef1f8; /* = theme-color clair (index.html) */
   --bg-blob-1: rgb(64 132 255 / 0.22);
@@ -66,6 +66,7 @@
   --glass-edge: rgb(255 255 255 / 0.7);
   --glass-hairline: rgb(0 0 0 / 0.06);
   --glass-shadow: 0 4px 16px rgb(15 30 60 / 0.1);
+  --glass-card-bg: rgb(255 255 255 / 0.9); /* teint de la carte en verre : texte ≥ 4,78:1 même sur un fond noir pur */
   --card-bg: rgb(255 255 255 / 0.9);
   --card-solid: #ffffff;
   --card-edge: rgb(255 255 255 / 0.8);
@@ -110,6 +111,7 @@
   --glass-edge: rgb(255 255 255 / 0.12);
   --glass-hairline: rgb(0 0 0 / 0.4);
   --glass-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+  --glass-card-bg: rgb(28 29 34 / 0.92); /* texte ≥ 6,03:1 même sur un fond blanc pur */
   --card-bg: rgb(28 29 34 / 0.92);
   --card-solid: #1c1d22;
   --card-edge: rgb(255 255 255 / 0.08);
@@ -166,7 +168,8 @@ html.dark {
  * Performance : 2 surfaces au plus, pas de flou imbriqué, rayon modéré (16 px) ; `contain` limite
  * la zone repeinte à la barre ; pas de will-change permanent (le flou crée déjà sa couche).
  */
-.glass {
+.glass,
+.glass-card {
   contain: layout paint;
   background-color: var(--glass-bg);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
@@ -175,6 +178,20 @@ html.dark {
     inset 0 0 0 0.5px var(--glass-edge),
     0 0 0 0.5px var(--glass-hairline),
     var(--glass-shadow);
+}
+
+/*
+ * Carte principale (#40) : même matériau, mêmes jetons et mêmes replis que les barres, mais teint plus
+ * opaque (le texte de la carte est long et doit rester ≥ 4,5:1 sur tout fond) et ombre plus petite
+ * (la carte défile). Jamais de `.glass` dedans (pas de flou imbriqué) ; pas de touch-action : le
+ * défilement de la page reste celui du navigateur.
+ */
+.glass-card {
+  background-color: var(--glass-card-bg);
+  box-shadow:
+    inset 0 0 0 0.5px var(--glass-edge),
+    0 0 0 0.5px var(--glass-hairline),
+    var(--card-shadow);
 }
 
 /* Contenu (carte, fin de session, connexion) : surface givrée dense, sans backdrop-filter. */
@@ -187,13 +204,15 @@ html.dark {
 
 /* Replis opaques : navigateur sans backdrop-filter, « Réduire la transparence », « Augmenter le contraste ». */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .glass {
+  .glass,
+  .glass-card {
     background-color: var(--glass-solid);
   }
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .glass {
+  .glass,
+  .glass-card {
     background-color: var(--glass-solid);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -205,13 +224,15 @@ html.dark {
 
 @media (prefers-contrast: more) {
   .glass,
+  .glass-card,
   .card-surface {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: none;
     border: 1px solid var(--contrast-border);
   }
-  .glass {
+  .glass,
+  .glass-card {
     background-color: var(--glass-solid);
   }
   .card-surface {
