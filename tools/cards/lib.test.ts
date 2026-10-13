@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertDeckMatchesPath, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -130,6 +130,24 @@ describe('validatePayload', () => {
   })
   it('clé inconnue au niveau payload : refusée, la clé est nommée', () => {
     expect(() => validatePayload({ ...base, Deck: 'x', cards: [] })).toThrow(/payload.*« Deck »/)
+  })
+})
+
+describe('assertDeckMatchesPath', () => {
+  it('deck = dossier qui suit veille/ dans source_path', () => {
+    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/x-synthese.md', 'software')).not.toThrow()
+    expect(() => assertDeckMatchesPath('veille/ia/a-synthese.md', 'ia')).not.toThrow()
+  })
+  it('deck différent : erreur qui nomme le deck attendu', () => {
+    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/x-synthese.md', 'ia')).toThrow(/deck « ia ».*« software »/)
+  })
+  it('deck sensible à la casse et au sous-dossier', () => {
+    expect(() => assertDeckMatchesPath('veille/ia/a/a-synthese.md', 'IA')).toThrow(/deck/)
+    expect(() => assertDeckMatchesPath('veille/ia/a/a-synthese.md', 'a')).toThrow(/deck/)
+  })
+  it('chemin sans dossier veille/ + deck : erreur', () => {
+    expect(() => assertDeckMatchesPath('a.md', 'ia')).toThrow(/veille/)
+    expect(() => assertDeckMatchesPath('veille/a-synthese.md', 'ia')).toThrow(/veille/)
   })
 })
 

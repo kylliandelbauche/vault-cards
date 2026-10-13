@@ -128,6 +128,22 @@ export function validatePayload(p: unknown): ApplyPayload {
   return { source_path, deck, content_hash, cards }
 }
 
+/**
+ * `deck` doit être le dossier qui suit `veille/` dans `source_path` (comme dans `scan`) :
+ * un deck erroné rangerait les cartes dans le mauvais paquet.
+ */
+export function assertDeckMatchesPath(source_path: string, deck: string): void {
+  const parts = source_path.split('/')
+  const i = parts.indexOf('veille')
+  // Il faut au moins un dossier de deck puis un fichier après `veille/`.
+  if (i === -1 || parts.length < i + 3) {
+    throw new Error(`source_path « ${source_path} » : attendu …/veille/<deck>/…/<note>`)
+  }
+  if (parts[i + 1] !== deck) {
+    throw new Error(`deck « ${deck} » incohérent avec source_path « ${source_path} » : attendu « ${parts[i + 1]} »`)
+  }
+}
+
 /** Fichier de `retag` : liste de {id, tags}. Tout autre champ est ignoré (le texte n'est jamais modifié). */
 export function validateRetagPayload(p: unknown): RetagEntry[] {
   if (!Array.isArray(p)) throw new Error('retag : liste JSON de {id, tags} attendue')

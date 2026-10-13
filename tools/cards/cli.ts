@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  computeScan, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  assertDeckMatchesPath, computeScan, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
@@ -68,6 +68,7 @@ async function scan(db: SupabaseClient) {
 async function apply(db: SupabaseClient, file: string) {
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash } = payload
+  assertDeckMatchesPath(source_path, deck)
   const existing = await fetchExisting(db, source_path)
   const { toInsert, toUpdate, toDelete } = diffCards(existing, payload.cards)
 
