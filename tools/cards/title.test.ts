@@ -54,4 +54,40 @@ describe('extractTitle', () => {
     expect(t.length).toBe(SOURCE_TITLE_MAX)
     expect(t.endsWith('…')).toBe(true)
   })
+  it('troncature par points de code : un emoji à la frontière n’est jamais coupé en deux', () => {
+    const t = extractTitle('# ' + 'a'.repeat(198) + '😀' + 'zzz', 'x-synthese.md')
+    expect(Array.from(t)).toHaveLength(SOURCE_TITLE_MAX)
+    expect(t.isWellFormed()).toBe(true)
+    expect(t.endsWith('…')).toBe(true)
+  })
+  it('emoji juste avant la limite (199e point de code) : conservé entier', () => {
+    const t = extractTitle('# ' + 'a'.repeat(198) + '😀' + 'zzz', 'x-synthese.md')
+    expect(t).toBe('a'.repeat(198) + '😀…')
+    expect(t.isWellFormed()).toBe(true)
+  })
+  it('200 points de code exactement : pas de troncature, même avec des emojis (> 200 unités UTF-16)', () => {
+    const t = '😀'.repeat(200)
+    expect(extractTitle('# ' + t, 'x-synthese.md')).toBe(t)
+  })
+  it('repli sur le nom de fichier plafonné aussi', () => {
+    const t = extractTitle('sans titre', 'b'.repeat(300) + '-synthese.md')
+    expect(Array.from(t)).toHaveLength(SOURCE_TITLE_MAX)
+    expect(t.endsWith('…')).toBe(true)
+    expect(Array.from(humanizeFileName('c'.repeat(250) + '.md'))).toHaveLength(SOURCE_TITLE_MAX)
+  })
+  it('bloc de code : seul le même caractère (et au moins la même longueur) le ferme', () => {
+    expect(extractTitle('```\n~~~\n# dans le code\n```\n# Titre', 'x-synthese.md')).toBe('Titre')
+    expect(extractTitle('~~~\n```\n# dans le code\n~~~\n# Titre', 'x-synthese.md')).toBe('Titre')
+    expect(extractTitle('````\n```\n# dans le code\n````\n# Titre', 'x-synthese.md')).toBe('Titre')
+  })
+  it('# Titre ## : les # de fermeture sont retirés, pas ceux collés au mot', () => {
+    expect(extractTitle('# Titre ##', 'x-synthese.md')).toBe('Titre')
+    expect(extractTitle('# Titre #   ', 'x-synthese.md')).toBe('Titre')
+    expect(extractTitle('# Apprendre C#', 'x-synthese.md')).toBe('Apprendre C#')
+    expect(extractTitle('# ##\n# Suivant', 'x-synthese.md')).toBe('Suivant')
+  })
+  it('BOM en tête ignoré (H1 en 1re ligne, ou frontmatter)', () => {
+    expect(extractTitle('\uFEFF# Titre', 'x-synthese.md')).toBe('Titre')
+    expect(extractTitle('\uFEFF---\na: 1\n---\n# Titre', 'x-synthese.md')).toBe('Titre')
+  })
 })
