@@ -13,7 +13,10 @@ import {
 const ENV_FILE = path.join(import.meta.dirname, '..', '..', '.env.local')
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY'] as const
 
-function connect(): SupabaseClient {
+/** Charge `.env.local` (une seule fois, aucun appel réseau) : à faire AVANT vaultRoot(), qui peut y lire VAULT_ROOT. */
+let envLoaded = false
+function loadEnv(): void {
+  if (envLoaded) return
   try {
     process.loadEnvFile(ENV_FILE)
   } catch {
@@ -22,6 +25,11 @@ function connect(): SupabaseClient {
   for (const name of REQUIRED_ENV) {
     if (!process.env[name]) throw new Error(`variable manquante dans .env.local : ${name}`)
   }
+  envLoaded = true
+}
+
+function connect(): SupabaseClient {
+  loadEnv()
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SECRET_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
   })
@@ -58,7 +66,8 @@ async function fetchAll(db: SupabaseClient) {
   return data
 }
 
-async function scan(db: SupabaseClient) {
+async function scan() {
+  const db = connect() // charge .env.local avant vaultRoot()
   const files = await listSyntheses(vaultRoot())
   const { data, error } = await db.from('notes').select('source_path, content_hash')
   if (error) fail('lecture des notes', error)
@@ -78,6 +87,7 @@ async function apply(file: string, confirmDelete: number | null) {
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash } = payload
   assertDeckMatchesPath(source_path, deck)
+  loadEnv() // même vault que scan : VAULT_ROOT peut venir de .env.local
   if (content_hash === REMOVED_HASH) {
     const stillExists = await fs.access(path.join(vaultRoot(), source_path)).then(() => true, () => false)
     assertRemovedNoteGone(source_path, stillExists)
@@ -152,7 +162,7 @@ async function main(argv: string[]): Promise<unknown> {
   const { command, arg, confirmDelete } = parseArgs(argv)
   switch (command) {
     case 'scan':
-      return scan(connect())
+      return scan()
     case 'existing':
       if (!arg) throw new Error(USAGE)
       return fetchExisting(connect(), arg)
