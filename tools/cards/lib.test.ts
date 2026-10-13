@@ -123,6 +123,14 @@ describe('validatePayload', () => {
   it('tags : doublon refusé', () => {
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] })).toThrow(/double/)
   })
+  it('clé inconnue sur une carte : refusée, la clé est nommée (ex. ID au lieu de id)', () => {
+    expect(() => validatePayload({ ...base, cards: [{ ID: 'u1', front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/carte 1.*« ID »/)
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia'] }, { front: 'Q', back: 'R', tags: ['ia'], extra: 1 }] }))
+      .toThrow(/carte 2.*« extra »/)
+  })
+  it('clé inconnue au niveau payload : refusée, la clé est nommée', () => {
+    expect(() => validatePayload({ ...base, Deck: 'x', cards: [] })).toThrow(/payload.*« Deck »/)
+  })
 })
 
 describe('validateRetagPayload', () => {

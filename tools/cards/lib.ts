@@ -98,8 +98,16 @@ function requireTags(obj: Record<string, unknown>, where: string): string[] {
   return [...v] as string[]
 }
 
+/** Une faute de frappe (`ID` au lieu de `id`) ferait traiter la carte comme nouvelle et perdre sa progression. */
+function rejectUnknownKeys(obj: Record<string, unknown>, allowed: readonly string[], where: string): void {
+  for (const key of Object.keys(obj)) {
+    if (!allowed.includes(key)) throw new Error(`${where} : clé inconnue « ${key} » (attendues : ${allowed.join(', ')})`)
+  }
+}
+
 export function validatePayload(p: unknown): ApplyPayload {
   if (!isRecord(p)) throw new Error('payload invalide : objet JSON attendu')
+  rejectUnknownKeys(p, ['source_path', 'deck', 'content_hash', 'cards'], 'payload')
   const source_path = requireText(p, 'source_path', 'payload')
   const deck = requireText(p, 'deck', 'payload')
   const content_hash = requireText(p, 'content_hash', 'payload')
@@ -107,6 +115,7 @@ export function validatePayload(p: unknown): ApplyPayload {
   const cards = p.cards.map((raw: unknown, i: number): IncomingCard => {
     const where = `carte ${i + 1}`
     if (!isRecord(raw)) throw new Error(`${where} : objet {front, back} attendu`)
+    rejectUnknownKeys(raw, ['id', 'front', 'back', 'tags'], where)
     const front = requireText(raw, 'front', where)
     const back = requireText(raw, 'back', where)
     if (front.length > FRONT_MAX) throw new Error(`${where} : question trop longue (${front.length} > ${FRONT_MAX})`)
