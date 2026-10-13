@@ -11,14 +11,17 @@ Outil : `node tools/cards/cli.ts` depuis `~/Workspace/1-Projects/vault-cards` (l
 - Fichiers JSON temporaires : toujours dans un dossier de travail hors du dépôt, `$TMPDIR/vault-cards/` (le créer avec `mkdir -p`), jamais dans le dépôt ni dans le vault.
 - L'outil ne touche jamais aux reviews : la progression d'une carte est liée à son `id`.
 
-1. `scan` → liste `changed` et `removed`. Si les deux sont vides : répondre « Rien de nouveau » et s'arrêter.
-2. Pour chaque note `removed` : écrire `{source_path, deck, content_hash: "removed", cards: []}` (deck = dossier qui suit `veille/` dans `source_path`) et `apply` (supprime ses cartes).
+1. `scan` → `{changed, removed}` ; `removed` = liste de `{source_path, live_cards}` (nombre de cartes vivantes). Si les deux sont vides : répondre « Rien de nouveau » et s'arrêter.
+2. **Jamais de suppression de ta propre initiative.** Si `removed` n'est pas vide, une note absente du vault peut aussi venir d'un vault vide, mal monté ou d'un mauvais `VAULT_ROOT`, et la suppression fait perdre la progression des cartes. Donc :
+   a. Lister à Kyllian chaque note `removed` (chemin + nombre de cartes vivantes) et lui demander de confirmer.
+   b. Seulement après sa **confirmation explicite dans la conversation** (ou s'il a lui-même demandé la suppression) : pour chaque note `removed`, écrire `{source_path, deck, content_hash: "removed", cards: []}` (deck = dossier qui suit `veille/` dans `source_path`) dans un fichier JSON temporaire, puis `apply <fichier> --confirm-delete`. Sans ce flag, l'outil refuse. N'utiliser `--confirm-delete` dans aucun autre cas.
+   c. Sans confirmation (pas de réponse, refus, ou exécution sans interaction) : ne rien supprimer, traiter uniquement les notes `changed`, et rappeler les notes `removed` non traitées dans le résumé final.
 3. Pour chaque note `changed` :
    a. Lire le fichier (`abs_path`).
    b. `existing <source_path>` → cartes actuelles.
    c. Écrire les cartes (règles ci-dessous) dans un fichier JSON temporaire de `$TMPDIR/vault-cards/` au format `{source_path, deck, content_hash, cards: [{id?, front, back, tags}]}`, avec `source_path`, `deck` et `content_hash` recopiés tels quels depuis `scan`. Garder l'`id` d'une carte existante encore pertinente (même si reformulée) ; ne jamais inventer d'id. Une carte existante absente de la liste est supprimée. Chaque carte porte 1 ou 2 tags (section « Tags ») ; reprendre les tags renvoyés par `existing` sauf s'ils ne conviennent plus.
-   d. `apply <fichier>` → `{added, updated, deleted}`. En cas d'erreur, corriger le JSON et relancer : le hash n'est enregistré que si tout a réussi.
-4. Résumé final : « N notes · +X cartes · Y modifiées · Z supprimées », puis la liste des notes traitées.
+   d. `apply <fichier>` → `{added, updated, deleted}`. En cas d'erreur, corriger le JSON et relancer : le hash n'est enregistré que si tout a réussi. L'outil refuse aussi une clé inconnue, un `deck` qui ne correspond pas à `source_path`, et un `content_hash` qui ne correspond plus au fichier (« note modifiée depuis le scan, relancer scan » → relancer `scan`, ne pas forcer).
+4. Résumé final : « N notes · +X cartes · Y modifiées · Z supprimées », puis la liste des notes traitées, puis (s'il y en a) les notes `removed` non supprimées, en attente de confirmation.
 
 ## Règles des cartes
 - 3 à 8 cartes par note, selon la densité. Zéro carte si la note n'a rien à retenir (`cards: []`, le hash est quand même enregistré).
