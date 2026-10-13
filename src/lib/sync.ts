@@ -36,7 +36,7 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
   },
 
   pullCards: since => allPages((from, to) => {
-    let q = client.from('cards').select('id, deck, source_path, tags, front, back, updated_at, deleted_at')
+    let q = client.from('cards').select('id, deck, source_path, source_title, tags, front, back, updated_at, deleted_at')
     if (since) q = q.gte('updated_at', since)
     // Une écriture en lot partage le même now() : l'id départage, sinon .range() n'est pas stable.
     return q.order('updated_at').order('id').range(from, to)
