@@ -55,7 +55,7 @@
 
   /*
    * Fond décoratif et matériaux (#19). Ratios calculés au pire cas (fond le plus clair / le plus
-   * sombre, formes superposées) : voir la PR #19. Le verre : barres (2 surfaces) + carte principale (1) = 3 surfaces floutées au plus.
+   * sombre, formes superposées) : voir la PR #19. Surfaces floutées par écran : voir les boutons en verre plus bas (#39).
    */
   --bg-base: #eef1f8; /* = theme-color clair (index.html) */
   --bg-blob-1: rgb(64 132 255 / 0.22);
@@ -73,6 +73,21 @@
   --card-edge: rgb(255 255 255 / 0.8);
   --card-shadow: 0 1px 3px rgb(15 30 60 / 0.08); /* petite : la carte défile */
   --contrast-border: #3c3c43;
+
+  /*
+   * Boutons en verre coloré (#39), libellé blanc. Teinte foncée à 84 % : ≥ 4,5:1 au pire cas réaliste
+   * (carte claire ou fond décoratif dessous, encre floutée, reflet, appui) ; tableau dans la PR #39.
+   * `-solid` = même teinte opaque pour les replis (≥ 9:1).
+   */
+  --glass-btn-new: rgb(6 63 138 / 0.84);    --glass-btn-new-solid: #063f8a;
+  --glass-btn-again: rgb(130 34 15 / 0.84); --glass-btn-again-solid: #82220f;
+  --glass-btn-hard: rgb(101 62 2 / 0.84);   --glass-btn-hard-solid: #653e02;
+  --glass-btn-good: rgb(15 78 42 / 0.84);   --glass-btn-good-solid: #0f4e2a;
+  --glass-btn-edge: rgb(255 255 255 / 0.35);
+  --glass-btn-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 60%);
+  --glass-btn-shadow: 0 2px 8px rgb(15 30 60 / 0.16);
+  --glass-btn-press: rgb(0 0 0 / 0.18); /* voile intérieur à l'appui : fonce le verre, jamais le texte */
+  --glass-btn-highlight: rgb(255 255 255 / 0.12); /* reflet Konsta (50 % par défaut : illisible sur verre teinté) */
 
   /* Pastilles de tags (shared/tags.ts → clé `color`). Ratio texte / fond (WCAG, AA ≥ 4,5:1) en commentaire. */
   --tag-violet-bg: #efe9fb;   --tag-violet-fg: #5b2ea6;   /* 7,43:1 */
@@ -120,6 +135,15 @@
   --card-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
   --contrast-border: #dcdce0;
 
+  /* Sombre : teinte plus vive à 70 % (le fond noir l'assombrit) ; pire cas = texte blanc de la carte flouté dessous. */
+  --glass-btn-new: rgb(20 88 176 / 0.7);    --glass-btn-new-solid: #1458b0;
+  --glass-btn-again: rgb(163 50 34 / 0.7);  --glass-btn-again-solid: #a33222;
+  --glass-btn-hard: rgb(127 82 5 / 0.7);    --glass-btn-hard-solid: #7f5205;
+  --glass-btn-good: rgb(22 98 56 / 0.7);    --glass-btn-good-solid: #166238;
+  --glass-btn-edge: rgb(255 255 255 / 0.22);
+  --glass-btn-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  --glass-btn-highlight: rgb(255 255 255 / 0.1);
+
   /* Pastilles de tags, sombre : fond foncé teinté + texte clair. */
   --tag-violet-bg: #2a2145;   --tag-violet-fg: #c7b2ff;   /* 8,02:1 */
   --tag-bleu-bg: #132a45;     --tag-bleu-fg: #8cc4ff;     /* 7,93:1 */
@@ -165,10 +189,9 @@ html.dark {
 }
 
 /*
- * Verre (couche des contrôles uniquement : barre du haut et zone d'action du bas). Variante « regular » :
- * assez opaque pour que le texte noir/blanc reste ≥ 4,5:1 quel que soit le contenu dessous.
- * Performance : 2 surfaces au plus, pas de flou imbriqué, rayon modéré (16 px) ; `contain` limite
- * la zone repeinte à la barre ; pas de will-change permanent (le flou crée déjà sa couche).
+ * Verre de la barre du haut (variante « regular ») : assez opaque pour que le texte noir/blanc reste
+ * ≥ 4,5:1 quel que soit le contenu dessous. Performance : pas de flou imbriqué, flou modéré (16 px) ;
+ * `contain` limite la zone repeinte à la barre ; pas de will-change permanent (le flou crée déjà sa couche).
  */
 .glass,
 .glass-card {
@@ -206,11 +229,73 @@ html.dark {
     var(--card-shadow);
 }
 
+/*
+ * Boutons en verre coloré, chacun indépendant (#39) : « Afficher la réponse », les 3 notes, « Se connecter »,
+ * « Réviser à nouveau »… Plus de barre en verre autour : ils flottent sur le fond. Rendus par `GlassButton`
+ * (composant `Glass` de Konsta) ; ces règles hors @layer remplacent ses utilitaires (flou 16 px, touch-none,
+ * piles d'ombres internes coûteuses).
+ * Performance : flou plus léger que les barres (12 px) car les surfaces sont plus nombreuses ; `contain`
+ * sur chacune ; jamais de flou imbriqué (aucun bouton en verre dans une surface floutée). À l'appui : seul
+ * le reflet Konsta anime `scale`/`opacity` ; le voile intérieur est instantané (aucune transition).
+ * `touch-action: manipulation` : pas de délai au tap, et la page défile encore si le geste commence sur un bouton.
+ */
+.glass-btn {
+  contain: layout paint;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  color: #fff;
+  background-color: var(--glass-btn-bg);
+  background-image: var(--glass-btn-sheen);
+  -webkit-backdrop-filter: blur(12px) saturate(150%);
+  backdrop-filter: blur(12px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 var(--glass-btn-edge),
+    inset 0 0 0 0.5px var(--glass-btn-edge),
+    var(--glass-btn-shadow);
+  --color-ios-hover-highlight: var(--glass-btn-highlight);
+  /* Le reflet Konsta pose une durée de transition en ligne : seul `scale` en profite (ni ombre ni fond animés). */
+  transition-property: scale;
+}
+
+/* « Réduire les animations » : le reflet est déjà coupé par l'App (iosHoverHighlight) ; garde-fou CSS. */
+@media (prefers-reduced-motion: reduce) {
+  .glass-btn {
+    transition-property: none;
+  }
+}
+
+.glass-btn:active:not(:disabled) {
+  box-shadow:
+    inset 0 0 0 100vmax var(--glass-btn-press),
+    inset 0 1px 0 var(--glass-btn-edge),
+    var(--glass-btn-shadow);
+}
+
+.glass-btn-new { --glass-btn-bg: var(--glass-btn-new); --glass-btn-solid: var(--glass-btn-new-solid); }
+.glass-btn-again { --glass-btn-bg: var(--glass-btn-again); --glass-btn-solid: var(--glass-btn-again-solid); }
+.glass-btn-hard { --glass-btn-bg: var(--glass-btn-hard); --glass-btn-solid: var(--glass-btn-hard-solid); }
+.glass-btn-good { --glass-btn-bg: var(--glass-btn-good); --glass-btn-solid: var(--glass-btn-good-solid); }
+
+/* Neutre (action secondaire) : verre des barres, libellé noir / blanc. */
+.glass-btn-neutral {
+  --glass-btn-bg: var(--glass-bg);
+  --glass-btn-solid: var(--glass-solid);
+  --glass-btn-press: rgb(0 0 0 / 0.08);
+  color: #000;
+}
+.dark .glass-btn-neutral {
+  color: #fff;
+}
+
 /* Replis opaques : navigateur sans backdrop-filter, « Réduire la transparence », « Augmenter le contraste ». */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass,
   .glass-card {
     background-color: var(--glass-solid);
+  }
+  .glass-btn {
+    background-color: var(--glass-btn-solid);
   }
 }
 
@@ -224,12 +309,19 @@ html.dark {
   .card-surface {
     background-color: var(--card-solid);
   }
+  .glass-btn {
+    background-color: var(--glass-btn-solid);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 @media (prefers-contrast: more) {
   .glass,
   .glass-card,
-  .card-surface {
+  .card-surface,
+  .glass-btn {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: none;
@@ -241,6 +333,14 @@ html.dark {
   }
   .card-surface {
     background-color: var(--card-solid);
+  }
+  .glass-btn {
+    background-color: var(--glass-btn-solid);
+    background-image: none;
+  }
+  /* L'appui reste visible sans ombre décorative : voile intérieur seul. */
+  .glass-btn:active:not(:disabled) {
+    box-shadow: inset 0 0 0 100vmax var(--glass-btn-press);
   }
   .app-backdrop {
     background-image: none;
@@ -260,6 +360,7 @@ html.dark {
  * règle l'emporte sur les utilitaires. Anneau ≥ 3:1 sur le verre comme sur la carte.
  */
 .k-button:focus-visible,
+.glass-btn:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--new);

@@ -49,12 +49,49 @@ describe('index.css : replis du verre (#19)', () => {
     for (const prelude of ['@media (prefers-reduced-transparency: reduce)', '@media (prefers-contrast: more)']) {
       const b = block(prelude)
       expect(b).toMatch(/backdrop-filter:\s*none/)
-      expect(b).toMatch(/background-color:\s*var\(--card-solid\)/)
+      expect(b).toMatch(/\.glass-card[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
     }
+  })
+
+  it.each([
+    ['@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'],
+    ['@media (prefers-reduced-transparency: reduce)'],
+    ['@media (prefers-contrast: more)'],
+  ])('boutons en verre (#39) : teinte opaque sous %s', prelude => {
+    expect(block(prelude)).toMatch(/\.glass-btn\s*\{[^}]*background-color:\s*var\(--glass-btn-solid\)/)
+  })
+
+  it('boutons en verre : chaque teinte a sa variante translucide et opaque, en clair et en sombre', () => {
+    for (const tone of ['new', 'again', 'hard', 'good']) {
+      for (const root of [':root {', '.dark {']) {
+        expect(block(root)).toMatch(new RegExp(`--glass-btn-${tone}:\\s*rgb\\([^)]*/ 0\\.\\d+\\)`))
+        expect(block(root)).toContain(`--glass-btn-${tone}-solid:`)
+      }
+      expect(block(`.glass-btn-${tone} {`)).toContain(`var(--glass-btn-${tone}-solid)`)
+    }
+    expect(block('.glass-btn-neutral {')).toContain('var(--glass-solid)')
+  })
+
+  it('boutons en verre : Réduire la transparence / Augmenter le contraste coupent le flou et le reflet', () => {
+    for (const prelude of ['@media (prefers-reduced-transparency: reduce)', '@media (prefers-contrast: more)']) {
+      const b = block(prelude)
+      expect(b).toMatch(/\.glass-btn\s*\{[^}]*background-image:\s*none/)
+    }
+    expect(block('@media (prefers-reduced-transparency: reduce)')).toMatch(/\.glass-btn\s*\{[^}]*backdrop-filter:\s*none/)
+    expect(block('@media (prefers-contrast: more)')).toMatch(/\.glass-btn \{[^}]*border: 1px solid/)
+  })
+
+  it('« Réduire les animations » : aucune transition sur les boutons en verre', () => {
+    expect(block('@media (prefers-reduced-motion: reduce)')).toMatch(/\.glass-btn\s*\{[^}]*transition-property:\s*none/)
+  })
+
+  it('reflet Konsta adouci sur le verre teinté (50 % par défaut rendrait le libellé illisible)', () => {
+    expect(block('.glass-btn {')).toMatch(/--color-ios-hover-highlight:\s*var\(--glass-btn-highlight\)/)
   })
 
   it('focus visible sur les boutons Konsta (qui posent focus:outline-none)', () => {
     expect(block('.k-button:focus-visible')).toMatch(/outline:\s*2px solid/)
+    expect(css).toMatch(/\.glass-btn:focus-visible,[\s\S]*?\{\s*outline:\s*2px solid/)
   })
 
   it('variantes claire et sombre du fond et du verre', () => {
@@ -74,6 +111,19 @@ describe('index.css : garde-fous de performance (#19)', () => {
     for (const m of glass.matchAll(/blur\((\d+)px\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(20)
     expect(glass).toMatch(/contain:\s*layout paint/)
     expect(code).not.toMatch(/will-change/)
+  })
+
+  it('boutons en verre : flou plus léger (≤ 16 px), zone repeinte limitée, défilement et tap natifs', () => {
+    const btn = block('.glass-btn {')
+    const blurs = [...btn.matchAll(/blur\((\d+)px\)/g)].map(m => Number(m[1]))
+    expect(blurs.length).toBe(2)
+    for (const b of blurs) expect(b).toBeLessThanOrEqual(16)
+    expect(btn).toMatch(/contain:\s*layout paint/)
+    // Remplace le touch-none de Konsta : la page défile même si le geste commence sur un bouton.
+    expect(btn).toMatch(/touch-action:\s*manipulation/)
+    // Seul `scale` (reflet Konsta) peut être animé : jamais l'ombre, le fond ou le flou.
+    expect(btn).toMatch(/transition-property:\s*scale;/)
+    expect(code).not.toMatch(/transition:\s*(all|box-shadow|background|backdrop)/)
   })
 
   it('fond : un calque fixe sans background-attachment: fixed ni filtre', () => {
