@@ -98,14 +98,14 @@
    * Texte du tag, liseré et lueur des pastilles en verre neutre. Ratio = pire cas sur le fond réel (fond décoratif
    * saturé, carte en verre, verre de la pastille, lueur pleine sous le texte, survol / appui compris), AA ≥ 4,5:1.
    */
-  --tag-violet-fg: #694b92; /* 4,63:1 */
-  --tag-bleu-fg: #405c7d; /* 4,61:1 */
-  --tag-rouge-fg: #834a44; /* 4,62:1 */
-  --tag-orange-fg: #72533b; /* 4,65:1 */
-  --tag-vert-fg: #336343; /* 4,66:1 */
-  --tag-rose-fg: #854465; /* 4,64:1 */
-  --tag-jaune-fg: #655834; /* 4,68:1 */
-  --tag-turquoise-fg: #32625d; /* 4,61:1 */
+  --tag-violet-fg: #483465; /* 6,95:1 */
+  --tag-bleu-fg: #2b3e54; /* 7,08:1 */
+  --tag-rouge-fg: #5b332f; /* 6,93:1 */
+  --tag-orange-fg: #4f3929; /* 6,97:1 */
+  --tag-vert-fg: #24452f; /* 6,91:1 */
+  --tag-rose-fg: #5b2f45; /* 7,00:1 */
+  --tag-jaune-fg: #453c24; /* 7,06:1 */
+  --tag-turquoise-fg: #234340; /* 6,98:1 */
   /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
   /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
@@ -162,14 +162,14 @@
   --good-glass: #93f0ad;
 
   /* Couleur des tags, sombre : teintes claires et douces. */
-  --tag-violet-fg: #d0bee9; /* 4,66:1 */
-  --tag-bleu-fg: #afc8e4; /* 4,65:1 */
-  --tag-rouge-fg: #e7bbb6; /* 4,66:1 */
-  --tag-orange-fg: #e0bea3; /* 4,63:1 */
-  --tag-vert-fg: #83d69e; /* 4,63:1 */
-  --tag-rose-fg: #e7b8d0; /* 4,65:1 */
-  --tag-jaune-fg: #d8c38a; /* 4,64:1 */
-  --tag-turquoise-fg: #7bd3ca; /* 4,61:1 */
+  --tag-violet-fg: #f5eefe; /* 6,57:1 */
+  --tag-bleu-fg: #e7f1fe; /* 6,53:1 */
+  --tag-rouge-fg: #feebe9; /* 6,50:1 */
+  --tag-orange-fg: #fdeee2; /* 6,57:1 */
+  --tag-vert-fg: #c5fcd7; /* 6,51:1 */
+  --tag-rose-fg: #feecf5; /* 6,57:1 */
+  --tag-jaune-fg: #fcefca; /* 6,53:1 */
+  --tag-turquoise-fg: #befcf5; /* 6,54:1 */
   /* Tag vide sur la carte, pire cas : 5,87:1. */
   --tag-empty-fg: #d1d1d6;
   /*
