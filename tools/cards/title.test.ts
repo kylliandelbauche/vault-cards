@@ -2,6 +2,9 @@
 import { describe, it, expect } from 'vitest'
 import { extractTitle, humanizeFileName, SOURCE_TITLE_MAX } from '../../shared/source-title.ts'
 
+/** Surrogate isolé = chaîne mal formée (String#isWellFormed n'est pas dans la lib ES2023 de l'outil). */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 describe('humanizeFileName', () => {
   it('retire -synthese.md, remplace les tirets par des espaces, majuscule initiale', () => {
     expect(humanizeFileName('claude-code-hooks-synthese.md')).toBe('Claude code hooks')
@@ -57,13 +60,13 @@ describe('extractTitle', () => {
   it('troncature par points de code : un emoji à la frontière n’est jamais coupé en deux', () => {
     const t = extractTitle('# ' + 'a'.repeat(198) + '😀' + 'zzz', 'x-synthese.md')
     expect(Array.from(t)).toHaveLength(SOURCE_TITLE_MAX)
-    expect(t.isWellFormed()).toBe(true)
+    expect(t).not.toMatch(LONE_SURROGATE)
     expect(t.endsWith('…')).toBe(true)
   })
   it('emoji juste avant la limite (199e point de code) : conservé entier', () => {
     const t = extractTitle('# ' + 'a'.repeat(198) + '😀' + 'zzz', 'x-synthese.md')
     expect(t).toBe('a'.repeat(198) + '😀…')
-    expect(t.isWellFormed()).toBe(true)
+    expect(t).not.toMatch(LONE_SURROGATE)
   })
   it('200 points de code exactement : pas de troncature, même avec des emojis (> 200 unités UTF-16)', () => {
     const t = '😀'.repeat(200)

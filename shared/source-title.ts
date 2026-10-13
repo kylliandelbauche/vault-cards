@@ -51,7 +51,7 @@ function h1Text(line: string): string {
 /** Premier `# ` H1 (hors BOM, frontmatter et blocs de code), sinon nom de fichier humanisé. Toujours 1 à 200 caractères. */
 export function extractTitle(markdown: string, fileName: string): string {
   let fence: { char: string; length: number } | null = null
-  for (const line of stripFrontmatter(markdown.replace(/^﻿/, '').split(/\r?\n/))) {
+  for (const line of stripFrontmatter(markdown.replace(/^\uFEFF/, '').split(/\r?\n/))) {
     if (fence) {
       if (closesFence(line, fence)) fence = null
       continue
