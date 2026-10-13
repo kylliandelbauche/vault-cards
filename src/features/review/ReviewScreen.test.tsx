@@ -212,8 +212,8 @@ describe('ReviewScreen', () => {
   it('titre de la barre : « Vault Cards » par défaut, nom du tag pour une session par tag ; plus de déconnexion ici', () => {
     const { container, rerender } = renderScreen(reviewing())
     expect(container.querySelector('header p')?.textContent).toBe('Vault Cards')
-    rerender(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} title="🤖 IA & agents" onBack={vi.fn()} /></KApp>)
-    expect(container.querySelector('header p')?.textContent).toBe('🤖 IA & agents')
+    rerender(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} title="IA & agents" onBack={vi.fn()} /></KApp>)
+    expect(container.querySelector('header p')?.textContent).toBe('IA & agents')
     expect(screen.queryByRole('button', { name: 'Déconnexion' })).toBeNull()
   })
 

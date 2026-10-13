@@ -53,3 +53,10 @@ describe('TagsScreen', () => {
     expect(container.querySelectorAll(SURFACES)).toHaveLength(2)
   })
 })
+
+describe('TagsScreen : texte seul', () => {
+  it('aucun emoji rendu', () => {
+    renderTags()
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
+  })
+})

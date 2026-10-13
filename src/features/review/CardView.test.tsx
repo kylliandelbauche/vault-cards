@@ -30,10 +30,11 @@ describe('CardView : titre de la source', () => {
 })
 
 describe('CardView : tags', () => {
-  it('affiche une pastille emoji + label par tag, et jamais le deck', () => {
+  it('affiche une pastille de texte par tag (aucun emoji), et jamais le deck', () => {
     render(<CardView card={card(['ia', 'securite'])} revealed={false} onReveal={() => {}} />)
     const pills = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
-    expect(pills.map(p => p.textContent)).toEqual(['🤖 IA & agents', '🔐 Sécurité'])
+    expect(pills.map(p => p.textContent)).toEqual(['IA & agents', 'Sécurité'])
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     expect(pills[0].style.backgroundColor).toBe('var(--tag-violet-bg)')
     expect(screen.queryByText(/mon-deck/)).toBeNull()
   })
@@ -41,14 +42,14 @@ describe('CardView : tags', () => {
   it('ignore un tag inconnu sans planter', () => {
     render(<CardView card={card(['cuisine', 'dev'])} revealed={false} onReveal={() => {}} />)
     const pills = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
-    expect(pills.map(p => p.textContent)).toEqual(['🛠️ Dev & outils'])
+    expect(pills.map(p => p.textContent)).toEqual(['Dev & outils'])
   })
 
   it('dédoublonne un tag répété (la contrainte SQL ne refuse pas les doublons)', () => {
     render(<CardView card={card(['ia', 'ia'])} revealed={false} onReveal={() => {}} />)
     const list = screen.getByRole('list', { name: 'Tags' })
     expect(list.getAttribute('role')).toBe('list')
-    expect(within(list).getAllByRole('listitem').map(p => p.textContent)).toEqual(['🤖 IA & agents'])
+    expect(within(list).getAllByRole('listitem').map(p => p.textContent)).toEqual(['IA & agents'])
   })
 
   it('tags null (ligne serveur ou cache anormal) : pas de liste, pas de plantage', () => {

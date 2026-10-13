@@ -68,7 +68,9 @@ describe('HomeScreen', () => {
     const list = within(screen.getByRole('region', { name: 'Mes tags' })).getByRole('list')
     const buttons = within(list).getAllByRole('button')
     expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['IA & agents, 7 cartes', 'Culture, 5 cartes', 'Dev & outils, 3 cartes', 'Sécurité, 0 carte'])
-    expect(buttons[0].textContent).toBe('🤖IA & agents7')
+    expect(buttons[0].textContent).toBe('IA & agents7')
+    // Aucun emoji rendu : un tag est du texte seul.
+    expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
     await userEvent.setup().click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
     expect(onStudy).toHaveBeenCalledWith('dev')
   })
@@ -96,7 +98,6 @@ describe('HomeScreen', () => {
     expect(ia.getAttribute('style')).toContain('--chip: var(--tag-violet-fg)')
     // Verre imité (posé sur la carte « Mes tags ») : bouton en verre sans flou propre.
     expect(ia.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'on-glass', 'tag-chip']))
-    expect((ia.firstElementChild as HTMLElement).style.backgroundColor).toBe('var(--tag-violet-bg)')
     for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|min-h-12|size-11|h-14)\b/)
   })
 

@@ -60,7 +60,7 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
         session={session}
         now={now}
         sync={sync}
-        title={tag ? `${tag.emoji} ${tag.label}` : undefined}
+        title={tag?.label}
         onBack={back}
         backLabel={previous?.name === 'tags' ? 'Mes tags' : 'Accueil'}
         onHome={goHome}

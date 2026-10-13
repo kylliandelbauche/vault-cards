@@ -58,7 +58,7 @@ describe('SignedInApp : navigation (#53)', () => {
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
-    expect(document.querySelector('header p')?.textContent).toBe('🛠️ Dev & outils')
+    expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
     const seen = new Set<string>()
     while (screen.queryByRole('button', { name: 'Afficher la réponse' })) {
       seen.add(document.querySelector('article p.mt-3')!.textContent!)
@@ -137,7 +137,7 @@ describe('SignedInApp : page Mes tags (#53)', () => {
     expect(within(screen.getByRole('list')).getAllByRole('button')).toHaveLength(8)
     await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
-    expect(document.querySelector('header p')?.textContent).toBe('🛠️ Dev & outils')
+    expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
     await user.click(within(document.querySelector('header')!).getByRole('button', { name: 'Mes tags' }))
     await waitFor(() => expect(heading()).toBe('Mes tags'))
     await user.click(within(document.querySelector('header')!).getByRole('button', { name: 'Accueil' }))
