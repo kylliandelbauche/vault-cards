@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, computeScan } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -51,26 +51,39 @@ describe('hashContent', () => {
 })
 
 describe('diffCards', () => {
-  const existing = [{ id: '1', front: 'Q1', back: 'R1' }, { id: '2', front: 'Q2', back: 'R2' }]
+  const existing = [
+    { id: '1', front: 'Q1', back: 'R1', tags: ['ia'] },
+    { id: '2', front: 'Q2', back: 'R2', tags: ['dev'] },
+  ]
   it('carte gardée telle quelle : ni update ni delete (progression conservée)', () => {
-    const d = diffCards(existing, [{ id: '1', front: 'Q1', back: 'R1' }])
+    const d = diffCards(existing, [{ id: '1', front: 'Q1', back: 'R1', tags: ['ia'] }])
     expect(d).toEqual({ toInsert: [], toUpdate: [], toDelete: ['2'] })
   })
   it('carte gardée mais reformulée : update avec le même id', () => {
-    const d = diffCards(existing, [{ id: '1', front: 'Q1 bis', back: 'R1' }, { id: '2', front: 'Q2', back: 'R2' }])
-    expect(d.toUpdate).toEqual([{ id: '1', front: 'Q1 bis', back: 'R1' }])
+    const d = diffCards(existing, [
+      { id: '1', front: 'Q1 bis', back: 'R1', tags: ['ia'] },
+      { id: '2', front: 'Q2', back: 'R2', tags: ['dev'] },
+    ])
+    expect(d.toUpdate).toEqual([{ id: '1', front: 'Q1 bis', back: 'R1', tags: ['ia'] }])
     expect(d.toDelete).toEqual([])
   })
-  it('nouvelle carte sans id : insert', () => {
-    expect(diffCards([], [{ front: 'Q', back: 'R' }]).toInsert).toHaveLength(1)
+  it('seul changement = tags : update avec le même id', () => {
+    const d = diffCards(existing, [
+      { id: '1', front: 'Q1', back: 'R1', tags: ['ia', 'securite'] },
+      { id: '2', front: 'Q2', back: 'R2', tags: ['dev'] },
+    ])
+    expect(d).toEqual({ toInsert: [], toUpdate: [{ id: '1', front: 'Q1', back: 'R1', tags: ['ia', 'securite'] }], toDelete: [] })
+  })
+  it('nouvelle carte sans id : insert avec ses tags', () => {
+    expect(diffCards([], [{ front: 'Q', back: 'R', tags: ['culture'] }]).toInsert).toEqual([{ front: 'Q', back: 'R', tags: ['culture'] }])
   })
   it('id inconnu : erreur (Claude ne doit pas inventer d’id)', () => {
-    expect(() => diffCards(existing, [{ id: '999', front: 'Q', back: 'R' }])).toThrow(/id inconnu/)
+    expect(() => diffCards(existing, [{ id: '999', front: 'Q', back: 'R', tags: ['ia'] }])).toThrow(/id inconnu/)
   })
   it('même id deux fois : erreur', () => {
     expect(() => diffCards(existing, [
-      { id: '1', front: 'Q1', back: 'R1' },
-      { id: '1', front: 'Q1 bis', back: 'R1' },
+      { id: '1', front: 'Q1', back: 'R1', tags: ['ia'] },
+      { id: '1', front: 'Q1 bis', back: 'R1', tags: ['ia'] },
     ])).toThrow(/id en double/)
   })
   it('liste vide : toutes les cartes existantes supprimées', () => {
@@ -79,23 +92,69 @@ describe('diffCards', () => {
 })
 
 describe('validatePayload', () => {
+  const base = { source_path: 'a.md', deck: 'ia', content_hash: 'h' }
   it('refuse une carte vide ou trop longue', () => {
-    const base = { source_path: 'a.md', deck: 'ia', content_hash: 'h' }
-    expect(() => validatePayload({ ...base, cards: [{ front: '', back: 'R' }] })).toThrow()
-    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'x'.repeat(1501) }] })).toThrow()
+    expect(() => validatePayload({ ...base, cards: [{ front: '', back: 'R', tags: ['ia'] }] })).toThrow()
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'x'.repeat(1501), tags: ['ia'] }] })).toThrow()
   })
   it('accepte une liste vide (note sans contenu à apprendre)', () => {
-    expect(validatePayload({ source_path: 'a.md', deck: 'ia', content_hash: 'h', cards: [] }).cards).toEqual([])
+    expect(validatePayload({ ...base, cards: [] }).cards).toEqual([])
   })
-  it('trim le texte et garde l’id', () => {
-    const p = validatePayload({ source_path: 'a.md', deck: 'ia', content_hash: 'h', cards: [{ id: 'u1', front: '  Q ', back: 'R\n' }] })
-    expect(p.cards).toEqual([{ id: 'u1', front: 'Q', back: 'R' }])
+  it('trim le texte, garde l’id et les tags', () => {
+    const p = validatePayload({ ...base, cards: [{ id: 'u1', front: '  Q ', back: 'R\n', tags: ['ia', 'dev'] }] })
+    expect(p.cards).toEqual([{ id: 'u1', front: 'Q', back: 'R', tags: ['ia', 'dev'] }])
   })
   it('refuse un payload mal formé avec un message lisible', () => {
     expect(() => validatePayload(null)).toThrow(/payload/)
     expect(() => validatePayload({ source_path: 'a.md', deck: 'ia', cards: [] })).toThrow(/content_hash/)
-    expect(() => validatePayload({ source_path: 'a.md', deck: 'ia', content_hash: 'h', cards: 'x' })).toThrow(/cards/)
-    expect(() => validatePayload({ source_path: 'a.md', deck: 'ia', content_hash: 'h', cards: [{ id: 3, front: 'Q', back: 'R' }] })).toThrow(/id/)
+    expect(() => validatePayload({ ...base, cards: 'x' })).toThrow(/cards/)
+    expect(() => validatePayload({ ...base, cards: [{ id: 3, front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/id/)
+  })
+  it('tags : slug inconnu refusé', () => {
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['cuisine'] }] })).toThrow(/tag inconnu/)
+  })
+  it('tags : 0 tag refusé (absent ou liste vide)', () => {
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R' }] })).toThrow(/tags/)
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: [] }] })).toThrow(/tags/)
+  })
+  it('tags : 3 tags refusés', () => {
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'dev', 'culture'] }] })).toThrow(/tags/)
+  })
+  it('tags : doublon refusé', () => {
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] })).toThrow(/double/)
+  })
+})
+
+describe('validateRetagPayload', () => {
+  it('accepte une liste de {id, tags} et ignore tout autre champ (jamais le texte)', () => {
+    const p = validateRetagPayload([{ id: 'u1', tags: ['ia'], front: 'ignoré' }, { id: 'u2', tags: ['dev', 'securite'] }])
+    expect(p).toEqual([{ id: 'u1', tags: ['ia'] }, { id: 'u2', tags: ['dev', 'securite'] }])
+  })
+  it('refuse : pas une liste, id manquant, id en double, tags invalides', () => {
+    expect(() => validateRetagPayload({ id: 'u1', tags: ['ia'] })).toThrow(/liste/)
+    expect(() => validateRetagPayload([{ tags: ['ia'] }])).toThrow(/id/)
+    expect(() => validateRetagPayload([{ id: 'u1', tags: ['ia'] }, { id: 'u1', tags: ['dev'] }])).toThrow(/id en double/)
+    expect(() => validateRetagPayload([{ id: 'u1', tags: ['cuisine'] }])).toThrow(/tag inconnu/)
+    expect(() => validateRetagPayload([{ id: 'u1', tags: [] }])).toThrow(/tags/)
+    expect(() => validateRetagPayload([{ id: 'u1', tags: ['ia', 'dev', 'culture'] }])).toThrow(/tags/)
+  })
+})
+
+describe('planRetag', () => {
+  const existing = [
+    { id: 'u1', tags: [], deleted_at: null },
+    { id: 'u2', tags: ['dev'], deleted_at: null },
+    { id: 'u3', tags: ['ia'], deleted_at: '2026-10-12T00:00:00Z' },
+  ]
+  it('ne met à jour que les cartes dont les tags changent', () => {
+    expect(planRetag(existing, [{ id: 'u1', tags: ['ia'] }, { id: 'u2', tags: ['dev'] }]))
+      .toEqual({ toUpdate: [{ id: 'u1', tags: ['ia'] }], unchanged: 1 })
+  })
+  it('id inconnu : erreur avant toute écriture', () => {
+    expect(() => planRetag(existing, [{ id: 'u1', tags: ['ia'] }, { id: 'u9', tags: ['ia'] }])).toThrow(/id inconnu: u9/)
+  })
+  it('id d’une carte supprimée : erreur avant toute écriture', () => {
+    expect(() => planRetag(existing, [{ id: 'u1', tags: ['ia'] }, { id: 'u3', tags: ['dev'] }])).toThrow(/carte supprimée: u3/)
   })
 })
 

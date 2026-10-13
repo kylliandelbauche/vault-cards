@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { MAX_TAGS, isTagSlug } from '../../shared/tags.ts'
 
 export interface NoteFile { source_path: string; deck: string; content_hash: string; abs_path: string }
-export interface IncomingCard { id?: string; front: string; back: string }
+export interface IncomingCard { id?: string; front: string; back: string; tags: string[] }
 export interface ApplyPayload { source_path: string; deck: string; content_hash: string; cards: IncomingCard[] }
-export interface ExistingCard { id: string; front: string; back: string }
+export interface ExistingCard { id: string; front: string; back: string; tags: string[] }
+export interface RetagEntry { id: string; tags: string[] }
+export interface RetagTarget extends RetagEntry { deleted_at: string | null }
 export interface NoteRow { source_path: string; content_hash: string }
 
 /** Hash stocké dans `notes` pour une note supprimée du vault (ses cartes sont supprimées). */
@@ -52,19 +55,24 @@ export function diffCards(existing: ExistingCard[], incoming: IncomingCard[]): {
   const toUpdate: ExistingCard[] = []
   for (const card of incoming) {
     if (card.id === undefined) {
-      toInsert.push({ front: card.front, back: card.back })
+      toInsert.push({ front: card.front, back: card.back, tags: card.tags })
       continue
     }
     const current = byId.get(card.id)
     if (!current) throw new Error('id inconnu: ' + card.id)
     if (kept.has(card.id)) throw new Error('id en double: ' + card.id)
     kept.add(card.id)
-    if (current.front !== card.front || current.back !== card.back) {
-      toUpdate.push({ id: card.id, front: card.front, back: card.back })
+    if (current.front !== card.front || current.back !== card.back || !sameTags(current.tags, card.tags)) {
+      toUpdate.push({ id: card.id, front: card.front, back: card.back, tags: card.tags })
     }
   }
   const toDelete = existing.filter(c => !kept.has(c.id)).map(c => c.id)
   return { toInsert, toUpdate, toDelete }
+}
+
+/** L'ordre compte : le 1er tag est le tag principal. */
+function sameTags(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((t, i) => t === b[i])
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -75,6 +83,19 @@ function requireText(obj: Record<string, unknown>, key: string, where: string): 
   const v = obj[key]
   if (typeof v !== 'string' || v.trim() === '') throw new Error(`${where} : « ${key} » doit être un texte non vide`)
   return v.trim()
+}
+
+/** 1 à MAX_TAGS slugs connus, sans doublon (shared/tags.ts). */
+function requireTags(obj: Record<string, unknown>, where: string): string[] {
+  const v = obj.tags
+  if (!Array.isArray(v) || v.length < 1 || v.length > MAX_TAGS) {
+    throw new Error(`${where} : « tags » doit être une liste de 1 à ${MAX_TAGS} tags`)
+  }
+  for (const t of v) {
+    if (!isTagSlug(t)) throw new Error(`${where} : tag inconnu « ${String(t)} »`)
+  }
+  if (new Set(v).size !== v.length) throw new Error(`${where} : tag en double`)
+  return [...v] as string[]
 }
 
 export function validatePayload(p: unknown): ApplyPayload {
@@ -90,11 +111,44 @@ export function validatePayload(p: unknown): ApplyPayload {
     const back = requireText(raw, 'back', where)
     if (front.length > FRONT_MAX) throw new Error(`${where} : question trop longue (${front.length} > ${FRONT_MAX})`)
     if (back.length > BACK_MAX) throw new Error(`${where} : réponse trop longue (${back.length} > ${BACK_MAX})`)
-    if (raw.id === undefined) return { front, back }
+    const tags = requireTags(raw, where)
+    if (raw.id === undefined) return { front, back, tags }
     if (typeof raw.id !== 'string' || raw.id === '') throw new Error(`${where} : « id » doit être un texte (ou absent)`)
-    return { id: raw.id, front, back }
+    return { id: raw.id, front, back, tags }
   })
   return { source_path, deck, content_hash, cards }
+}
+
+/** Fichier de `retag` : liste de {id, tags}. Tout autre champ est ignoré (le texte n'est jamais modifié). */
+export function validateRetagPayload(p: unknown): RetagEntry[] {
+  if (!Array.isArray(p)) throw new Error('retag : liste JSON de {id, tags} attendue')
+  const seen = new Set<string>()
+  return p.map((raw: unknown, i: number): RetagEntry => {
+    const where = `entrée ${i + 1}`
+    if (!isRecord(raw)) throw new Error(`${where} : objet {id, tags} attendu`)
+    const id = requireText(raw, 'id', where)
+    if (seen.has(id)) throw new Error('id en double: ' + id)
+    seen.add(id)
+    return { id, tags: requireTags(raw, where) }
+  })
+}
+
+/**
+ * Compare aux cartes en base (vivantes ou supprimées) : id inconnu ou carte supprimée = erreur
+ * (rien n'est écrit), tags identiques = ignorés.
+ */
+export function planRetag(existing: RetagTarget[], entries: RetagEntry[]): { toUpdate: RetagEntry[]; unchanged: number } {
+  const byId = new Map(existing.map(c => [c.id, c]))
+  const toUpdate: RetagEntry[] = []
+  let unchanged = 0
+  for (const e of entries) {
+    const current = byId.get(e.id)
+    if (!current) throw new Error('id inconnu: ' + e.id)
+    if (current.deleted_at !== null) throw new Error('carte supprimée: ' + e.id)
+    if (sameTags(current.tags, e.tags)) unchanged++
+    else toUpdate.push(e)
+  }
+  return { toUpdate, unchanged }
 }
 
 /** changed = notes nouvelles ou modifiées ; removed = notes en base absentes du disque (pas déjà marquées removed). */

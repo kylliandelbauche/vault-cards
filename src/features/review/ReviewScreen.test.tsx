@@ -8,7 +8,7 @@ import { ReviewScreen } from './ReviewScreen'
 import type { SyncIndicator } from './useAutoSync'
 import type { ReviewSession } from './useReviewSession'
 
-const card: Card = { id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Question ?', back: 'Réponse.', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null }
+const card: Card = { id: 'a', deck: 'd', tags: ['ia'], source_path: 'd/a.md', front: 'Question ?', back: 'Réponse.', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null }
 const now = () => new Date('2026-10-13T10:00:00Z')
 
 const session = (over: Partial<ReviewSession> = {}): ReviewSession => ({

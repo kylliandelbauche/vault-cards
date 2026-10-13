@@ -16,7 +16,7 @@ Outil : `node tools/cards/cli.ts` depuis `~/Workspace/1-Projects/vault-cards` (l
 3. Pour chaque note `changed` :
    a. Lire le fichier (`abs_path`).
    b. `existing <source_path>` → cartes actuelles.
-   c. Écrire les cartes (règles ci-dessous) dans un fichier JSON temporaire de `$TMPDIR/vault-cards/` au format `{source_path, deck, content_hash, cards: [{id?, front, back}]}`, avec `source_path`, `deck` et `content_hash` recopiés tels quels depuis `scan`. Garder l'`id` d'une carte existante encore pertinente (même si reformulée) ; ne jamais inventer d'id. Une carte existante absente de la liste est supprimée.
+   c. Écrire les cartes (règles ci-dessous) dans un fichier JSON temporaire de `$TMPDIR/vault-cards/` au format `{source_path, deck, content_hash, cards: [{id?, front, back, tags}]}`, avec `source_path`, `deck` et `content_hash` recopiés tels quels depuis `scan`. Garder l'`id` d'une carte existante encore pertinente (même si reformulée) ; ne jamais inventer d'id. Une carte existante absente de la liste est supprimée. Chaque carte porte 1 ou 2 tags (section « Tags ») ; reprendre les tags renvoyés par `existing` sauf s'ils ne conviennent plus.
    d. `apply <fichier>` → `{added, updated, deleted}`. En cas d'erreur, corriger le JSON et relancer : le hash n'est enregistré que si tout a réussi.
 4. Résumé final : « N notes · +X cartes · Y modifiées · Z supprimées », puis la liste des notes traitées.
 
@@ -26,3 +26,26 @@ Outil : `node tools/cards/cli.ts` depuis `~/Workspace/1-Projects/vault-cards` (l
 - Viser les conclusions marquées ★, les chiffres, les définitions, les distinctions. Pas d'anecdote.
 - Jamais « selon la vidéo », « dans cette note » : la carte doit se comprendre seule.
 - Texte brut, pas de Markdown ni de HTML.
+
+## Tags
+Chaque carte a **1 tag principal**, et un **2e seulement s'il est vraiment pertinent** (la carte relève autant des deux thèmes). Maximum 2. Le 1er tag de la liste est le principal. Liste fixe (source : `shared/tags.ts`, tout autre slug est refusé) :
+
+| slug | thème |
+|---|---|
+| `ia` | 🤖 IA & agents |
+| `dev` | 🛠️ Dev & outils |
+| `securite` | 🔐 Sécurité |
+| `marketing` | 📈 Marketing & vente |
+| `argent` | 💰 Argent & business |
+| `mental` | 🧠 Mental & psycho |
+| `productivite` | ⏱️ Productivité |
+| `culture` | 📚 Culture |
+
+Le tag dépend du contenu de la carte, pas du dossier de la note.
+
+### Re-taguer des cartes existantes
+Sans toucher au texte ni à l'id (la progression est conservée) :
+1. `all` → toutes les cartes vivantes `{id, source_path, front, back, tags}`.
+2. Choisir les tags d'après question + réponse, écrire `[{id, tags}, ...]` dans un fichier de `$TMPDIR/vault-cards/` (ids recopiés tels quels).
+3. `retag <fichier>` → `{updated, unchanged}`. Seule la colonne `tags` est modifiée ; un id inconnu, une carte supprimée ou un tag invalide fait tout refuser avant écriture.
+   `retag` n'est **pas transactionnel** (une carte à la fois) mais **idempotent** : en cas d'erreur en cours de route, relancer la même commande avec le même fichier est sans danger (les cartes déjà à jour sont comptées `unchanged`).

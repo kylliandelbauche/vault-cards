@@ -48,6 +48,7 @@ export type Database = {
           front: string
           id: string
           source_path: string
+          tags: string[]
           updated_at: string
         }
         Insert: {
@@ -58,6 +59,7 @@ export type Database = {
           front: string
           id?: string
           source_path: string
+          tags?: string[]
           updated_at?: string
         }
         Update: {
@@ -68,6 +70,7 @@ export type Database = {
           front?: string
           id?: string
           source_path?: string
+          tags?: string[]
           updated_at?: string
         }
         Relationships: []

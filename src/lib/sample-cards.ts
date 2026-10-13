@@ -19,6 +19,7 @@ export const SAMPLE_CARDS: Card[] = RAW.map(([source_path, front, back], i) => (
   id: `sample-${i}`,
   deck: source_path.split('/')[0],
   source_path,
+  tags: [],
   front,
   back,
   updated_at: '2026-10-12T00:00:00Z',

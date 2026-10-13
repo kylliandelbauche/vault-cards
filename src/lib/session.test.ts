@@ -3,7 +3,7 @@ import { buildQueue, countKinds, freeQueue, nextDue } from './session'
 import type { Card, Review } from './types'
 
 const card = (id: string, extra: Partial<Card> = {}): Card => ({
-  id, deck: 'ia', source_path: `3-Resources/veille/ia/${id}.md`, front: id, back: id,
+  id, deck: 'ia', tags: ['ia'], source_path: `3-Resources/veille/ia/${id}.md`, front: id, back: id,
   updated_at: '2026-10-01T00:00:00Z', deleted_at: null, ...extra,
 })
 const rv = (card_id: string, at: string, rating: 1 | 2 | 3 = 3): Review =>
