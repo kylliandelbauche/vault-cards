@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -235,20 +235,53 @@ describe('assertContentHashFresh', () => {
 })
 
 describe('assertDeckMatchesPath', () => {
-  it('deck = dossier qui suit veille/ dans source_path', () => {
-    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/x-synthese.md', 'software')).not.toThrow()
-    expect(() => assertDeckMatchesPath('veille/ia/a-synthese.md', 'ia')).not.toThrow()
+  const ok = '3-Resources/veille/software/x/x-synthese.md'
+  it('deck = dossier qui suit 3-Resources/veille/ dans source_path', () => {
+    expect(() => assertDeckMatchesPath(ok, 'software')).not.toThrow()
+    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a-synthese.md', 'ia')).not.toThrow()
+    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/🛡️ x-synthese.md', 'software')).not.toThrow()
   })
   it('deck différent : erreur qui nomme le deck attendu', () => {
-    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/x-synthese.md', 'ia')).toThrow(/deck « ia ».*« software »/)
+    expect(() => assertDeckMatchesPath(ok, 'ia')).toThrow(/deck « ia ».*« software »/)
   })
   it('deck sensible à la casse et au sous-dossier', () => {
-    expect(() => assertDeckMatchesPath('veille/ia/a/a-synthese.md', 'IA')).toThrow(/deck/)
-    expect(() => assertDeckMatchesPath('veille/ia/a/a-synthese.md', 'a')).toThrow(/deck/)
+    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a/a-synthese.md', 'IA')).toThrow(/deck/)
+    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a/a-synthese.md', 'a')).toThrow(/deck/)
   })
-  it('chemin sans dossier veille/ + deck : erreur', () => {
-    expect(() => assertDeckMatchesPath('a.md', 'ia')).toThrow(/veille/)
-    expect(() => assertDeckMatchesPath('veille/a-synthese.md', 'ia')).toThrow(/veille/)
+  it('même format que scan : préfixe 3-Resources/veille/, un dossier de deck, nom en *-synthese.md', () => {
+    for (const bad of [
+      'a.md',
+      'veille/ia/a-synthese.md', // préfixe 3-Resources/ manquant
+      'x/3-Resources/veille/ia/a-synthese.md', // préfixe pas en tête
+      '3-Resources/veille/a-synthese.md', // pas de dossier de deck
+      '3-Resources/veille/ia/a-transcription.md', // pas une synthèse
+      '3-Resources/veille/ia/a-synthese.md.bak',
+    ]) expect(() => assertDeckMatchesPath(bad, 'ia'), bad).toThrow(/source_path/)
+  })
+  it('refuse .., ., segments vides, chemins absolus et antislash', () => {
+    for (const bad of [
+      '3-Resources/veille/ia/../../../etc/x-synthese.md',
+      '3-Resources/veille/ia/./a-synthese.md',
+      '3-Resources/veille/ia//a-synthese.md',
+      '/3-Resources/veille/ia/a-synthese.md',
+      '3-Resources/veille/ia/a-synthese.md/',
+      '3-Resources/veille/ia/..\\a-synthese.md',
+    ]) expect(() => assertDeckMatchesPath(bad, 'ia'), bad).toThrow(/source_path/)
+  })
+  it('sous-dossier de veille configurable (comme listSyntheses)', () => {
+    expect(() => assertDeckMatchesPath('veille/ia/a-synthese.md', 'ia', 'veille')).not.toThrow()
+  })
+})
+
+describe('resolveInVault', () => {
+  it('résout dans le vault', () => {
+    expect(resolveInVault('/v', '3-Resources/veille/ia/a-synthese.md')).toBe('/v/3-Resources/veille/ia/a-synthese.md')
+  })
+  it('refuse tout chemin qui sort du vault', () => {
+    expect(() => resolveInVault('/v', '../etc/hosts')).toThrow(/hors du vault/)
+    expect(() => resolveInVault('/v', '/etc/hosts')).toThrow(/hors du vault/)
+    expect(() => resolveInVault('/v', 'a/../../w/x.md')).toThrow(/hors du vault/)
+    expect(() => resolveInVault('/v', '')).toThrow(/hors du vault/)
   })
 })
 

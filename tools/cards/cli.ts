@@ -6,7 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
   type ExistingCard, type NoteRow, type RetagTarget,
 } from './lib.ts'
 
@@ -106,12 +106,13 @@ async function apply(file: string, confirmDelete: number | null) {
   assertDeckMatchesPath(source_path, deck)
   loadEnv() // même vault que scan : VAULT_ROOT peut venir de .env.local
   if (content_hash === REMOVED_HASH) {
-    const stillExists = await fs.access(path.join(vaultRoot(), source_path)).then(() => true, () => false)
+    const stillExists = await fs.access(resolveInVault(vaultRoot(), source_path)).then(() => true, () => false)
     assertRemovedNoteGone(source_path, stillExists)
   } else {
+    const abs = resolveInVault(vaultRoot(), source_path)
     let current: string
     try {
-      current = await fs.readFile(path.join(vaultRoot(), source_path), 'utf8')
+      current = await fs.readFile(abs, 'utf8')
     } catch {
       throw new Error(`note introuvable dans le vault : ${source_path} (relancer scan)`)
     }

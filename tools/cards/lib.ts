@@ -14,6 +14,9 @@ export interface NoteRow { source_path: string; content_hash: string }
 /** Hash stocké dans `notes` pour une note supprimée du vault (ses cartes sont supprimées). */
 export const REMOVED_HASH = 'removed'
 
+/** Dossier des notes de veille dans le vault ; le dossier suivant est le deck. */
+export const VEILLE_SUBDIR = '3-Resources/veille'
+
 const FRONT_MAX = 500
 const BACK_MAX = 1500
 
@@ -22,7 +25,7 @@ function toPosix(rel: string): string {
   return rel.split(path.sep).join('/').normalize('NFC')
 }
 
-export async function listSyntheses(vaultRoot: string, subdir = '3-Resources/veille'): Promise<NoteFile[]> {
+export async function listSyntheses(vaultRoot: string, subdir = VEILLE_SUBDIR): Promise<NoteFile[]> {
   const base = path.join(vaultRoot, subdir)
   const entries = await fs.readdir(base, { recursive: true, withFileTypes: true })
   const notes: NoteFile[] = []
@@ -214,19 +217,32 @@ export function assertContentHashFresh(declared: string, currentContent: string)
 }
 
 /**
- * `deck` doit être le dossier qui suit `veille/` dans `source_path` (comme dans `scan`) :
- * un deck erroné rangerait les cartes dans le mauvais paquet.
+ * `source_path` doit avoir exactement la forme produite par `scan` : `<subdir>/<deck>/…/<nom>-synthese.md`,
+ * relatif, sans `.`, `..` ni segment vide, et `deck` doit être le dossier qui suit `<subdir>/`
+ * (un deck erroné rangerait les cartes dans le mauvais paquet).
  */
-export function assertDeckMatchesPath(source_path: string, deck: string): void {
+export function assertDeckMatchesPath(source_path: string, deck: string, subdir = VEILLE_SUBDIR): void {
+  const invalid = (why: string): never => {
+    throw new Error(`source_path « ${source_path} » invalide : ${why} (attendu ${subdir}/<deck>/…/<nom>-synthese.md)`)
+  }
   const parts = source_path.split('/')
-  const i = parts.indexOf('veille')
-  // Il faut au moins un dossier de deck puis un fichier après `veille/`.
-  if (i === -1 || parts.length < i + 3) {
-    throw new Error(`source_path « ${source_path} » : attendu …/veille/<deck>/…/<note>`)
+  if (source_path.includes('\\') || parts.some(p => p === '' || p === '.' || p === '..')) {
+    invalid('chemin absolu, segment vide, « . », « .. » ou antislash')
   }
-  if (parts[i + 1] !== deck) {
-    throw new Error(`deck « ${deck} » incohérent avec source_path « ${source_path} » : attendu « ${parts[i + 1]} »`)
-  }
+  const prefix = subdir.split('/')
+  if (!prefix.every((seg, i) => parts[i] === seg)) invalid(`ne commence pas par ${subdir}/`)
+  const rest = parts.slice(prefix.length)
+  if (rest.length < 2) invalid('pas de dossier de deck')
+  if (!rest[rest.length - 1].endsWith('-synthese.md')) invalid('le nom ne finit pas par -synthese.md')
+  if (rest[0] !== deck) throw new Error(`deck « ${deck} » incohérent avec source_path « ${source_path} » : attendu « ${rest[0]} »`)
+}
+
+/** Chemin absolu d'une note ; refuse tout ce qui sortirait du vault (défense en profondeur après assertDeckMatchesPath). */
+export function resolveInVault(vaultRoot: string, source_path: string): string {
+  const root = path.resolve(vaultRoot)
+  const abs = path.resolve(root, source_path)
+  if (!abs.startsWith(root + path.sep)) throw new Error(`source_path « ${source_path} » hors du vault`)
+  return abs
 }
 
 /** Fichier de `retag` : liste de {id, tags}. Tout autre champ est ignoré (le texte n'est jamais modifié). */
