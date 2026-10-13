@@ -8,15 +8,14 @@ on:
     - cron: '23 3 * * 0'
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   dump:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: supabase/setup-cli@v3.0.1
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3.0.1
         with:
           version: 2.120.0
 
@@ -45,9 +44,18 @@ jobs:
           trap 'rm -rf "$work" backup.tgz' EXIT
 
           supabase db dump --db-url "$DB_URL" -f "$work/schema.sql"
-          supabase db dump --db-url "$DB_URL" --data-only --use-copy -f "$work/data.sql"
-          # Rôles : non sauvegardés. Sur Supabase les rôles sont gérés par la plateforme
-          # et les grants sont dans les migrations (supabase/migrations/).
+          # Données : schéma public uniquement (pas d'auth.* ni storage.* : hash de mot de passe, jetons de session).
+          supabase db dump --db-url "$DB_URL" --data-only --use-copy --schema public -f "$work/data.sql"
+          # Rôles : non sauvegardés (gérés par la plateforme Supabase). Le dump de schéma
+          # restaure en revanche les GRANT/REVOKE et la RLS des schémas applicatifs (public).
+
+          # Garde-fou : un dump vide ou tronqué ne doit pas produire une « sauvegarde » verte.
+          for t in cards reviews; do
+            grep -q "COPY \"public\".\"$t\"" "$work/data.sql" \
+              || { echo "::error::Dump de données incomplet : table public.$t absente."; exit 1; }
+            grep -q "CREATE TABLE IF NOT EXISTS \"public\".\"$t\"" "$work/schema.sql" \
+              || { echo "::error::Dump de schéma incomplet : table public.$t absente."; exit 1; }
+          done
 
           tar czf backup.tgz -C "$work" schema.sql data.sql
 
@@ -55,13 +63,14 @@ jobs:
           # elle n'apparaît ni dans les arguments ni dans les logs.
           printf '%s' "$PASS" | gpg --batch --yes --pinentry-mode loopback \
             --passphrase-fd 0 --symmetric --cipher-algo AES256 \
+            --s2k-mode 3 --s2k-digest-algo SHA512 --s2k-count 65011712 \
             --output backup.tgz.gpg backup.tgz
 
           rm -rf "$work" backup.tgz
           test -s backup.tgz.gpg
           ls -l backup.tgz.gpg
 
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: backup-${{ github.run_id }}
           path: backup.tgz.gpg
