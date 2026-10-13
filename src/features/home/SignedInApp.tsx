@@ -6,7 +6,7 @@ import { dexieStore } from '../review/dexieStore'
 import { ReviewScreen } from '../review/ReviewScreen'
 import { safeSignOut } from '../review/safeSignOut'
 import { syncIndicator, useAutoSync, usePendingCount } from '../review/useAutoSync'
-import { useReviewSession } from '../review/useReviewSession'
+import { useReviewSession, type ReviewSession } from '../review/useReviewSession'
 import { HomeScreen } from './HomeScreen'
 import { useHomeData } from './useHomeData'
 import { useNavigation } from './useNavigation'
@@ -36,14 +36,16 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
   // Accueil : abonné au cache seulement quand il est affiché ; les derniers chiffres restent pendant la révision.
   const homeData = useHomeData(db, now, screen.name === 'home')
 
-  // Retour à l'accueil au milieu d'une session : pousse tout de suite les notes déjà données.
-  const wasReviewing = useRef(false)
+  // Retour à l'accueil au milieu d'une session : pousse tout de suite les notes déjà données. Après une session
+  // terminée, useAutoSync a déjà lancé la synchro de fin : pas de seconde synchro.
+  const leftStatus = useRef<ReviewSession['status'] | null>(null)
   useEffect(() => {
-    if (screen.name === 'review') { wasReviewing.current = true; return }
-    if (!wasReviewing.current) return
-    wasReviewing.current = false
-    if (pending > 0) syncNow()
-  }, [screen, pending, syncNow])
+    if (screen.name === 'review') { leftStatus.current = session.status; return }
+    const last = leftStatus.current
+    if (last === null) return
+    leftStatus.current = null
+    if (last !== 'done' && pending > 0) syncNow()
+  }, [screen, session.status, pending, syncNow])
 
   // Jamais de révisions perdues : synchro d'abord, confirmation si elle échoue.
   const signOutSafely = () => {

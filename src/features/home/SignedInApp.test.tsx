@@ -92,7 +92,7 @@ describe('SignedInApp : navigation (#53)', () => {
     await waitFor(() => expect(runSync).toHaveBeenCalledTimes(2))
   })
 
-  it('retour après une session terminée : derniers compteurs affichés sans spinner', async () => {
+  it('retour après une session terminée : pas de synchro en double, derniers compteurs affichés sans spinner', async () => {
     const { user, runSync } = renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
@@ -103,6 +103,8 @@ describe('SignedInApp : navigation (#53)', () => {
     await user.click(screen.getByRole('button', { name: "Retour à l'accueil" }))
     expect(screen.getByRole('heading', { level: 1 })).toBeTruthy() // anciens chiffres, pas de spinner
     await waitFor(() => expect(heading()).toBe("Aucune carte à revoir aujourd'hui"))
+    await new Promise(r => setTimeout(r, 50))
+    expect(runSync).toHaveBeenCalledTimes(2)
   })
 
   it('bouton « précédent » du navigateur pendant la révision : retour à l’accueil', async () => {
