@@ -65,11 +65,11 @@
   --glass-solid: #f8f9fc;
   --glass-edge: rgb(255 255 255 / 0.7);
   --glass-hairline: rgb(0 0 0 / 0.06);
-  --glass-shadow: 0 8px 32px rgb(15 30 60 / 0.12);
+  --glass-shadow: 0 4px 16px rgb(15 30 60 / 0.1);
   --card-bg: rgb(255 255 255 / 0.9);
   --card-solid: #ffffff;
   --card-edge: rgb(255 255 255 / 0.8);
-  --card-shadow: 0 2px 6px rgb(15 30 60 / 0.06), 0 12px 32px rgb(15 30 60 / 0.08);
+  --card-shadow: 0 1px 3px rgb(15 30 60 / 0.08); /* petite : la carte défile */
   --contrast-border: #3c3c43;
 
   /* Pastilles de tags (shared/tags.ts → clé `color`). Ratio texte / fond (WCAG, AA ≥ 4,5:1) en commentaire. */
@@ -109,11 +109,11 @@
   --glass-solid: #1c1d22;
   --glass-edge: rgb(255 255 255 / 0.12);
   --glass-hairline: rgb(0 0 0 / 0.4);
-  --glass-shadow: 0 8px 32px rgb(0 0 0 / 0.45);
+  --glass-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
   --card-bg: rgb(28 29 34 / 0.92);
   --card-solid: #1c1d22;
   --card-edge: rgb(255 255 255 / 0.08);
-  --card-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+  --card-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
   --contrast-border: #dcdce0;
 
   /* Pastilles de tags, sombre : fond foncé teinté + texte clair. */
@@ -144,11 +144,14 @@ html.dark {
 /*
  * Fond décoratif, style Apple : quelques formes floues statiques en dégradés radiaux (aucune image,
  * aucune animation, aucun filtre : les dégradés sont déjà flous, donc rien à recalculer au défilement).
+ * Performance : un seul calque `position: fixed` peint une fois (jamais `background-attachment: fixed`,
+ * lent sur iOS) ; `contain: strict` l'isole du reste de la mise en page.
  * Le haut de l'écran reste proche de --bg-base pour se raccorder à la barre d'état (theme-color).
  */
 .app-backdrop {
   position: fixed;
   inset: 0;
+  contain: strict;
   pointer-events: none;
   background-color: var(--bg-base);
   background-image:
@@ -160,12 +163,14 @@ html.dark {
 /*
  * Verre (couche des contrôles uniquement : barre du haut et zone d'action du bas). Variante « regular » :
  * assez opaque pour que le texte noir/blanc reste ≥ 4,5:1 quel que soit le contenu dessous.
- * Pas de flou imbriqué : aucun élément flouté à l'intérieur d'un `.glass`.
+ * Performance : 2 surfaces au plus, pas de flou imbriqué, rayon modéré (16 px) ; `contain` limite
+ * la zone repeinte à la barre ; pas de will-change permanent (le flou crée déjà sa couche).
  */
 .glass {
+  contain: layout paint;
   background-color: var(--glass-bg);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
   box-shadow:
     inset 0 0 0 0.5px var(--glass-edge),
     0 0 0 0.5px var(--glass-hairline),
@@ -217,11 +222,12 @@ html.dark {
   }
 }
 
-/* « Réduire les animations » : la barre de progression saute sans transition (le reste : motion-safe:). */
-@media (prefers-reduced-motion: reduce) {
-  .k-progressbar > * {
-    transition: none;
-  }
+/*
+ * Barre de progression sans transition de largeur (Konsta : 200 ms) : animer `width` sous le verre
+ * repeindrait la barre floutée à chaque image après chaque note. Couvre aussi « Réduire les animations ».
+ */
+.k-progressbar > * {
+  transition: none;
 }
 
 /*

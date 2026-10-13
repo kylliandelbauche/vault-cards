@@ -52,3 +52,26 @@ describe('index.css : replis du verre (#19)', () => {
     }
   })
 })
+
+/** CSS sans commentaires (les commentaires citent ce qu'on s'interdit). */
+const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
+
+describe('index.css : garde-fous de performance (#19)', () => {
+  it('flou modéré (≤ 20 px) et zone repeinte limitée sur le verre', () => {
+    const glass = block('.glass {')
+    for (const m of glass.matchAll(/blur\((\d+)px\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(20)
+    expect(glass).toMatch(/contain:\s*layout paint/)
+    expect(code).not.toMatch(/will-change/)
+  })
+
+  it('fond : un calque fixe sans background-attachment: fixed ni filtre', () => {
+    const bg = block('.app-backdrop {')
+    expect(bg).toMatch(/position:\s*fixed/)
+    expect(code).not.toMatch(/background-attachment:\s*fixed/)
+    expect(bg).not.toMatch(/filter/)
+  })
+
+  it('progression sans transition de largeur sous le verre', () => {
+    expect(block('.k-progressbar > * {')).toMatch(/transition:\s*none/)
+  })
+})
