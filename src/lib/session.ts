@@ -4,43 +4,64 @@ import type { Card, Review } from './types'
 
 export interface SessionItem { card: Card; state: FsrsCard }
 
+/** Nombre maximal de nouvelles cartes introduites par jour (quota global, tous tags confondus). */
+export const NEW_PER_DAY = 20
+
 const sameLocalDay = (a: Date, b: Date) => a.toDateString() === b.toDateString()
 
-function byCard(reviews: Review[]) {
+export function byCard(reviews: Review[]) {
   const m = new Map<string, Review[]>()
   for (const r of reviews) m.set(r.card_id, [...(m.get(r.card_id) ?? []), r])
   return m
 }
 
-export function buildQueue(cards: Card[], reviews: Review[], now: Date, newLimit = 20): SessionItem[] {
-  const grouped = byCard(reviews)
-  const live = cards.filter(c => !c.deleted_at)
-  const items = live.map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
+/** La carte porte ce tag (doublon ou `tags` absent d'un vieux cache : sans effet). */
+export const hasTag = (card: Card, tag: string) => (card.tags ?? []).includes(tag)
 
-  const introducedToday = [...grouped.values()].filter(rs => {
+/** Cartes vivantes (non supprimées) avec leur état FSRS, recalculé depuis l'historique. */
+export function scheduleItems(cards: Card[], grouped: Map<string, Review[]>): SessionItem[] {
+  return cards.filter(c => !c.deleted_at).map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
+}
+
+/** Cartes vues pour la première fois aujourd'hui (jour local), toutes cartes confondues. */
+function introducedToday(grouped: Map<string, Review[]>, now: Date) {
+  return [...grouped.values()].filter(rs => {
     const first = rs.reduce((a, b) => (a.reviewed_at < b.reviewed_at ? a : b))
     return sameLocalDay(new Date(first.reviewed_at), now)
   }).length
-
-  const due = items.filter(i => !isNew(i.state) && i.state.due <= now)
-    .sort((a, b) => a.state.due.getTime() - b.state.due.getTime())
-  const fresh = items.filter(i => isNew(i.state))
-    .sort((a, b) => a.card.source_path.localeCompare(b.card.source_path) || a.card.id.localeCompare(b.card.id))
-    .slice(0, Math.max(0, newLimit - introducedToday))
-  return [...due, ...fresh]
 }
 
 /**
- * Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes, dues ou non, sans limite
- * de nouvelles. Cartes déjà vues d'abord (échéance la plus proche), puis nouvelles dans l'ordre habituel.
+ * File du jour à partir d'éléments déjà planifiés : dues (échéance la plus ancienne d'abord), puis nouvelles
+ * dans la limite du quota restant. Avec `tag`, seules les cartes du tag ; le quota reste global
+ * (les nouvelles déjà vues aujourd'hui, tous tags confondus, sont décomptées).
+ */
+export function queueOf(items: SessionItem[], grouped: Map<string, Review[]>, now: Date, newLimit = NEW_PER_DAY, tag?: string): SessionItem[] {
+  const scoped = tag === undefined ? items : items.filter(i => hasTag(i.card, tag))
+  const due = scoped.filter(i => !isNew(i.state) && i.state.due <= now)
+    .sort((a, b) => a.state.due.getTime() - b.state.due.getTime())
+  const fresh = scoped.filter(i => isNew(i.state))
+    .sort((a, b) => a.card.source_path.localeCompare(b.card.source_path) || a.card.id.localeCompare(b.card.id))
+    .slice(0, Math.max(0, newLimit - introducedToday(grouped, now)))
+  return [...due, ...fresh]
+}
+
+/** Session normale : cartes dues + nouvelles du jour (quota global), éventuellement limitée à un tag. */
+export function buildQueue(cards: Card[], reviews: Review[], now: Date, newLimit = NEW_PER_DAY, tag?: string): SessionItem[] {
+  const grouped = byCard(reviews)
+  return queueOf(scheduleItems(cards, grouped), grouped, now, newLimit, tag)
+}
+
+/**
+ * Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes (du tag, s'il y en a un), dues ou non,
+ * sans limite de nouvelles. Cartes déjà vues d'abord (échéance la plus proche), puis nouvelles dans l'ordre habituel.
  * FSRS gère une révision anticipée via le temps écoulé depuis la précédente.
  */
-export function freeQueue(cards: Card[], reviews: Review[], now: Date): SessionItem[] {
+export function freeQueue(cards: Card[], reviews: Review[], now: Date, tag?: string): SessionItem[] {
   const grouped = byCard(reviews)
-  const items = cards.filter(c => !c.deleted_at)
-    .map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
+  const items = scheduleItems(cards, grouped).filter(i => tag === undefined || hasTag(i.card, tag))
   const seen = items.filter(i => !isNew(i.state)).sort((a, b) => a.state.due.getTime() - b.state.due.getTime())
-  const fresh = buildQueue(items.filter(i => isNew(i.state)).map(i => i.card), [], now, Infinity)
+  const fresh = queueOf(items.filter(i => isNew(i.state)), new Map(), now, Infinity)
   return [...seen, ...fresh]
 }
 
@@ -54,9 +75,9 @@ export function countKinds(items: SessionItem[]) {
   return { new: n, learn, due }
 }
 
-export function nextDue(cards: Card[], reviews: Review[], now: Date): Date | null {
+export function nextDue(cards: Card[], reviews: Review[], now: Date, tag?: string): Date | null {
   const grouped = byCard(reviews)
-  const dues = cards.filter(c => !c.deleted_at && grouped.has(c.id))
+  const dues = cards.filter(c => !c.deleted_at && grouped.has(c.id) && (tag === undefined || hasTag(c, tag)))
     .map(c => stateFromReviews(grouped.get(c.id)!).due)
     .filter(d => d > now)
   return dues.length ? new Date(Math.min(...dues.map(d => d.getTime()))) : null
