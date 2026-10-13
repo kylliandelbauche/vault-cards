@@ -78,6 +78,8 @@
   --glass-btn-shadow: 0 2px 10px rgb(15 30 60 / 0.12);
   --glass-btn-press: rgb(0 0 0 / 0.06); /* voile intérieur à l'appui : fonce le verre, jamais le texte */
   --glass-btn-highlight: rgb(255 255 255 / 0.12); /* reflet Konsta (50 % par défaut : trop fort sous le libellé) */
+  --glass-btn-hover-sheen: rgb(255 255 255 / 0.16); /* survol : haut du verre éclairci (s'éteint avant l'intervalle) */
+  --glass-btn-lift: 0 6px 18px rgb(15 30 60 / 0.18);
   --glow-new: rgb(10 132 255 / 0.2);   --rim-new: rgb(10 132 255 / 0.5);
   --glow-again: rgb(255 59 48 / 0.2);  --rim-again: rgb(255 59 48 / 0.5);
   --glow-hard: rgb(255 159 10 / 0.24); --rim-hard: rgb(255 159 10 / 0.55);
@@ -136,6 +138,8 @@
   --glass-btn-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
   --glass-btn-press: rgb(0 0 0 / 0.18);
   --glass-btn-highlight: rgb(255 255 255 / 0.1);
+  --glass-btn-hover-sheen: rgb(255 255 255 / 0.08);
+  --glass-btn-lift: 0 6px 18px rgb(0 0 0 / 0.45);
   --glow-new: rgb(10 132 255 / 0.3);   --rim-new: rgb(10 132 255 / 0.6);
   --glow-again: rgb(255 69 58 / 0.3);  --rim-again: rgb(255 69 58 / 0.6);
   --glow-hard: rgb(255 179 64 / 0.26); --rim-hard: rgb(255 179 64 / 0.6);
@@ -272,6 +276,54 @@ html.dark {
 .glass-btn-hard { --glass-btn-glow: radial-gradient(90% 90% at 50% 120%, var(--glow-hard), transparent 75%); --glass-btn-rim: var(--rim-hard); }
 .glass-btn-good { --glass-btn-glow: radial-gradient(90% 90% at 50% 120%, var(--glow-good), transparent 75%); --glass-btn-rim: var(--rim-good); }
 /* .glass-btn-neutral : verre seul, sans lueur ni liseré coloré. */
+
+/*
+ * Survol Liquid Glass (macOS 26 / visionOS), souris et trackpad seulement (jamais au doigt) : le haut du
+ * verre s'éclaircit (pseudo-élément sous le texte, animé en `opacity`), le liseré se renforce, la lueur de
+ * la couleur déborde autour du bouton, léger soulèvement (`scale` 1.02 + ombre plus marquée), 180 ms ease-out.
+ * L'éclaircissement s'éteint avant l'intervalle : contrastes inchangés en bas du bouton.
+ * Le reflet Konsta (lumière qui suit le pointeur) reste actif à la souris.
+ */
+.glass-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1; /* sous le texte, au-dessus du fond du bouton (contain: paint crée le contexte d'empilement) */
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background-image: linear-gradient(180deg, var(--glass-btn-hover-sheen), transparent 55%);
+  box-shadow: inset 0 0 0 1px var(--glass-btn-rim, var(--glass-btn-edge)), inset 0 1px 0 var(--glass-btn-edge);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .glass-btn:hover:not(:disabled)::before {
+    opacity: 1;
+  }
+  .glass-btn:hover:not(:disabled) {
+    box-shadow:
+      inset 0 1px 0 var(--glass-btn-edge),
+      inset 0 0 0 1px var(--glass-btn-rim, var(--glass-btn-edge)),
+      0 0 18px -4px var(--glass-btn-rim, var(--glass-btn-edge)),
+      var(--glass-btn-lift);
+  }
+}
+
+/* Transitions de survol : seulement si les animations sont permises (sinon changement d'état instantané). */
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .glass-btn {
+    transition: scale 180ms ease-out, box-shadow 180ms ease-out;
+  }
+  .glass-btn::before {
+    transition: opacity 180ms ease-out;
+  }
+  .glass-btn:hover:not(:disabled) {
+    scale: 1.02;
+  }
+  .glass-btn:hover:active:not(:disabled) {
+    scale: 1;
+  }
+}
 
 /*
  * Boutons de notation plus carrés quand la hauteur le permet (iPhone hors SE, desktop) : hauteur = largeur,

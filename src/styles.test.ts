@@ -55,6 +55,20 @@ describe('index.css : verre et repli (#19, #39)', () => {
     }
   })
 
+  it('survol Liquid Glass : souris / trackpad seulement, éclaircissement en opacity sous le texte, soulèvement en scale', () => {
+    const hover = block('@media (hover: hover) and (pointer: fine) {')
+    expect(hover).toMatch(/\.glass-btn:hover:not\(:disabled\)::before\s*\{[^}]*opacity:\s*1/)
+    const before = block('.glass-btn::before {')
+    expect(before).toMatch(/opacity:\s*0/)
+    expect(before).toMatch(/z-index:\s*-1/)
+    expect(before).toMatch(/pointer-events:\s*none/)
+    const motion = block('@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)')
+    expect(motion).toMatch(/scale:\s*1\.02/)
+    expect(motion).toMatch(/transition:\s*opacity 1\d0ms ease-out/)
+    // Aucun :hover hors de ces blocs (pas d'effet de survol collant au doigt).
+    expect(code.replace(/@media \(hover: hover\)[^{]*\{(?:[^{}]*\{[^}]*\})*[^{}]*\}/g, '')).not.toMatch(/:hover/)
+  })
+
   it('notes plus carrées si la hauteur le permet ; zone d’action remontée sur desktop seulement', () => {
     expect(block('@media (min-height: 740px)')).toMatch(/\.rating-btn\s*\{[^}]*width:\s*100%;[^}]*aspect-ratio:\s*1;[^}]*max-height:\s*116px/)
     expect(block('@media (hover: hover) and (pointer: fine), (min-width: 768px) and (min-height: 700px)')).toMatch(/\.action-dock\s*\{[^}]*padding-bottom:\s*max\(32px/)
@@ -100,7 +114,11 @@ describe('index.css : garde-fous de performance (#19)', () => {
     expect(btn).toMatch(/touch-action:\s*manipulation/)
     // Seul `scale` (reflet Konsta) peut être animé : jamais l'ombre, le fond ou le flou.
     expect(btn).toMatch(/transition-property:\s*scale;/)
-    expect(code).not.toMatch(/transition:\s*(all|box-shadow|background|backdrop)/)
+    expect(code).not.toMatch(/transition(-property)?:\s*(all|background|backdrop)/)
+    // L'ombre ne s'anime qu'au survol à la souris (desktop), jamais au doigt.
+    const transitions = [...code.matchAll(/transition:[^;]*box-shadow/g)]
+    expect(transitions).toHaveLength(1)
+    expect(block('@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)')).toMatch(/transition:[^;]*box-shadow/)
   })
 
   it('fond : un calque fixe sans background-attachment: fixed ni filtre', () => {
