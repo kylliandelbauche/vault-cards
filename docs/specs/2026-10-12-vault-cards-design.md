@@ -77,7 +77,7 @@ iPhone / navigateur : PWA (Vercel) ⇄ IndexedDB (Dexie) ⇄ Supabase (sync quan
 ## 8. `/flashcards` (génération des cartes)
 
 - **Skill** utilisateur : `~/.claude/skills/flashcards/SKILL.md` (source dans le repo, `skill/`), utilisable depuis n'importe quel dossier.
-- **Outil** `tools/cards` (Node, lit `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` dans `.env.local`, jamais commité) :
+- **Outil** `tools/cards` (Node, lit `SUPABASE_URL` + `SUPABASE_SECRET_KEY` dans `.env.local`, jamais commité) :
   - `scan` → liste JSON des `*-synthese.md` de `~/Workspace/3-Resources/veille` nouvelles ou modifiées (hash ≠ `notes.content_hash`), avec le `title` de chaque note ;
   - `existing <path>` → cartes actuelles de cette note ;
   - `apply <fichier.json>` → crée / met à jour / supprime les cartes d'une note (avec son `source_title`) et enregistre son hash ;
