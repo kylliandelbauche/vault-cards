@@ -18,7 +18,17 @@ export const memoryStore = (cards: Card[]): ReviewStore => {
   }
 }
 
-type Status = 'loading' | 'error' | 'empty' | 'reviewing' | 'done'
+/** `idle` : aucune session demandée (écran d'accueil). */
+type Status = 'idle' | 'loading' | 'error' | 'empty' | 'reviewing' | 'done'
+
+/** Ce que la session doit proposer : file du jour (`due`) ou révision libre (`all`), éventuellement limitée à un tag. */
+export interface SessionScope {
+  mode: 'due' | 'all'
+  tag?: string
+}
+
+/** Session par défaut : dues + nouvelles du jour, toutes les cartes. */
+export const DUE_SESSION: SessionScope = { mode: 'due' }
 type Stats = { again: number; hard: number; good: number }
 
 export interface ReviewSession {
@@ -33,13 +43,15 @@ export interface ReviewSession {
   progress: number // 0..1
   stats: Stats
   nextDueAt: Date | null
-  /** Recharge une session normale : cartes dues + nouvelles du jour. */
+  /** Recharge une session normale : cartes dues + nouvelles du jour (du tag de la session, s'il y en a un). */
   restart(): void
-  /** Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes, dues ou non. */
+  /** Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes (du tag), dues ou non. */
   reviewAll(): void
 }
 
 interface State {
+  /** Session à laquelle cet état appartient (identité de l'objet) ; un état d'une autre session est ignoré. */
+  scope: SessionScope | null
   status: Status
   queue: SessionItem[]
   revealed: boolean
@@ -59,62 +71,65 @@ interface State {
 export const SCREEN_CHANGE_GUARD_MS = 400
 
 const ZERO: Stats = { again: 0, hard: 0, good: 0 }
-const INITIAL: State = { status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
-const FAILED: State = { ...INITIAL, status: 'error' }
+const INITIAL: State = { scope: null, status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
+const failed = (scope: SessionScope): State => ({ ...INITIAL, scope, status: 'error' })
 const STAT_KEY = { 1: 'again', 2: 'hard', 3: 'good' } as const
 const systemNow = () => new Date()
 
-/** Le store est lu au montage et à `restart()` (échec de lecture → status `error`) ; un `store` ou un `now` recréé à chaque rendu ne relance rien. */
-export function useReviewSession(store: ReviewStore, now: () => Date = systemNow): ReviewSession {
+/**
+ * Le store est lu quand `scope` change (identité de l'objet : un nouvel objet relance une session, même
+ * identique) et à `restart()` / `reviewAll()` (échec de lecture → status `error`). `scope` null : status `idle`,
+ * rien n'est lu. Un `store` ou un `now` recréé à chaque rendu ne relance rien.
+ */
+export function useReviewSession(store: ReviewStore, now: () => Date = systemNow, scope: SessionScope | null = DUE_SESSION): ReviewSession {
   const [state, setState] = useState<State>(INITIAL)
   // Miroir synchrone de l'état, lu par les gestionnaires pour éviter les closures périmées.
   const live = useRef<State>(INITIAL)
   const cards = useRef<Card[]>([])
   const reviews = useRef<Review[]>([])
   const rating = useRef(false)
-  // Dernières valeurs de `store` / `now`, lues par les gestionnaires sans en faire des dépendances.
-  const io = useRef({ store, now })
-  useEffect(() => { io.current = { store, now } })
+  // Numéro du dernier chargement lancé : un chargement plus ancien qui se termine après est ignoré.
+  const generation = useRef(0)
+  // Dernières valeurs de `store` / `now` / `scope`, lues par les gestionnaires sans en faire des dépendances.
+  const io = useRef({ store, now, scope })
+  useEffect(() => { io.current = { store, now, scope } })
 
   const commit = useCallback((next: State) => {
     live.current = next
     setState(next)
   }, [])
 
-  // Lit le store et prépare l'état de départ, sans toucher à l'état React.
-  const load = useCallback(async (mode: 'due' | 'all' = 'due') => {
+  // Lit le store et prépare l'état de départ de `scope`, puis l'applique s'il est encore le dernier demandé.
+  const load = useCallback((target: SessionScope, mode: SessionScope['mode']) => {
+    const gen = ++generation.current
     const { store, now } = io.current
-    const [cs, rs] = await Promise.all([store.loadCards(), store.loadReviews()])
-    const t = now()
-    const queue = mode === 'all' ? freeQueue(cs, rs, t) : buildQueue(cs, rs, t)
-    const hasLiveCards = cs.some(c => !c.deleted_at)
-    const next: State = {
-      ...INITIAL,
-      status: queue.length ? 'reviewing' : hasLiveCards ? 'done' : 'empty',
-      queue,
-      nextDueAt: queue.length ? null : nextDue(cs, rs, t),
-    }
-    return { cs, rs, next }
-  }, [])
-
-  const apply = useCallback(({ cs, rs, next }: Awaited<ReturnType<typeof load>>) => {
-    cards.current = cs
-    reviews.current = rs
-    commit(next)
+    Promise.all([store.loadCards(), store.loadReviews()]).then(([cs, rs]) => {
+      if (gen !== generation.current) return
+      const t = now()
+      const queue = mode === 'all' ? freeQueue(cs, rs, t, target.tag) : buildQueue(cs, rs, t, undefined, target.tag)
+      const hasLiveCards = cs.some(c => !c.deleted_at)
+      cards.current = cs
+      reviews.current = rs
+      commit({
+        ...INITIAL,
+        scope: target,
+        status: queue.length ? 'reviewing' : hasLiveCards ? 'done' : 'empty',
+        queue,
+        nextDueAt: queue.length ? null : nextDue(cs, rs, t, target.tag),
+      })
+    }, () => {
+      if (gen === generation.current) commit(failed(target))
+    })
   }, [commit])
 
   useEffect(() => {
-    let current = true
-    load().then(
-      loaded => { if (current) apply(loaded) },
-      () => { if (current) commit(FAILED) },
-    )
-    return () => { current = false }
-  }, [load, apply, commit])
+    if (scope) load(scope, scope.mode)
+    else generation.current++ // retour à l'accueil : un chargement en cours ne s'applique plus
+  }, [scope, load])
 
   const reveal = useCallback(() => {
     const s = live.current
-    if (s.status !== 'reviewing' || s.revealed) return
+    if (s.scope !== io.current.scope || s.status !== 'reviewing' || s.revealed) return
     const t = io.current.now().getTime()
     if (t - s.shownAt < SCREEN_CHANGE_GUARD_MS) return
     commit({ ...s, revealed: true, shownAt: t })
@@ -123,7 +138,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   const rate = useCallback(async (r: Rating) => {
     const s = live.current
     const item = s.queue[0]
-    if (rating.current || s.status !== 'reviewing' || !s.revealed || !item) return
+    if (rating.current || s.scope !== io.current.scope || s.status !== 'reviewing' || !s.revealed || !item) return
     const { store, now } = io.current
     if (now().getTime() - s.shownAt < SCREEN_CHANGE_GUARD_MS) return
     rating.current = true // posé avant tout await : un double tap n'enregistre qu'une review
@@ -163,17 +178,21 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     }
   }, [commit])
 
-  const reload = useCallback((mode: 'due' | 'all') => {
-    if (live.current.status === 'error') commit(INITIAL)
-    load(mode).then(apply, () => commit(FAILED))
-  }, [load, apply, commit])
+  const reload = useCallback((mode: SessionScope['mode']) => {
+    const target = io.current.scope
+    if (!target) return
+    if (live.current.status === 'error') commit({ ...INITIAL, scope: target })
+    load(target, mode)
+  }, [load, commit])
   const restart = useCallback(() => reload('due'), [reload])
   const reviewAll = useCallback(() => reload('all'), [reload])
 
   const total = state.processed + state.queue.length
+  // Session demandée mais pas encore chargée (ou état d'une session précédente) : « loading ».
+  const status: Status = scope === null ? 'idle' : state.scope === scope ? state.status : 'loading'
   return {
-    status: state.status,
-    current: state.status === 'reviewing' ? state.queue[0] ?? null : null,
+    status,
+    current: status === 'reviewing' ? state.queue[0] ?? null : null,
     revealed: state.revealed,
     saveFailed: state.saveFailed,
     reveal,
