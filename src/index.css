@@ -383,6 +383,9 @@ html.dark {
   color: var(--tag-empty-fg);
 }
 @media (hover: hover) and (pointer: fine) {
+  .tag-head:hover {
+    background-color: rgb(127 127 127 / 0.1);
+  }
   .tag-btn:not([aria-disabled='true']):hover {
     box-shadow: inset 0 0 0 1.5px currentColor;
   }
@@ -406,6 +409,7 @@ html.dark {
 .k-button:focus-visible,
 .glass-btn:focus-visible,
 .tag-btn:focus-visible,
+.tag-head:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--new);

@@ -2,8 +2,9 @@ import { Page, Preloader } from 'konsta/react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { BarTitle, EDGES, SignOutButton, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { formatInterval } from '../../lib/format'
-import { cards, todaySuffix, type HomeStats, type TagCount } from '../../lib/home'
+import { HOME_TAGS, sortTags, todaySuffix, type HomeStats, type TagCount } from '../../lib/home'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
+import { TagChip } from './TagChip'
 import type { HomeData } from './useHomeData'
 
 interface Props {
@@ -14,6 +15,8 @@ interface Props {
   onStudy(tag?: string): void
   /** « Réviser à nouveau » quand rien n'est dû : révision libre de toutes les cartes. */
   onReviewAll(): void
+  /** Flèche « › » de « Mes tags » : page de tous les tags. */
+  onOpenTags(): void
   onSignOut?(): void
 }
 
@@ -21,7 +24,7 @@ interface Props {
  * Écran d'accueil (#53). Surfaces floutées : barre du haut, carte « aujourd'hui », bouton d'action, carte
  * « Mes tags » (4, aucune imbriquée). Compteurs et pastilles de tags sont opaques, sans flou, dans les cartes.
  */
-export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onSignOut }: Props) {
+export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, onSignOut }: Props) {
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
       <TopBar>
@@ -44,7 +47,7 @@ export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onSignOut }:
                 ? <GlassButton tone="new" className={GLASS_PRIMARY} onClick={() => onStudy()}>Commencer à étudier</GlassButton>
                 : <GlassButton tone="new" className={GLASS_PRIMARY} onClick={onReviewAll}>Réviser à nouveau</GlassButton>
             )}
-            <Tags tags={data.stats.tags} onStudy={onStudy} />
+            <Tags tags={data.stats.tags} onStudy={onStudy} onOpenTags={onOpenTags} />
           </>
         )}
       </main>
@@ -101,33 +104,29 @@ function Today({ stats, now }: { stats: HomeStats; now: Date }) {
 }
 
 /**
- * « Mes tags » : les 8 tags, pastilles opaques aux couleurs du tag (contrastes déjà validés, cf. index.css),
- * cible ≥ 44 px. Tag sans carte : grisé, non cliquable (`aria-disabled`, reste lisible et atteignable au clavier).
+ * « Mes tags » : les HOME_TAGS tags les plus fournis (vides en dernier). Toute la ligne du titre (≥ 44 px)
+ * ouvre la page de tous les tags.
  */
-function Tags({ tags, onStudy }: { tags: TagCount[]; onStudy(tag: string): void }) {
+function Tags({ tags, onStudy, onOpenTags }: { tags: TagCount[]; onStudy(tag: string): void; onOpenTags(): void }) {
   return (
-    <section aria-labelledby="tags" className="glass-card rounded-[28px] p-4 text-black dark:text-white">
-      <h2 id="tags" className="mb-3 px-1 text-[17px] leading-tight font-semibold">Mes tags</h2>
+    <section aria-labelledby="tags-title" className="glass-card rounded-[28px] p-4 text-black dark:text-white">
+      <h2 className="mb-2">
+        <button
+          type="button"
+          onClick={onOpenTags}
+          className="tag-head -mx-1 -mt-1 flex min-h-11 w-[calc(100%+0.5rem)] items-center justify-between rounded-2xl px-2 text-start text-[17px] leading-tight font-semibold"
+        >
+          <span id="tags-title">Mes tags</span>
+          <span className="sr-only">, voir les {tags.length} tags</span>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 text-label-2" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 6l6 6-6 6" />
+          </svg>
+        </button>
+      </h2>
       <ul role="list" className="grid auto-rows-fr grid-cols-2 gap-2">
-        {tags.map(t => {
-          const empty = t.count === 0
-          return (
-            <li key={t.slug}>
-              <button
-                type="button"
-                aria-disabled={empty || undefined}
-                aria-label={`${t.label}, ${cards(t.count)}`}
-                onClick={empty ? undefined : () => onStudy(t.slug)}
-                className={`tag-btn flex h-full min-h-11 w-full items-center gap-2 rounded-2xl px-3 py-1.5 text-start ${empty ? 'tag-btn-empty' : ''}`}
-                style={empty ? undefined : { backgroundColor: `var(--tag-${t.color}-bg)`, color: `var(--tag-${t.color}-fg)` }}
-              >
-                <span aria-hidden="true" className={`text-[17px] leading-none ${empty ? 'grayscale' : ''}`}>{t.emoji}</span>
-                <span className="min-w-0 flex-1 text-[14px] leading-tight font-medium">{t.label}</span>
-                <span className="text-[14px] leading-tight font-semibold tabular-nums">{t.count}</span>
-              </button>
-            </li>
-          )
-        })}
+        {sortTags(tags).slice(0, HOME_TAGS).map(t => (
+          <li key={t.slug}><TagChip tag={t} onStudy={onStudy} variant="grid" /></li>
+        ))}
       </ul>
     </section>
   )

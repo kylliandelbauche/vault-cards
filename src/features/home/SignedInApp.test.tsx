@@ -74,7 +74,7 @@ describe('SignedInApp : navigation (#53)', () => {
   it('tags sans carte : grisés et non cliquables', async () => {
     const { user } = renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
-    await user.click(screen.getByRole('button', { name: 'Culture, 0 carte' }))
+    await user.click(screen.getByRole('button', { name: 'Sécurité, 0 carte' }))
     expect(screen.queryByRole('button', { name: 'Afficher la réponse' })).toBeNull()
     expect(heading()).toBe("3 cartes à revoir aujourd'hui")
   })
@@ -123,5 +123,35 @@ describe('SignedInApp : navigation (#53)', () => {
     }))
     await waitFor(() => expect(heading()).toBe("4 cartes à revoir aujourd'hui"))
     expect(screen.getByRole('button', { name: 'Culture, 1 carte' }).hasAttribute('aria-disabled')).toBe(false)
+  })
+})
+
+describe('SignedInApp : page Mes tags (#53)', () => {
+  beforeEach(() => { window.history.replaceState(null, '') })
+
+  it('accueil → Mes tags → session du tag → chevron « Mes tags » → chevron « Accueil »', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Mes tags, voir les 8 tags' }))
+    await waitFor(() => expect(heading()).toBe('Mes tags'))
+    expect(within(screen.getByRole('list')).getAllByRole('button')).toHaveLength(8)
+    await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(document.querySelector('header p')?.textContent).toBe('🛠️ Dev & outils')
+    await user.click(within(document.querySelector('header')!).getByRole('button', { name: 'Mes tags' }))
+    await waitFor(() => expect(heading()).toBe('Mes tags'))
+    await user.click(within(document.querySelector('header')!).getByRole('button', { name: 'Accueil' }))
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+  })
+
+  it('fin d’une session ouverte depuis Mes tags : « Retour à l’accueil » ramène à l’accueil', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Mes tags, voir les 8 tags' }))
+    await user.click(await screen.findByRole('button', { name: /^IA & agents, 2 cartes/ }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    await rateAll(user)
+    await user.click(await screen.findByRole('button', { name: "Retour à l'accueil" }))
+    await waitFor(() => expect(heading()).toBe("1 carte à revoir aujourd'hui"))
   })
 })

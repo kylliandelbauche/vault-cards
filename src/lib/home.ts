@@ -15,6 +15,8 @@ export const isMastered = (s: FsrsCard) => s.state === State.Review && s.stabili
 export interface TagCount extends TagDef {
   /** Cartes vivantes portant ce tag (une carte à 2 tags compte dans les deux). */
   count: number
+  /** File du jour de la session de ce tag (dues + nouvelles, quota global). */
+  today: number
 }
 
 export interface HomeStats {
@@ -48,10 +50,21 @@ export function homeStats(cards: Card[], reviews: Review[], now: Date, newLimit 
     fresh,
     mastered: items.filter(i => isMastered(i.state)).length,
     total: items.length,
-    tags: TAGS.map(t => ({ ...t, count: items.filter(i => hasTag(i.card, t.slug)).length })),
+    tags: TAGS.map(t => ({
+      ...t,
+      count: items.filter(i => hasTag(i.card, t.slug)).length,
+      today: queueOf(items, grouped, now, newLimit, t.slug).length,
+    })),
     nextDueAt: Number.isFinite(next) ? new Date(next) : null,
   }
 }
+
+/** Tags triés par nombre de cartes décroissant (vides en dernier) ; à égalité, l'ordre de shared/tags.ts. */
+export const sortTags = (tags: TagCount[]): TagCount[] =>
+  tags.map((t, i) => ({ t, i })).sort((a, b) => b.t.count - a.t.count || a.i - b.i).map(x => x.t)
+
+/** Nombre de tags affichés sur l'accueil ; la liste complète est sur la page « Mes tags ». */
+export const HOME_TAGS = 4
 
 /** « 0 carte », « 1 carte », « 12 cartes » (en français, 0 et 1 au singulier). */
 export const cards = (n: number) => `${n} ${n > 1 ? 'cartes' : 'carte'}`

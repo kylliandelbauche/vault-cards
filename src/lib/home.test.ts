@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TAGS } from '../../shared/tags'
-import { cards as cardsLabel, homeStats, isMastered, MASTERED_STABILITY_DAYS, todaySuffix } from './home'
+import { cards as cardsLabel, homeStats, isMastered, MASTERED_STABILITY_DAYS, sortTags, todaySuffix, type TagCount } from './home'
 import { stateFromReviews } from './scheduler'
 import { buildQueue } from './session'
 import type { Card, Review } from './types'
@@ -85,6 +85,19 @@ describe('homeStats : tags', () => {
     expect(s.tags.map(t => t.slug)).toEqual(TAGS.map(t => t.slug))
     const count = Object.fromEntries(s.tags.map(t => [t.slug, t.count]))
     expect(count).toMatchObject({ ia: 3, dev: 1, securite: 0, culture: 0 })
+  })
+
+  it('par tag : file du jour du tag (dues + nouvelles, quota global)', () => {
+    const cs = [card('a', ['ia']), card('b', ['ia', 'dev']), card('c', ['dev'])]
+    const s = homeStats(cs, [rv('c', ago(1))], now) // 'c' vue à l'instant : pas due
+    const today = Object.fromEntries(s.tags.map(t => [t.slug, t.today]))
+    expect(today).toMatchObject({ ia: 2, dev: 1, culture: 0 })
+  })
+
+  it('tri : nombre de cartes décroissant, vides en dernier, ordre de shared/tags.ts à égalité', () => {
+    const tag = (slug: string, count: number) => ({ ...TAGS.find(t => t.slug === slug)!, count, today: 0 }) as TagCount
+    const sorted = sortTags([tag('ia', 2), tag('dev', 5), tag('securite', 0), tag('marketing', 2), tag('argent', 0)])
+    expect(sorted.map(t => t.slug)).toEqual(['dev', 'ia', 'marketing', 'securite', 'argent'])
   })
 
   it('cache ancien sans `tags` : ignoré sans erreur', () => {

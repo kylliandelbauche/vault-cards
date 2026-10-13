@@ -10,13 +10,13 @@ import type { HomeData } from './useHomeData'
 const now = () => new Date('2026-10-13T10:00:00Z')
 const stats = (over: Partial<HomeStats> = {}): HomeStats => ({
   today: 12, due: 4, fresh: 8, mastered: 30, total: 50, nextDueAt: null,
-  tags: TAGS.map(t => ({ ...t, count: t.slug === 'ia' ? 7 : t.slug === 'dev' ? 3 : 0 })),
+  tags: TAGS.map(t => ({ ...t, count: t.slug === 'ia' ? 7 : t.slug === 'dev' ? 3 : t.slug === 'culture' ? 5 : 0, today: 0 })),
   ...over,
 })
 const ready = (over: Partial<HomeStats> = {}): HomeData => ({ status: 'ready', stats: stats(over) })
 
 function renderHome(data: HomeData = ready(), handlers: { onStudy?: () => void; onReviewAll?: () => void; onSignOut?: () => void } = {}) {
-  const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onSignOut: vi.fn(), ...handlers }
+  const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onSignOut: vi.fn(), onOpenTags: vi.fn(), ...handlers }
   const r = render(<KApp theme="ios"><HomeScreen data={data} now={now} sync="synced" {...props} /></KApp>)
   return { ...r, ...props }
 }
@@ -58,15 +58,24 @@ describe('HomeScreen', () => {
     expect(values).toEqual(['4', '8', '30'])
   })
 
-  it('Mes tags : les 8 tags (emoji + label + nombre), tap → session du tag', async () => {
+  it('Mes tags : 4 tags au plus, triés par nombre de cartes décroissant (vides en dernier) ; tap → session du tag', async () => {
     const { onStudy } = renderHome()
     const list = within(screen.getByRole('region', { name: 'Mes tags' })).getByRole('list')
     const buttons = within(list).getAllByRole('button')
-    expect(buttons).toHaveLength(8)
+    expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['IA & agents, 7 cartes', 'Culture, 5 cartes', 'Dev & outils, 3 cartes', 'Sécurité, 0 carte'])
     expect(buttons[0].textContent).toBe('🤖IA & agents7')
-    expect(buttons[0].getAttribute('aria-label')).toBe('IA & agents, 7 cartes')
     await userEvent.setup().click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
     expect(onStudy).toHaveBeenCalledWith('dev')
+  })
+
+  it('« Mes tags › » : toute la ligne du titre (≥ 44 px) ouvre la page de tous les tags', async () => {
+    const { onOpenTags } = renderHome()
+    const head = screen.getByRole('button', { name: 'Mes tags, voir les 8 tags' })
+    expect(head.closest('h2')).toBeTruthy()
+    expect(head.className).toMatch(/\bmin-h-11\b/)
+    expect(head.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+    await userEvent.setup().click(head)
+    expect(onOpenTags).toHaveBeenCalledTimes(1)
   })
 
   it('tags sans carte : grisés, aria-disabled, non cliquables ; cibles ≥ 44 px', async () => {
@@ -103,17 +112,17 @@ describe('HomeScreen', () => {
 
   it('aucune carte : message habituel, pas de bouton d’étude, tous les tags grisés', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    renderHome(ready({ today: 0, due: 0, fresh: 0, mastered: 0, total: 0, tags: TAGS.map(t => ({ ...t, count: 0 })) }))
+    renderHome(ready({ today: 0, due: 0, fresh: 0, mastered: 0, total: 0, tags: TAGS.map(t => ({ ...t, count: 0, today: 0 })) }))
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("Aucune carte pour l'instant. Lance /flashcards sur le Mac.")
     expect(screen.queryByRole('button', { name: /Commencer|Réviser/ })).toBeNull()
-    const tags = within(screen.getByRole('region', { name: 'Mes tags' })).getAllByRole('button')
+    const tags = within(within(screen.getByRole('region', { name: 'Mes tags' })).getByRole('list')).getAllByRole('button')
     expect(tags.every(b => b.getAttribute('aria-disabled') === 'true')).toBe(true)
   })
 
   it('chargement puis erreur de lecture du cache', () => {
     const { rerender } = renderHome({ status: 'loading' })
     expect(screen.queryByRole('button', { name: 'Commencer à étudier' })).toBeNull()
-    rerender(<KApp theme="ios"><HomeScreen data={{ status: 'error' }} now={now} onStudy={vi.fn()} onReviewAll={vi.fn()} /></KApp>)
+    rerender(<KApp theme="ios"><HomeScreen data={{ status: 'error' }} now={now} onStudy={vi.fn()} onReviewAll={vi.fn()} onOpenTags={vi.fn()} /></KApp>)
     expect(screen.getByRole('alert').textContent).toBe('Impossible de lire les cartes enregistrées sur cet appareil.')
   })
 })
