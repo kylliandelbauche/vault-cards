@@ -26,12 +26,6 @@
   --color-sys-gray: var(--sys-gray);
   --color-muted: var(--muted);
   --color-label-2: var(--label-2);
-  --color-again-fill: var(--again-fill);
-  --color-again-fill-pressed: var(--again-fill-pressed);
-  --color-hard-fill: var(--hard-fill);
-  --color-hard-fill-pressed: var(--hard-fill-pressed);
-  --color-good-fill: var(--good-fill);
-  --color-good-fill-pressed: var(--good-fill-pressed);
 }
 
 :root {
@@ -47,11 +41,6 @@
   --sys-gray: #8e8e93;
   --muted: #636366; /* gris lisible en petit texte (AA), contrairement à sys-gray */
   --label-2: #3c3c43; /* texte secondaire sur le verre : ≥ 4,5:1 même au-dessus d'un glyphe noir non flouté */
-
-  /* Boutons de notation : fond teinté opaque + texte noir ; l'icône porte la couleur (≥ 3:1). */
-  --again-fill: #fadbd4;  --again-fill-pressed: #f5c6bb;
-  --hard-fill: #fbe7bf;   --hard-fill-pressed: #f6daa0;
-  --good-fill: #d3eddc;   --good-fill-pressed: #bde4ca;
 
   /*
    * Fond décoratif et matériaux (#19). Ratios calculés au pire cas (fond le plus clair / le plus
@@ -113,10 +102,6 @@
   --sys-gray: #8e8e93;
   --muted: #aeaeb2;
   --label-2: #dcdce0;
-
-  --again-fill: #4a221b;  --again-fill-pressed: #5c2a21;
-  --hard-fill: #43320f;   --hard-fill-pressed: #54401a;
-  --good-fill: #173a25;   --good-fill-pressed: #1f4a30;
 
   --bg-base: #06080f; /* = theme-color sombre (index.html) */
   --bg-blob-1: rgb(40 100 255 / 0.38);

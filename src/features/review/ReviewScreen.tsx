@@ -1,4 +1,5 @@
-import { Button, Page, Preloader, Progressbar } from 'konsta/react'
+import { Page, Preloader, Progressbar } from 'konsta/react'
+import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
@@ -108,13 +109,15 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col py-2 ${EDGES}`}>
         {status === 'loading' && <div className="my-auto flex justify-center"><Preloader /></div>}
         {status === 'error' && (
-          <div className="card-surface my-auto flex flex-col items-center gap-4 rounded-[28px] p-6 text-center">
-            <p role="alert" className="text-[17px] text-muted">Impossible de lire les cartes enregistrées sur cet appareil.</p>
-            <Button large rounded className="max-w-xs" onClick={session.restart}>Réessayer</Button>
+          <div className="my-auto flex flex-col items-center gap-4">
+            <p role="alert" className="glass-card w-full rounded-[28px] p-6 text-center text-[17px] text-label-2">
+              Impossible de lire les cartes enregistrées sur cet appareil.
+            </p>
+            <GlassButton tone="new" className={`${GLASS_PRIMARY} max-w-xs`} onClick={session.restart}>Réessayer</GlassButton>
           </div>
         )}
         {status === 'empty' && (
-          <p className="card-surface my-auto rounded-[28px] p-6 text-center text-[17px] text-muted">
+          <p className="glass-card my-auto rounded-[28px] p-6 text-center text-[17px] text-label-2">
             {navigator.onLine === false
               ? 'Connecte-toi à internet pour la première synchronisation.'
               : "Aucune carte pour l'instant. Lance /flashcards sur le Mac."}
@@ -127,8 +130,9 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
       </main>
 
       {current && (
+        // Zone du bas transparente (#39) : chaque bouton est son propre verre et flotte sur le fond.
         <footer className={`sticky bottom-0 z-20 shrink-0 pt-2 pb-[max(12px,var(--k-safe-area-bottom))] ${EDGES}`}>
-          <div className="glass mx-auto max-w-xl rounded-[30px] p-2">
+          <div className="mx-auto max-w-xl">
             {session.saveFailed && (
               <p role="alert" className="mx-auto mb-2 w-fit rounded-full bg-again-tint px-3 py-1 text-center text-[15px] text-again">
                 Note non enregistrée. Réessaie.
@@ -138,7 +142,7 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
             <div role="group" aria-label="Actions">
               {revealed
                 ? <RatingBar state={current.state} now={now()} onRate={session.rate} />
-                : <Button large rounded className="h-14!" onClick={session.reveal}>Afficher la réponse</Button>}
+                : <GlassButton tone="new" className={GLASS_PRIMARY} onClick={session.reveal}>Afficher la réponse</GlassButton>}
             </div>
           </div>
         </footer>
