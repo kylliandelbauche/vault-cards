@@ -48,6 +48,7 @@ export type Database = {
           front: string
           id: string
           source_path: string
+          source_title: string | null
           tags: string[]
           updated_at: string
         }
@@ -59,6 +60,7 @@ export type Database = {
           front: string
           id?: string
           source_path: string
+          source_title?: string | null
           tags?: string[]
           updated_at?: string
         }
@@ -70,6 +72,7 @@ export type Database = {
           front?: string
           id?: string
           source_path?: string
+          source_title?: string | null
           tags?: string[]
           updated_at?: string
         }
