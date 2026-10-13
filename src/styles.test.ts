@@ -132,3 +132,18 @@ describe('index.css : garde-fous de performance (#19)', () => {
     expect(block('.k-progressbar > * {')).toMatch(/transition:\s*none/)
   })
 })
+
+describe('index.css : pastilles de tags de l’accueil (#53)', () => {
+  it('tag sans carte : jetons clair et sombre, pas de curseur main (aria-disabled), focus visible', () => {
+    for (const root of [':root {', '.dark {']) {
+      expect(block(root)).toMatch(/--tag-empty-bg:/)
+      expect(block(root)).toMatch(/--tag-empty-fg:\s*#[0-9a-f]{6}/i)
+    }
+    expect(code).toMatch(/button:not\(:disabled\):not\(\[aria-disabled='true'\]\)/)
+    expect(code).toMatch(/\.tag-btn:focus-visible/)
+  })
+
+  it('pastilles opaques : jamais de flou', () => {
+    expect(block('.tag-btn {')).not.toMatch(/backdrop-filter|blur/)
+  })
+})

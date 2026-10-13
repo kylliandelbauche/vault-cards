@@ -102,9 +102,9 @@
   --tag-rose-bg: #fce8f1;     --tag-rose-fg: #a2245f;     /* 6,08:1 */
   --tag-jaune-bg: #fbf3d0;    --tag-jaune-fg: #7a5a00;    /* 5,72:1 */
   --tag-grisbleu-bg: #e8edf2; --tag-grisbleu-fg: #3f5368; /* 6,73:1 */
-  /* Tag sans carte (accueil, #53) : voile neutre + gris lisible ; ratio sur la carte en verre : voir la PR #53. */
+  /* Tag sans carte (accueil, #53) : voile neutre + gris, sur la carte en verre ; pire cas (fond décoratif saturé) : 5,13:1. */
   --tag-empty-bg: rgb(0 0 0 / 0.04);
-  --tag-empty-fg: #636366;
+  --tag-empty-fg: #58585d;
 }
 
 .dark {
@@ -160,8 +160,8 @@
   --tag-rose-bg: #3a1a2a;     --tag-rose-fg: #ff9cc8;     /* 7,97:1 */
   --tag-jaune-bg: #332b10;    --tag-jaune-fg: #f0cf5a;    /* 9,22:1 */
   --tag-grisbleu-bg: #222a33; --tag-grisbleu-fg: #b4c3d3; /* 8,08:1 */
-  --tag-empty-bg: rgb(255 255 255 / 0.06);
-  --tag-empty-fg: #aeaeb2;
+  --tag-empty-bg: rgb(255 255 255 / 0.06); /* pire cas : 4,97:1 */
+  --tag-empty-fg: #d1d1d6;
 }
 
 /*

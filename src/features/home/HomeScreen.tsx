@@ -107,7 +107,7 @@ function Tags({ tags, onStudy }: { tags: TagCount[]; onStudy(tag: string): void 
   return (
     <section aria-labelledby="tags" className="glass-card rounded-[28px] p-4 text-black dark:text-white">
       <h2 id="tags" className="mb-3 px-1 text-[17px] leading-tight font-semibold">Mes tags</h2>
-      <ul role="list" className="grid grid-cols-2 gap-2">
+      <ul role="list" className="grid auto-rows-fr grid-cols-2 gap-2">
         {tags.map(t => {
           const empty = t.count === 0
           return (
@@ -117,7 +117,7 @@ function Tags({ tags, onStudy }: { tags: TagCount[]; onStudy(tag: string): void 
                 aria-disabled={empty || undefined}
                 aria-label={`${t.label}, ${cards(t.count)}`}
                 onClick={empty ? undefined : () => onStudy(t.slug)}
-                className={`tag-btn flex min-h-11 w-full items-center gap-2 rounded-2xl px-3 py-1.5 text-start ${empty ? 'tag-btn-empty' : ''}`}
+                className={`tag-btn flex h-full min-h-11 w-full items-center gap-2 rounded-2xl px-3 py-1.5 text-start ${empty ? 'tag-btn-empty' : ''}`}
                 style={empty ? undefined : { backgroundColor: `var(--tag-${t.color}-bg)`, color: `var(--tag-${t.color}-fg)` }}
               >
                 <span aria-hidden="true" className={`text-[17px] leading-none ${empty ? 'grayscale' : ''}`}>{t.emoji}</span>
