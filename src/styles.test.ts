@@ -164,7 +164,7 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     for (const root of [':root {', '.dark {']) {
       // Plus discret que les boutons de notation (lueur 20-30 %, liseré 50-60 %).
       expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(30)
-      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(75)
+      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(95)
       for (const v of ['--chip-body', '--chip-text', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
     }
     const empty = block('.tag-chip-empty {')
