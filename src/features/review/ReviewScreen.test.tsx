@@ -128,8 +128,24 @@ describe('ReviewScreen', () => {
       expect(bar.querySelector('.glass')).toBeTruthy()
     }
     expect(container.querySelector('main')!.className).toMatch(/--k-safe-area-left/)
-    // Pas de verre dans le contenu (la carte est une surface dense), pas de verre imbriqué.
+    // Carte en verre (#40) : 3 surfaces floutées au total (2 barres + la carte), aucune imbriquée.
     expect(container.querySelector('main .glass')).toBeNull()
-    expect(container.querySelectorAll('.glass .glass')).toHaveLength(0)
+    expect(container.querySelectorAll('main .glass-card')).toHaveLength(1)
+    expect(container.querySelectorAll('.glass, .glass-card')).toHaveLength(3)
+    expect(container.querySelectorAll('.glass .glass, .glass .glass-card, .glass-card .glass, .glass-card .glass-card')).toHaveLength(0)
+  })
+
+  it('bouton de déconnexion dans la barre du haut : étiqueté, cible 44 px, appelle onSignOut', async () => {
+    const onSignOut = vi.fn()
+    const { container } = render(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} sync="synced" onSignOut={onSignOut} /></KApp>)
+    const btn = within(container.querySelector('header')!).getByRole('button', { name: 'Déconnexion' })
+    expect(btn.className).toMatch(/\bsize-11\b/)
+    await userEvent.setup().click(btn)
+    expect(onSignOut).toHaveBeenCalledTimes(1)
+  })
+
+  it('sans onSignOut : pas de bouton de déconnexion', () => {
+    renderScreen(reviewing())
+    expect(screen.queryByRole('button', { name: 'Déconnexion' })).toBeNull()
   })
 })

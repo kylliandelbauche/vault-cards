@@ -58,6 +58,24 @@ function SyncBadge({ sync }: { sync: SyncIndicator }) {
   )
 }
 
+/** Icône seule, cible 44 px ; marges négatives pour ne pas agrandir la barre (la page doit tenir sans scroll). */
+function SignOutButton({ onClick }: { onClick(): void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Déconnexion"
+      onClick={onClick}
+      className="-my-2 -me-2 flex size-11 shrink-0 items-center justify-center rounded-full text-label-2 hover:bg-black/5 active:bg-black/10 dark:hover:bg-white/10 dark:active:bg-white/15"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+        <path d="M16 17l5-5-5-5" />
+        <path d="M21 12H9" />
+      </svg>
+    </button>
+  )
+}
+
 export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
@@ -75,6 +93,7 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
               {sync && <SyncBadge sync={sync} />}
             </div>
             {status === 'reviewing' && <Counters counts={session.counts} />}
+            {onSignOut && <SignOutButton onClick={onSignOut} />}
           </div>
           {status === 'reviewing' && (
             <Progressbar

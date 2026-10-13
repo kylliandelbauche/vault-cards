@@ -4,10 +4,11 @@ import { useAuth } from './features/auth/useAuth'
 import { dexieStore } from './features/review/dexieStore'
 import { ReviewScreen } from './features/review/ReviewScreen'
 import { syncIndicator, useAutoSync, usePendingCount } from './features/review/useAutoSync'
+import { safeSignOut } from './features/review/safeSignOut'
 import { useReviewSession } from './features/review/useReviewSession'
 import { db } from './lib/db'
 import { supabase } from './lib/supabase'
-import { supabaseRemote, sync } from './lib/sync'
+import { pendingCount, supabaseRemote, sync } from './lib/sync'
 import { TRANSPARENT_PAGE } from './lib/theme'
 
 // Hors du rendu : le store, l'horloge et le sync doivent rester stables pour les hooks.
@@ -22,7 +23,11 @@ function Review({ onSignOut }: { onSignOut(): void }) {
   const session = useReviewSession(store, clock)
   const syncState = useAutoSync(session, runSync)
   const pending = usePendingCount(db)
-  return <ReviewScreen session={session} now={clock} sync={syncIndicator(pending, syncState)} onSignOut={onSignOut} />
+  // Jamais de révisions perdues : synchro d'abord, confirmation si elle échoue.
+  const signOutSafely = () => {
+    void safeSignOut({ pending: () => pendingCount(db), sync: runSync, confirm: m => window.confirm(m), signOut: onSignOut })
+  }
+  return <ReviewScreen session={session} now={clock} sync={syncIndicator(pending, syncState)} onSignOut={signOutSafely} />
 }
 
 export default function App() {

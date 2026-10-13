@@ -20,7 +20,7 @@ function block(prelude: string): string {
 
 describe('index.css : replis du verre (#19)', () => {
   it('le verre floute avec et sans préfixe WebKit', () => {
-    const glass = block('.glass {')
+    const glass = block('.glass,\n.glass-card {')
     expect(glass).toMatch(/-webkit-backdrop-filter:\s*blur/)
     expect(glass).toMatch(/[^-]backdrop-filter:\s*blur/)
   })
@@ -31,6 +31,18 @@ describe('index.css : replis du verre (#19)', () => {
     ['@media (prefers-contrast: more)'],
   ])('fond opaque sous %s', prelude => {
     expect(block(prelude)).toMatch(/\.glass[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
+  })
+
+  it('la carte en verre (#40) partage les replis opaques des barres, avec le même jeton', () => {
+    for (const prelude of [
+      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))',
+      '@media (prefers-reduced-transparency: reduce)',
+      '@media (prefers-contrast: more)',
+    ]) {
+      expect(block(prelude)).toMatch(/\.glass-card[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
+    }
+    expect(block('.glass-card {')).not.toMatch(/touch-action/)
+    for (const root of [':root {', '.dark {']) expect(block(root)).toContain('--glass-card-bg:')
   })
 
   it('Réduire la transparence / Augmenter le contraste coupent aussi le flou et rendent la carte opaque', () => {
@@ -58,7 +70,7 @@ const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('index.css : garde-fous de performance (#19)', () => {
   it('flou modéré (≤ 20 px) et zone repeinte limitée sur le verre', () => {
-    const glass = block('.glass {')
+    const glass = block('.glass,\n.glass-card {')
     for (const m of glass.matchAll(/blur\((\d+)px\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(20)
     expect(glass).toMatch(/contain:\s*layout paint/)
     expect(code).not.toMatch(/will-change/)
