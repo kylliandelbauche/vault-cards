@@ -8,7 +8,7 @@ import { useReviewSession } from './features/review/useReviewSession'
 import { db } from './lib/db'
 import { supabase } from './lib/supabase'
 import { supabaseRemote, sync } from './lib/sync'
-import { TRANSPARENT_PAGE, useMediaQuery } from './lib/theme'
+import { TRANSPARENT_PAGE } from './lib/theme'
 
 // Hors du rendu : le store, l'horloge et le sync doivent rester stables pour les hooks.
 // Le hook ne relit le store qu'au montage et à restart() : useAutoSync appelle restart()
@@ -27,10 +27,8 @@ function Review({ onSignOut }: { onSignOut(): void }) {
 
 export default function App() {
   const { status, signIn, signOut } = useAuth()
-  // « Réduire les animations » : pas de reflet au pointeur sur les éléments Glass de Konsta.
-  const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   return (
-    <KApp theme="ios" safeAreas iosHoverHighlight={!reducedMotion}>
+    <KApp theme="ios" safeAreas>
       {/* Fond décoratif statique, sous toutes les pages (Page a un fond transparent). */}
       <div aria-hidden="true" className="app-backdrop" />
       {status === 'loading' && <Page colors={TRANSPARENT_PAGE} />}
