@@ -8,6 +8,7 @@ import { useReviewSession } from './features/review/useReviewSession'
 import { db } from './lib/db'
 import { supabase } from './lib/supabase'
 import { supabaseRemote, sync } from './lib/sync'
+import { TRANSPARENT_PAGE } from './lib/theme'
 
 // Hors du rendu : le store, l'horloge et le sync doivent rester stables pour les hooks.
 // Le hook ne relit le store qu'au montage et à restart() : useAutoSync appelle restart()
@@ -28,7 +29,9 @@ export default function App() {
   const { status, signIn, signOut } = useAuth()
   return (
     <KApp theme="ios" safeAreas>
-      {status === 'loading' && <Page />}
+      {/* Fond décoratif statique, sous toutes les pages (Page a un fond transparent). */}
+      <div aria-hidden="true" className="app-backdrop" />
+      {status === 'loading' && <Page colors={TRANSPARENT_PAGE} />}
       {status === 'signed-out' && <LoginScreen signIn={signIn} />}
       {status === 'signed-in' && <Review onSignOut={signOut} />}
     </KApp>

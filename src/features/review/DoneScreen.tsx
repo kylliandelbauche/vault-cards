@@ -1,4 +1,4 @@
-import { Block, Button } from 'konsta/react'
+import { Button } from 'konsta/react'
 import { formatInterval } from '../../lib/format'
 
 interface Props {
@@ -11,22 +11,22 @@ interface Props {
 
 export function DoneScreen({ stats, nextDueAt, now, onRestart, onSignOut }: Props) {
   return (
-    <Block className="my-auto flex flex-col items-center gap-6 text-center">
+    <section className="card-surface my-auto flex flex-col items-center gap-6 rounded-[28px] px-5 py-8 text-center text-black dark:text-white">
       <h1 className="text-[28px] font-bold">Session terminée</h1>
       <div className="flex gap-6 text-[20px] font-semibold tabular-nums">
         <span className="text-again" aria-label={`${stats.again} « Je ne sais pas »`}>✕ {stats.again}</span>
         <span className="text-hard" aria-label={`${stats.hard} « Moyen »`}>~ {stats.hard}</span>
         <span className="text-good" aria-label={`${stats.good} « Très bien »`}>✓ {stats.good}</span>
       </div>
-      <p className="text-[17px] text-sys-gray">
+      <p className="text-[17px] text-muted">
         {nextDueAt ? `Prochaine révision dans ${formatInterval(now, nextDueAt)}` : 'Aucune carte en attente.'}
       </p>
       <Button large rounded className="max-w-xs" onClick={onRestart}>Réviser à nouveau</Button>
       {onSignOut && (
-        <Button clear inline rounded className="mt-4 min-h-11 px-4 text-[15px]" colors={{ textIos: 'text-new' }} onClick={onSignOut}>
+        <Button clear inline rounded className="mt-2 min-h-11 px-4 text-[15px]" colors={{ textIos: 'text-new' }} onClick={onSignOut}>
           Se déconnecter
         </Button>
       )}
-    </Block>
+    </section>
   )
 }

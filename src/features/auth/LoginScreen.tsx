@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
-import { Block, Button, List, ListInput, Page, Preloader } from 'konsta/react'
+import { Button, List, ListInput, Page, Preloader } from 'konsta/react'
+import { TRANSPARENT_PAGE } from '../../lib/theme'
 
 interface Props {
   signIn(email: string, password: string): Promise<{ error: string | null }>
@@ -25,11 +26,15 @@ export function LoginScreen({ signIn }: Props) {
   }
 
   return (
-    <Page className="flex flex-col pb-[var(--k-safe-area-bottom)] pt-[var(--k-safe-area-top)]">
+    <Page
+      colors={TRANSPARENT_PAGE}
+      className="flex flex-col pt-[max(12px,var(--k-safe-area-top))] pb-[max(12px,var(--k-safe-area-bottom))] ps-[max(16px,var(--k-safe-area-left))] pe-[max(16px,var(--k-safe-area-right))]"
+    >
       <main className="mx-auto my-auto w-full max-w-md">
-        <h1 className="mb-6 text-center text-[34px] font-bold">Vault Cards</h1>
-        <form onSubmit={submit} noValidate>
-          <List strongIos insetIos>
+        <h1 className="mb-6 text-center text-[34px] font-bold text-black dark:text-white">Vault Cards</h1>
+        {/* Même langage que la révision : fond décoratif + surface givrée dense (pas de verre sur un formulaire). */}
+        <form onSubmit={submit} noValidate className="card-surface overflow-hidden rounded-[28px] pt-2">
+          <List className="my-0!" colors={{ strongBgIos: 'bg-transparent' }} strongIos>
             <ListInput
               label={<label htmlFor="login-email">E-mail</label>}
               inputId="login-email"
@@ -57,14 +62,14 @@ export function LoginScreen({ signIn }: Props) {
               onChange={e => setPassword(e.target.value)}
             />
           </List>
-          <Block className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 px-4 pt-2 pb-3">
             <Button large rounded type="submit" disabled={sending}>
               {sending ? <Preloader aria-label="Connexion en cours" /> : 'Se connecter'}
             </Button>
             <p role="alert" aria-live="polite" className="min-h-6 text-center text-[15px] text-again">
               {error}
             </p>
-          </Block>
+          </div>
         </form>
       </main>
     </Page>

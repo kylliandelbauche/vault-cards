@@ -1,5 +1,3 @@
-import { Card } from 'konsta/react'
-import { obsidianUrl } from '../../lib/obsidian'
 import type { Card as CardData } from '../../lib/types'
 import { getTag, type TagDef } from '../../../shared/tags'
 
@@ -9,21 +7,17 @@ interface Props {
   onReveal(): void
 }
 
+/**
+ * Carte = contenu : surface givrée dense, sans verre. Toute la carte révèle la réponse.
+ * Chemin source en simple texte tronqué (remplacé par le titre de la source dans #35).
+ */
 export function CardView({ card, revealed, onReveal }: Props) {
   return (
-    <Card
-      raised
-      className={revealed ? 'my-auto shrink-0' : 'my-auto shrink-0 cursor-pointer'}
-      contentWrapPadding="p-5"
+    <article
+      className={`card-surface my-auto shrink-0 rounded-[28px] p-5 text-black dark:text-white ${revealed ? '' : 'cursor-pointer'}`}
       onClick={onReveal}
     >
-      <a
-        href={obsidianUrl(card.source_path)}
-        onClick={e => e.stopPropagation()}
-        className="block truncate font-mono text-xs text-sys-gray underline-offset-2 hover:underline"
-      >
-        {card.source_path}
-      </a>
+      <p className="truncate font-mono text-xs text-muted">{card.source_path}</p>
       <TagPills slugs={card.tags} />
       <p className="mt-3 whitespace-pre-wrap text-[22px] leading-snug font-semibold">{card.front}</p>
       {revealed && (
@@ -32,7 +26,7 @@ export function CardView({ card, revealed, onReveal }: Props) {
           <p className="whitespace-pre-wrap text-[17px] leading-relaxed">{card.back}</p>
         </>
       )}
-    </Card>
+    </article>
   )
 }
 

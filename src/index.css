@@ -2,6 +2,14 @@
 @import "konsta/react/theme.css";
 
 /*
+ * Couleur de marque Konsta (constat 4 de l'audit #19) : #007aff donne 4,02:1 avec le texte blanc des
+ * boutons pleins. #0a5fc4 (= --new) donne 6,09:1. Le plugin couleurs de Konsta lit cette valeur au build.
+ */
+@theme {
+  --color-brand-primary: #0a5fc4;
+}
+
+/*
  * Couleurs de notation, style « bouton teinté » iOS : fond clair + texte foncé (et l'inverse en sombre).
  * Contraste texte / fond ≥ 4,5:1 (WCAG AA) dans les deux modes, y compris sur le fond de page.
  * Utilisables en `bg-again-tint text-again`, `text-good`, `bg-new-tint text-new`…
@@ -17,6 +25,13 @@
   --color-new-tint: var(--new-tint);
   --color-sys-gray: var(--sys-gray);
   --color-muted: var(--muted);
+  --color-label-2: var(--label-2);
+  --color-again-fill: var(--again-fill);
+  --color-again-fill-pressed: var(--again-fill-pressed);
+  --color-hard-fill: var(--hard-fill);
+  --color-hard-fill-pressed: var(--hard-fill-pressed);
+  --color-good-fill: var(--good-fill);
+  --color-good-fill-pressed: var(--good-fill-pressed);
 }
 
 :root {
@@ -31,6 +46,31 @@
   --new-tint: #e3eefb;
   --sys-gray: #8e8e93;
   --muted: #636366; /* gris lisible en petit texte (AA), contrairement à sys-gray */
+  --label-2: #3c3c43; /* texte secondaire sur le verre : ≥ 4,5:1 même au-dessus d'un glyphe noir non flouté */
+
+  /* Boutons de notation : fond teinté opaque + texte noir ; l'icône porte la couleur (≥ 3:1). */
+  --again-fill: #fadbd4;  --again-fill-pressed: #f5c6bb;
+  --hard-fill: #fbe7bf;   --hard-fill-pressed: #f6daa0;
+  --good-fill: #d3eddc;   --good-fill-pressed: #bde4ca;
+
+  /*
+   * Fond décoratif et matériaux (#19). Ratios calculés au pire cas (fond le plus clair / le plus
+   * sombre, formes superposées) : voir la PR #19. Le verre n'existe que sur les barres (2 surfaces).
+   */
+  --bg-base: #eef1f8; /* = theme-color clair (index.html) */
+  --bg-blob-1: rgb(64 132 255 / 0.22);
+  --bg-blob-2: rgb(146 110 255 / 0.16);
+  --bg-blob-3: rgb(46 196 182 / 0.14);
+  --glass-bg: rgb(255 255 255 / 0.68);
+  --glass-solid: #f8f9fc;
+  --glass-edge: rgb(255 255 255 / 0.7);
+  --glass-hairline: rgb(0 0 0 / 0.06);
+  --glass-shadow: 0 4px 16px rgb(15 30 60 / 0.1);
+  --card-bg: rgb(255 255 255 / 0.9);
+  --card-solid: #ffffff;
+  --card-edge: rgb(255 255 255 / 0.8);
+  --card-shadow: 0 1px 3px rgb(15 30 60 / 0.08); /* petite : la carte défile */
+  --contrast-border: #3c3c43;
 
   /* Pastilles de tags (shared/tags.ts → clé `color`). Ratio texte / fond (WCAG, AA ≥ 4,5:1) en commentaire. */
   --tag-violet-bg: #efe9fb;   --tag-violet-fg: #5b2ea6;   /* 7,43:1 */
@@ -55,6 +95,26 @@
   --new-tint: #132a45;
   --sys-gray: #8e8e93;
   --muted: #aeaeb2;
+  --label-2: #dcdce0;
+
+  --again-fill: #4a221b;  --again-fill-pressed: #5c2a21;
+  --hard-fill: #43320f;   --hard-fill-pressed: #54401a;
+  --good-fill: #173a25;   --good-fill-pressed: #1f4a30;
+
+  --bg-base: #06080f; /* = theme-color sombre (index.html) */
+  --bg-blob-1: rgb(40 100 255 / 0.38);
+  --bg-blob-2: rgb(120 80 255 / 0.28);
+  --bg-blob-3: rgb(20 160 170 / 0.2);
+  --glass-bg: rgb(30 32 38 / 0.72);
+  --glass-solid: #1c1d22;
+  --glass-edge: rgb(255 255 255 / 0.12);
+  --glass-hairline: rgb(0 0 0 / 0.4);
+  --glass-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+  --card-bg: rgb(28 29 34 / 0.92);
+  --card-solid: #1c1d22;
+  --card-edge: rgb(255 255 255 / 0.08);
+  --card-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  --contrast-border: #dcdce0;
 
   /* Pastilles de tags, sombre : fond foncé teinté + texte clair. */
   --tag-violet-bg: #2a2145;   --tag-violet-fg: #c7b2ff;   /* 8,02:1 */
@@ -73,4 +133,110 @@
  */
 .k-app {
   min-height: 100dvh;
+}
+
+/* Fond uni sous tout (rebond, zones hors app) ; Konsta met #000 en dur sur `.dark`. */
+html,
+html.dark {
+  background-color: var(--bg-base);
+}
+
+/*
+ * Fond décoratif, style Apple : quelques formes floues statiques en dégradés radiaux (aucune image,
+ * aucune animation, aucun filtre : les dégradés sont déjà flous, donc rien à recalculer au défilement).
+ * Performance : un seul calque `position: fixed` peint une fois (jamais `background-attachment: fixed`,
+ * lent sur iOS) ; `contain: strict` l'isole du reste de la mise en page.
+ * Le haut de l'écran reste proche de --bg-base pour se raccorder à la barre d'état (theme-color).
+ */
+.app-backdrop {
+  position: fixed;
+  inset: 0;
+  contain: strict;
+  pointer-events: none;
+  background-color: var(--bg-base);
+  background-image:
+    radial-gradient(60% 45% at 12% 34%, var(--bg-blob-1), transparent 70%),
+    radial-gradient(55% 40% at 92% 60%, var(--bg-blob-2), transparent 70%),
+    radial-gradient(70% 45% at 40% 102%, var(--bg-blob-3), transparent 70%);
+}
+
+/*
+ * Verre (couche des contrôles uniquement : barre du haut et zone d'action du bas). Variante « regular » :
+ * assez opaque pour que le texte noir/blanc reste ≥ 4,5:1 quel que soit le contenu dessous.
+ * Performance : 2 surfaces au plus, pas de flou imbriqué, rayon modéré (16 px) ; `contain` limite
+ * la zone repeinte à la barre ; pas de will-change permanent (le flou crée déjà sa couche).
+ */
+.glass {
+  contain: layout paint;
+  background-color: var(--glass-bg);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+  box-shadow:
+    inset 0 0 0 0.5px var(--glass-edge),
+    0 0 0 0.5px var(--glass-hairline),
+    var(--glass-shadow);
+}
+
+/* Contenu (carte, fin de session, connexion) : surface givrée dense, sans backdrop-filter. */
+.card-surface {
+  background-color: var(--card-bg);
+  box-shadow:
+    inset 0 0 0 0.5px var(--card-edge),
+    var(--card-shadow);
+}
+
+/* Replis opaques : navigateur sans backdrop-filter, « Réduire la transparence », « Augmenter le contraste ». */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background-color: var(--glass-solid);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass {
+    background-color: var(--glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .card-surface {
+    background-color: var(--card-solid);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .glass,
+  .card-surface {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: none;
+    border: 1px solid var(--contrast-border);
+  }
+  .glass {
+    background-color: var(--glass-solid);
+  }
+  .card-surface {
+    background-color: var(--card-solid);
+  }
+  .app-backdrop {
+    background-image: none;
+  }
+}
+
+/*
+ * Barre de progression sans transition de largeur (Konsta : 200 ms) : animer `width` sous le verre
+ * repeindrait la barre floutée à chaque image après chaque note. Couvre aussi « Réduire les animations ».
+ */
+.k-progressbar > * {
+  transition: none;
+}
+
+/*
+ * Focus visible (constat 5) : Konsta met `focus:outline-none` sur ses boutons. Hors @layer, cette
+ * règle l'emporte sur les utilitaires. Anneau ≥ 3:1 sur le verre comme sur la carte.
+ */
+.k-button:focus-visible,
+a:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--new);
+  outline-offset: 2px;
 }

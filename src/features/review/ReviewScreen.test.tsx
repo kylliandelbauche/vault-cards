@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { stateFromReviews } from '../../lib/scheduler'
@@ -66,5 +66,70 @@ describe('ReviewScreen', () => {
     renderScreen(reviewing({ revealed: true, saveFailed: true }))
     expect(screen.getByRole('alert').textContent).toBe('Note non enregistrée. Réessaie.')
     expect(screen.getByRole('button', { name: /Très bien/ })).toBeTruthy()
+  })
+
+  it('emplacement d’action unique, avant révélation : seulement « Afficher la réponse »', async () => {
+    const s = reviewing()
+    renderScreen(s)
+    const actions = within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')
+    expect(actions.map(b => b.textContent)).toEqual(['Afficher la réponse'])
+    expect(screen.queryByRole('button', { name: /Je ne sais pas|Moyen|Très bien/ })).toBeNull()
+    await userEvent.setup().click(actions[0])
+    expect(s.reveal).toHaveBeenCalledTimes(1)
+  })
+
+  it('emplacement d’action unique, après révélation : les 3 notations au même endroit', async () => {
+    const s = reviewing({ revealed: true })
+    renderScreen(s)
+    expect(screen.getAllByRole('group', { name: 'Actions' })).toHaveLength(1)
+    const actions = within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')
+    expect(actions.map(b => b.textContent?.replace(/\d.*$/, ''))).toEqual(['Je ne sais pas', 'Moyen', 'Très bien'])
+    expect(screen.queryByRole('button', { name: 'Afficher la réponse' })).toBeNull()
+    await userEvent.setup().click(actions[2])
+    expect(s.rate).toHaveBeenCalledWith(3)
+  })
+
+  it('notation : appui sans opacité sur le texte, cibles ≥ 44 px', () => {
+    renderScreen(reviewing({ revealed: true }))
+    for (const b of within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')) {
+      expect(b.className).not.toMatch(/opacity/)
+      expect(b.className).toMatch(/active:bg-(again|hard|good)-fill-pressed/)
+      expect(b.className).toMatch(/min-h-14/)
+    }
+  })
+
+  it('compteurs lisibles par VoiceOver : le libellé est dans le texte, pas dans un aria-label', () => {
+    renderScreen(reviewing({ counts: { new: 12, learn: 3, due: 40 } }))
+    for (const label of ['12 nouvelles', '3 à revoir', '40 dues']) {
+      const pill = screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === label)
+      expect(pill.hasAttribute('aria-label')).toBe(false)
+      expect(pill.hasAttribute('title')).toBe(false)
+    }
+  })
+
+  it('indicateur de synchro : texte opaque, point animé seulement si les animations sont permises', () => {
+    renderScreen(reviewing(), 'syncing')
+    const badge = screen.getByRole('status')
+    expect(badge.className).not.toMatch(/opacity/)
+    expect(badge.parentElement?.className ?? '').not.toMatch(/opacity/)
+    const dot = badge.querySelector('[aria-hidden]')!
+    expect(dot.className).toMatch(/motion-safe:animate-pulse/)
+    expect(dot.className.split(' ')).not.toContain('animate-pulse')
+  })
+
+  it('barres en verre superposées au contenu, marges de zone sûre gauche/droite', () => {
+    const { container } = renderScreen(reviewing())
+    const header = container.querySelector('header')!
+    const footer = container.querySelector('footer')!
+    for (const bar of [header, footer]) {
+      expect(bar.className).toMatch(/\bsticky\b/)
+      expect(bar.className).toMatch(/--k-safe-area-left/)
+      expect(bar.className).toMatch(/--k-safe-area-right/)
+      expect(bar.querySelector('.glass')).toBeTruthy()
+    }
+    expect(container.querySelector('main')!.className).toMatch(/--k-safe-area-left/)
+    // Pas de verre dans le contenu (la carte est une surface dense), pas de verre imbriqué.
+    expect(container.querySelector('main .glass')).toBeNull()
+    expect(container.querySelectorAll('.glass .glass')).toHaveLength(0)
   })
 })
