@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, computeScan, validateRetagPayload, planRetag } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, countLiveCards, computeScan, validateRetagPayload, planRetag } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -130,6 +130,30 @@ describe('validatePayload', () => {
   })
   it('clé inconnue au niveau payload : refusée, la clé est nommée', () => {
     expect(() => validatePayload({ ...base, Deck: 'x', cards: [] })).toThrow(/payload.*« Deck »/)
+  })
+})
+
+describe('assertDeleteConfirmed', () => {
+  const removed = { source_path: 'veille/ia/a-synthese.md', deck: 'ia', content_hash: 'removed', cards: [] }
+  it('payload removed sans confirmation : erreur claire qui cite --confirm-delete', () => {
+    expect(() => assertDeleteConfirmed(removed, false)).toThrow(/--confirm-delete/)
+    expect(() => assertDeleteConfirmed(removed, false)).toThrow(/veille\/ia\/a-synthese\.md/)
+  })
+  it('payload removed avec confirmation : ok', () => {
+    expect(() => assertDeleteConfirmed(removed, true)).not.toThrow()
+  })
+  it('payload normal : le flag n’est pas requis', () => {
+    expect(() => assertDeleteConfirmed({ ...removed, content_hash: 'abc' }, false)).not.toThrow()
+  })
+})
+
+describe('countLiveCards', () => {
+  it('compte les cartes vivantes par note removed, 0 si aucune', () => {
+    const rows = [{ source_path: 'a.md' }, { source_path: 'a.md' }, { source_path: 'b.md' }, { source_path: 'autre.md' }]
+    expect(countLiveCards(['a.md', 'c.md'], rows)).toEqual([
+      { source_path: 'a.md', live_cards: 2 },
+      { source_path: 'c.md', live_cards: 0 },
+    ])
   })
 })
 

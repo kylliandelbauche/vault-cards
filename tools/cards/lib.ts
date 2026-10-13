@@ -128,6 +128,22 @@ export function validatePayload(p: unknown): ApplyPayload {
   return { source_path, deck, content_hash, cards }
 }
 
+/** Protection en profondeur : supprimer les cartes d'une note (payload `removed`) exige un flag explicite, posé après confirmation de Kyllian. */
+export function assertDeleteConfirmed(payload: Pick<ApplyPayload, 'source_path' | 'content_hash'>, confirmed: boolean): void {
+  if (payload.content_hash === REMOVED_HASH && !confirmed) {
+    throw new Error(
+      `suppression refusée pour ${payload.source_path} : ajouter --confirm-delete, uniquement après confirmation explicite de Kyllian`,
+    )
+  }
+}
+
+/** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */
+export function countLiveCards(removed: string[], liveRows: { source_path: string }[]): { source_path: string; live_cards: number }[] {
+  const counts = new Map<string, number>()
+  for (const r of liveRows) counts.set(r.source_path, (counts.get(r.source_path) ?? 0) + 1)
+  return removed.map(source_path => ({ source_path, live_cards: counts.get(source_path) ?? 0 }))
+}
+
 /**
  * Le hash du payload doit être celui du fichier tel qu'il est maintenant (même fonction que `scan`) :
  * sinon les cartes ont été écrites pour une autre version de la note, ou le payload est un vieux fichier rejoué.
