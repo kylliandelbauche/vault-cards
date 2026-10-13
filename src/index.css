@@ -98,20 +98,20 @@
    * Texte du tag, liseré et lueur des pastilles en verre neutre. Ratio = pire cas sur le fond réel (fond décoratif
    * saturé, carte en verre, verre de la pastille, lueur pleine sous le texte, survol / appui compris), AA ≥ 4,5:1.
    */
-  --tag-violet-fg: #483465; /* 6,95:1 */
-  --tag-bleu-fg: #2b3e54; /* 7,08:1 */
-  --tag-rouge-fg: #5b332f; /* 6,93:1 */
-  --tag-orange-fg: #4f3929; /* 6,97:1 */
-  --tag-vert-fg: #24452f; /* 6,91:1 */
-  --tag-rose-fg: #5b2f45; /* 7,00:1 */
-  --tag-jaune-fg: #453c24; /* 7,06:1 */
-  --tag-turquoise-fg: #234340; /* 6,98:1 */
+  --tag-violet-fg: #af52de; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-bleu-fg: #0a84ff; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-rouge-fg: #ff3b30; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-orange-fg: #ff9f0a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-vert-fg: #34c759; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-rose-fg: #ff2d55; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-jaune-fg: #ffcc00; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-turquoise-fg: #30b0c7; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
   /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
   /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
-  --chip-glow: 26%;
-  --chip-rim: 90%;
-  --chip-hover-mix: 20%; /* survol : lumière teintée de la couleur du tag */
+  --chip-glow: 16%;
+  --chip-rim: 50%; /* comme le bouton « Commencer à étudier » */
+  --chip-hover-mix: 12%; /* survol : lumière teintée de la couleur du tag */
   --chip-body: var(--glass-btn-bg);
   --chip-text: #111114; /* texte neutre, comme les boutons de notation */
   --chip-sheen: rgb(255 255 255 / 0.1);
@@ -164,23 +164,23 @@
   --good-glass: #93f0ad;
 
   /* Couleur des tags, sombre : teintes claires et douces. */
-  --tag-violet-fg: #ded5f8; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-bleu-fg: #c5dbf7; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-rouge-fg: #f7d0d1; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-orange-fg: #f7d3b7; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-vert-fg: #a8e8c0; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-rose-fg: #f5cee3; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-jaune-fg: #f1d876; /* pastel, ≥ 6,5:1 au pire cas */
-  --tag-turquoise-fg: #a2e5de; /* pastel, ≥ 6,5:1 au pire cas */
+  --tag-violet-fg: #bf5af2; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-bleu-fg: #0a84ff; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-rouge-fg: #ff453a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-orange-fg: #ff9f0a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-vert-fg: #30d158; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-rose-fg: #ff375f; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-jaune-fg: #ffd60a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --tag-turquoise-fg: #40c8e0; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
   /* Tag vide sur la carte, pire cas : 5,87:1. */
   --tag-empty-fg: #d1d1d6;
   /*
    * Sombre : verre neutre un peu plus foncé que celui des boutons et voiles blancs réduits, pour que le texte
    * garde sa couleur (sinon il faudrait le pousser vers le blanc pour rester ≥ 4,5:1).
    */
-  --chip-glow: 26%;
-  --chip-rim: 90%;
-  --chip-hover-mix: 26%;
+  --chip-glow: 22%;
+  --chip-rim: 60%; /* comme le bouton « Commencer à étudier » */
+  --chip-hover-mix: 16%;
   --chip-body: var(--glass-btn-bg); /* même verre que les boutons de notation : ne vole pas la vedette au bouton principal */
   --chip-text: #ffffff;
   --chip-sheen: rgb(255 255 255 / 0.04);
