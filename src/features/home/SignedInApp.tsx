@@ -33,6 +33,9 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
   const pending = usePendingCount(db)
   const sync = syncIndicator(pending, syncState)
 
+  // Accueil : abonné au cache seulement quand il est affiché ; les derniers chiffres restent pendant la révision.
+  const homeData = useHomeData(db, now, screen.name === 'home')
+
   // Retour à l'accueil au milieu d'une session : pousse tout de suite les notes déjà données.
   const wasReviewing = useRef(false)
   useEffect(() => {
@@ -60,8 +63,8 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
     )
   }
   return (
-    <Home
-      db={db}
+    <HomeScreen
+      data={homeData}
       now={now}
       sync={sync}
       onStudy={tag => openReview({ mode: 'due', tag })}
@@ -69,10 +72,4 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
       onSignOut={signOutSafely}
     />
   )
-}
-
-/** Accueil monté seulement quand il est affiché : l'abonnement au cache s'arrête pendant la révision. */
-function Home({ db, now, ...rest }: Omit<Parameters<typeof HomeScreen>[0], 'data'> & { db: VaultDB }) {
-  const data = useHomeData(db, now)
-  return <HomeScreen data={data} now={now} {...rest} />
 }
