@@ -267,6 +267,16 @@ html.dark {
   }
 }
 
+/*
+ * Bouton en verre posé sur une carte en verre (#53 : « Commencer à étudier », pastilles de tags) : verre imité,
+ * même teinte translucide, lueur, liseré et reflet, mais sans backdrop-filter (jamais de flou imbriqué ; derrière
+ * lui, la carte est déjà floutée). Ne compte pas comme surface floutée.
+ */
+.glass-btn.on-glass {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 .glass-btn:active:not(:disabled) {
   box-shadow:
     inset 0 0 0 100vmax var(--glass-btn-press),

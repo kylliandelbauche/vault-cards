@@ -21,8 +21,10 @@ function renderHome(data: HomeData = ready(), handlers: { onStudy?: () => void; 
   return { ...r, ...props }
 }
 
-const SURFACES = '.glass, .glass-card, .glass-btn'
-const NESTED = ['.glass', '.glass-card', '.glass-btn'].flatMap(a => ['.glass', '.glass-card', '.glass-btn'].map(b => `${a} ${b}`)).join(', ')
+// Surfaces floutées : les boutons `on-glass` (verre imité, sans backdrop-filter) n'en sont pas.
+const BLURRED = ['.glass', '.glass-card', '.glass-btn:not(.on-glass)']
+const SURFACES = BLURRED.join(', ')
+const NESTED = BLURRED.flatMap(a => BLURRED.map(b => `${a} ${b}`)).join(', ')
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -31,7 +33,9 @@ describe('HomeScreen', () => {
     const { onStudy } = renderHome()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("12 cartes à revoir aujourd'hui")
     const start = screen.getByRole('button', { name: 'Commencer à étudier' })
-    expect(start.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new', 'h-14']))
+    expect(start.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new', 'on-glass', 'h-14']))
+    // Dans la carte du jour (comme la maquette), sans flou propre.
+    expect(start.closest('section.glass-card')?.querySelector('h1')).toBeTruthy()
     await userEvent.setup().click(start)
     expect(onStudy).toHaveBeenCalledWith()
   })
@@ -46,6 +50,7 @@ describe('HomeScreen', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("Aucune carte à revoir aujourd'hui")
     expect(screen.getByText('Prochaine révision dans 3 h.')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Commencer à étudier' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Réviser à nouveau' }).closest('section.glass-card')).toBeTruthy()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Réviser à nouveau' }))
     expect(onReviewAll).toHaveBeenCalledTimes(1)
   })
@@ -92,9 +97,10 @@ describe('HomeScreen', () => {
     for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|size-11|h-14)\b/)
   })
 
-  it('surfaces floutées : barre + carte du jour + bouton + carte des tags = 4, aucune imbriquée ; pastilles et compteurs sans flou', () => {
+  it('surfaces floutées : barre + carte du jour + carte des tags = 3, aucune imbriquée ; bouton, pastilles et compteurs sans flou', () => {
     const { container } = renderHome()
-    expect(container.querySelectorAll(SURFACES)).toHaveLength(4)
+    expect(container.querySelectorAll(SURFACES)).toHaveLength(3)
+    expect(container.querySelectorAll('.glass-card .glass-btn:not(.on-glass)')).toHaveLength(0)
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
     for (const el of container.querySelectorAll('.tag-btn, dl div')) expect(el.className).not.toMatch(/glass|backdrop|blur/)
   })

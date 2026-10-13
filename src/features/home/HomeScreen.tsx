@@ -21,8 +21,8 @@ interface Props {
 }
 
 /**
- * Écran d'accueil (#53). Surfaces floutées : barre du haut, carte « aujourd'hui », bouton d'action, carte
- * « Mes tags » (4, aucune imbriquée). Compteurs et pastilles de tags sont opaques, sans flou, dans les cartes.
+ * Écran d'accueil (#53). Surfaces floutées : barre du haut, carte « aujourd'hui », carte « Mes tags » (3, aucune
+ * imbriquée). Le bouton d'action, les compteurs et les pastilles de tags sont posés sur les cartes, sans flou propre.
  */
 export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, onSignOut }: Props) {
   return (
@@ -41,12 +41,7 @@ export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, 
         )}
         {data.status === 'ready' && (
           <>
-            <Today stats={data.stats} now={now()} />
-            {data.stats.total > 0 && (
-              data.stats.today > 0
-                ? <GlassButton tone="new" className={GLASS_PRIMARY} onClick={() => onStudy()}>Commencer à étudier</GlassButton>
-                : <GlassButton tone="new" className={GLASS_PRIMARY} onClick={onReviewAll}>Réviser à nouveau</GlassButton>
-            )}
+            <Today stats={data.stats} now={now()} onStudy={() => onStudy()} onReviewAll={onReviewAll} />
             <Tags tags={data.stats.tags} onStudy={onStudy} onOpenTags={onOpenTags} />
           </>
         )}
@@ -55,8 +50,19 @@ export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, 
   )
 }
 
-/** Bloc principal : cartes du jour + 3 compteurs. Chiffres et libellés neutres (noir / blanc, label-2) sur le verre. */
-function Today({ stats, now }: { stats: HomeStats; now: Date }) {
+interface TodayProps {
+  stats: HomeStats
+  now: Date
+  onStudy(): void
+  onReviewAll(): void
+}
+
+/**
+ * Bloc principal : cartes du jour, 3 compteurs et le bouton d'action, dans la même carte en verre. Chiffres et
+ * libellés neutres (noir / blanc, label-2). Le bouton est en verre imité (`on-glass` : teinte, lueur, liseré,
+ * reflet, sans backdrop-filter) : pas de flou imbriqué.
+ */
+function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
   if (stats.total === 0) {
     return (
       // Seul titre de la page dans cet état : <h1> pour les lecteurs d'écran.
@@ -99,6 +105,9 @@ function Today({ stats, now }: { stats: HomeStats; now: Date }) {
           </div>
         ))}
       </dl>
+      {stats.today > 0
+        ? <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass mt-4`} onClick={onStudy}>Commencer à étudier</GlassButton>
+        : <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass mt-4`} onClick={onReviewAll}>Réviser à nouveau</GlassButton>}
     </section>
   )
 }

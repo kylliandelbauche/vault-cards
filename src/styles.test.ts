@@ -143,6 +143,12 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(code).toMatch(/\.tag-btn:focus-visible/)
   })
 
+  it('bouton en verre posé sur une carte (on-glass) : aucun backdrop-filter', () => {
+    const rule = block('.glass-btn.on-glass {')
+    expect(rule).toMatch(/-webkit-backdrop-filter:\s*none/)
+    expect(rule).toMatch(/[^-]backdrop-filter:\s*none/)
+  })
+
   it('pastilles opaques : jamais de flou', () => {
     expect(block('.tag-btn {')).not.toMatch(/backdrop-filter|blur/)
   })
