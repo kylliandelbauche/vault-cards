@@ -1,7 +1,8 @@
 /**
  * Tags thématiques : source unique, importée par l'app (src/) et par l'outil (tools/cards).
  * Ajouter un tag = l'ajouter ici + nouvelle migration qui élargit la contrainte `cards_tags_check`
- * + variables CSS `--tag-<slug>-bg|fg` dans src/index.css.
+ * + (si nouvelle couleur) variables CSS `--tag-<color>-bg|fg` en clair ET en `.dark` dans src/index.css :
+ * elles sont indexées par la clé `color`, pas par le slug. Le test tools/cards/tags.test.ts vérifie l'alignement.
  */
 export interface TagDef {
   slug: string
