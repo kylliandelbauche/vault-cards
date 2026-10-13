@@ -134,7 +134,7 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
         <footer className={`sticky bottom-0 z-20 shrink-0 pt-2 pb-[max(12px,var(--k-safe-area-bottom))] ${EDGES}`}>
           <div className="mx-auto max-w-xl">
             {session.saveFailed && (
-              <p role="alert" className="mx-auto mb-2 w-fit rounded-full bg-again-tint px-3 py-1 text-center text-[15px] text-again">
+              <p role="alert" className="mx-auto mb-1.5 w-fit rounded-full bg-again-tint px-3 py-0.5 text-center text-[15px] text-again">
                 Note non enregistrée. Réessaie.
               </p>
             )}
@@ -142,7 +142,17 @@ export function ReviewScreen({ session, now, sync, onSignOut }: Props) {
             <div role="group" aria-label="Actions">
               {revealed
                 ? <RatingBar state={current.state} now={now()} onRate={session.rate} />
-                : <GlassButton tone="new" className={GLASS_PRIMARY} onClick={session.reveal}>Afficher la réponse</GlassButton>}
+                : (
+                  <GlassButton tone="new" className={`${GLASS_PRIMARY} relative`} onClick={session.reveal}>
+                    Afficher la réponse
+                    {/* Chevron dans une pastille opaque (pas de flou imbriqué), comme sur la maquette. */}
+                    <span aria-hidden="true" className="absolute end-2 flex size-10 items-center justify-center rounded-full bg-new-pill text-white">
+                      <svg viewBox="0 0 16 16" className="size-4" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 6l4 4 4-4" />
+                      </svg>
+                    </span>
+                  </GlassButton>
+                )}
             </div>
           </div>
         </footer>

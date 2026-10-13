@@ -18,48 +18,41 @@ function block(prelude: string): string {
   throw new Error('bloc non fermé')
 }
 
-describe('index.css : replis du verre (#19)', () => {
+/** CSS sans commentaires (les commentaires citent ce qu'on s'interdit). */
+const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
+
+describe('index.css : verre et repli (#19, #39)', () => {
   it('le verre floute avec et sans préfixe WebKit', () => {
     const glass = block('.glass,\n.glass-card {')
     expect(glass).toMatch(/-webkit-backdrop-filter:\s*blur/)
     expect(glass).toMatch(/[^-]backdrop-filter:\s*blur/)
   })
 
-  it.each([
-    ['@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'],
-  ])('fond opaque sous %s', prelude => {
-    expect(block(prelude)).toMatch(/\.glass[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
-  })
-
-  it('la carte en verre (#40) partage les replis opaques des barres, avec le même jeton', () => {
-    for (const prelude of [
-      '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))',
-    ]) {
-      expect(block(prelude)).toMatch(/\.glass-card[^{]*\{[^}]*background-color:\s*var\(--glass-solid\)/)
-    }
-    expect(block('.glass-card {')).not.toMatch(/touch-action/)
-    for (const root of [':root {', '.dark {']) expect(block(root)).toContain('--glass-card-bg:')
-  })
-
-  it.each([
-    ['@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))'],
-  ])('boutons en verre (#39) : teinte opaque sous %s', prelude => {
-    expect(block(prelude)).toMatch(/\.glass-btn\s*\{[^}]*background-color:\s*var\(--glass-btn-solid\)/)
-  })
-
-  it('boutons en verre : chaque teinte a sa variante translucide et opaque, en clair et en sombre', () => {
-    for (const tone of ['new', 'again', 'hard', 'good']) {
-      for (const root of [':root {', '.dark {']) {
-        expect(block(root)).toMatch(new RegExp(`--glass-btn-${tone}:\\s*rgb\\([^)]*/ 0\\.\\d+\\)`))
-        expect(block(root)).toContain(`--glass-btn-${tone}-solid:`)
-      }
-      expect(block(`.glass-btn-${tone} {`)).toContain(`var(--glass-btn-${tone}-solid)`)
-    }
-    expect(block('.glass-btn-neutral {')).toContain('var(--glass-solid)')
+  it('seul repli conservé : verre opaque (barres, carte, boutons) sans backdrop-filter', () => {
+    const b = block('@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))')
+    expect(b).toMatch(/\.glass,\s*\.glass-card\s*\{[^}]*background-color:\s*var\(--glass-solid\)/)
+    expect(b).toMatch(/\.glass-btn\s*\{[^}]*background-color:\s*var\(--glass-solid\);[^}]*background-image:\s*none/)
   })
 
   it('full liquid glass (#39, demande de Kyllian) : replis Réduire la transparence / Augmenter le contraste reportés', () => {
-    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/prefers-reduced-transparency|prefers-contrast/)
+    expect(code).not.toMatch(/prefers-reduced-transparency/)
+    expect(code).not.toMatch(/prefers-contrast/)
+  })
+
+  it('boutons en verre : verre neutre translucide + lueur et liseré colorés, en clair et en sombre', () => {
+    for (const root of [':root {', '.dark {']) {
+      expect(block(root)).toMatch(/--glass-btn-bg:\s*rgb\([^)]*\/ 0\.[3-6]\d*\)/)
+      for (const tone of ['new', 'again', 'hard', 'good']) {
+        expect(block(root)).toMatch(new RegExp(`--glow-${tone}:\\s*rgb\\([^)]*/ 0\\.\\d+\\)`))
+        expect(block(root)).toContain(`--rim-${tone}:`)
+      }
+      for (const tone of ['again', 'hard', 'good']) expect(block(root)).toContain(`--${tone}-glass:`)
+    }
+    for (const tone of ['new', 'again', 'hard', 'good']) {
+      const rule = block(`.glass-btn-${tone} {`)
+      expect(rule).toContain(`var(--glow-${tone})`)
+      expect(rule).toContain(`var(--rim-${tone})`)
+    }
   })
 
   it('« Réduire les animations » : aucune transition sur les boutons en verre', () => {
@@ -83,8 +76,6 @@ describe('index.css : replis du verre (#19)', () => {
   })
 })
 
-/** CSS sans commentaires (les commentaires citent ce qu'on s'interdit). */
-const code = css.replace(/\/\*[\s\S]*?\*\//g, '')
 
 describe('index.css : garde-fous de performance (#19)', () => {
   it('flou modéré (≤ 20 px) et zone repeinte limitée sur le verre', () => {

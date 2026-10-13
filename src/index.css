@@ -26,6 +26,13 @@
   --color-sys-gray: var(--sys-gray);
   --color-muted: var(--muted);
   --color-label-2: var(--label-2);
+  --color-again-glass: var(--again-glass);
+  --color-hard-glass: var(--hard-glass);
+  --color-good-glass: var(--good-glass);
+  --color-new-pill: var(--new-pill);
+  --color-again-pill: var(--again-pill);
+  --color-hard-pill: var(--hard-pill);
+  --color-good-pill: var(--good-pill);
 }
 
 :root {
@@ -60,21 +67,29 @@
   --card-shadow: 0 1px 3px rgb(15 30 60 / 0.08); /* petite : la carte défile */
 
   /*
-   * Boutons en verre coloré (#39), libellé blanc. Teinte foncée à 84 % : ≥ 4,5:1 au pire cas réaliste
-   * (carte claire ou fond décoratif dessous, encre floutée, reflet, appui) ; tableau dans la PR #39.
-   * `-solid` = même teinte opaque pour les replis (≥ 9:1).
+   * Boutons en verre (#39, retour de Kyllian) : verre neutre translucide, comme les barres mais plus léger,
+   * + lueur colorée depuis le bas + liseré de la couleur ; libellé noir, intervalle dans la couleur de la note
+   * (foncée en clair), icône sur pastille opaque. Contrastes au pire cas réaliste : tableau dans la PR #39.
    */
-  --glass-btn-new: rgb(6 63 138 / 0.84);    --glass-btn-new-solid: #063f8a;
-  /* Notes : verre teinté clair et translucide + libellé foncé de la même couleur (≥ 5,6:1 sur le fond réel, pressé compris). */
-  --glass-btn-again: rgb(255 59 48 / 0.16); --glass-btn-again-solid: #fde3e0; --glass-btn-again-fg: #7a1307;
-  --glass-btn-hard: rgb(255 159 10 / 0.2);  --glass-btn-hard-solid: #fcebcf;  --glass-btn-hard-fg: #5c3700;
-  --glass-btn-good: rgb(52 199 89 / 0.18);  --glass-btn-good-solid: #dcf3e2;  --glass-btn-good-fg: #0c4a22;
-  --glass-btn-tint-press: rgb(0 0 0 / 0.06);
-  --glass-btn-edge: rgb(255 255 255 / 0.35);
+  --glass-btn-bg: rgb(255 255 255 / 0.55);
+  --glass-btn-label: #000;
+  --glass-btn-edge: rgb(255 255 255 / 0.75);
   --glass-btn-sheen: linear-gradient(180deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 60%);
-  --glass-btn-shadow: 0 2px 8px rgb(15 30 60 / 0.16);
-  --glass-btn-press: rgb(0 0 0 / 0.18); /* voile intérieur à l'appui : fonce le verre, jamais le texte */
-  --glass-btn-highlight: rgb(255 255 255 / 0.12); /* reflet Konsta (50 % par défaut : illisible sur verre teinté) */
+  --glass-btn-shadow: 0 2px 10px rgb(15 30 60 / 0.12);
+  --glass-btn-press: rgb(0 0 0 / 0.06); /* voile intérieur à l'appui : fonce le verre, jamais le texte */
+  --glass-btn-highlight: rgb(255 255 255 / 0.12); /* reflet Konsta (50 % par défaut : trop fort sous le libellé) */
+  --glow-new: rgb(10 132 255 / 0.2);   --rim-new: rgb(10 132 255 / 0.5);
+  --glow-again: rgb(255 59 48 / 0.2);  --rim-again: rgb(255 59 48 / 0.5);
+  --glow-hard: rgb(255 159 10 / 0.24); --rim-hard: rgb(255 159 10 / 0.55);
+  --glow-good: rgb(52 199 89 / 0.2);   --rim-good: rgb(52 199 89 / 0.5);
+  /* Intervalle sur le verre (≥ 4,5:1) et pastilles d'icône opaques (icône blanche ≥ 3:1), mêmes en sombre. */
+  --again-glass: #8f2312;
+  --hard-glass: #663f00;
+  --good-glass: #125a2d;
+  --new-pill: #0a5fc4;
+  --again-pill: #d0342c;
+  --hard-pill: #c07300;
+  --good-pill: #1f8a3c;
 
   /* Pastilles de tags (shared/tags.ts → clé `color`). Ratio texte / fond (WCAG, AA ≥ 4,5:1) en commentaire. */
   --tag-violet-bg: #efe9fb;   --tag-violet-fg: #5b2ea6;   /* 7,43:1 */
@@ -114,16 +129,20 @@
   --glass-card-sheen: linear-gradient(135deg, rgb(255 255 255 / 0.12), rgb(255 255 255 / 0) 45%);
   --card-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
 
-  /* Sombre : teinte plus vive à 70 % (le fond noir l'assombrit) ; pire cas = texte blanc de la carte flouté dessous. */
-  --glass-btn-new: rgb(20 88 176 / 0.7);    --glass-btn-new-solid: #1458b0;
-  /* Notes, sombre : verre teinté translucide + libellé clair de la même couleur (≥ 4,6:1 sur le fond réel, pressé compris). */
-  --glass-btn-again: rgb(255 69 58 / 0.2);  --glass-btn-again-solid: #4a1d19; --glass-btn-again-fg: #ffb3ab;
-  --glass-btn-hard: rgb(255 179 64 / 0.2);  --glass-btn-hard-solid: #45330f; --glass-btn-hard-fg: #ffd38a;
-  --glass-btn-good: rgb(48 209 88 / 0.2);   --glass-btn-good-solid: #173f24; --glass-btn-good-fg: #9ff0b4;
-  --glass-btn-tint-press: rgb(0 0 0 / 0.18);
+  /* Sombre : verre foncé translucide, lueur plus marquée (le fond noir l'éteint), intervalle clair. */
+  --glass-btn-bg: rgb(36 38 46 / 0.5);
+  --glass-btn-label: #fff;
   --glass-btn-edge: rgb(255 255 255 / 0.22);
-  --glass-btn-shadow: 0 2px 8px rgb(0 0 0 / 0.35);
+  --glass-btn-shadow: 0 2px 10px rgb(0 0 0 / 0.35);
+  --glass-btn-press: rgb(0 0 0 / 0.18);
   --glass-btn-highlight: rgb(255 255 255 / 0.1);
+  --glow-new: rgb(10 132 255 / 0.3);   --rim-new: rgb(10 132 255 / 0.6);
+  --glow-again: rgb(255 69 58 / 0.3);  --rim-again: rgb(255 69 58 / 0.6);
+  --glow-hard: rgb(255 179 64 / 0.26); --rim-hard: rgb(255 179 64 / 0.6);
+  --glow-good: rgb(48 209 88 / 0.26);  --rim-good: rgb(48 209 88 / 0.6);
+  --again-glass: #ffb8ab;
+  --hard-glass: #ffd685;
+  --good-glass: #93f0ad;
 
   /* Pastilles de tags, sombre : fond foncé teinté + texte clair. */
   --tag-violet-bg: #2a2145;   --tag-violet-fg: #c7b2ff;   /* 8,02:1 */
@@ -203,12 +222,13 @@ html.dark {
 }
 
 /*
- * Boutons en verre coloré, chacun indépendant (#39) : « Afficher la réponse », les 3 notes, « Se connecter »,
- * « Réviser à nouveau »… Plus de barre en verre autour : ils flottent sur le fond. Rendus par `GlassButton`
- * (composant `Glass` de Konsta) ; ces règles hors @layer remplacent ses utilitaires (flou 16 px, touch-none,
- * piles d'ombres internes coûteuses).
+ * Boutons en verre, chacun indépendant (#39) : « Afficher la réponse », les 3 notes, « Se connecter »,
+ * « Réviser à nouveau »… Plus de barre en verre autour : ils flottent sur le fond. Verre neutre translucide
+ * (le fond flouté se voit au travers), lueur colorée qui monte du bas, liseré de la couleur, reflet en haut.
+ * Rendus par `GlassButton` (composant `Glass` de Konsta) ; ces règles hors @layer remplacent ses
+ * utilitaires (flou 16 px, touch-none, piles d'ombres internes coûteuses).
  * Performance : flou plus léger que les barres (12 px) car les surfaces sont plus nombreuses ; `contain`
- * sur chacune ; jamais de flou imbriqué (aucun bouton en verre dans une surface floutée). À l'appui : seul
+ * sur chacune ; jamais de flou imbriqué (la pastille d'icône est opaque, sans flou). À l'appui : seul
  * le reflet Konsta anime `scale`/`opacity` ; le voile intérieur est instantané (aucune transition).
  * `touch-action: manipulation` : pas de délai au tap, et la page défile encore si le geste commence sur un bouton.
  */
@@ -217,14 +237,14 @@ html.dark {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
-  color: var(--glass-btn-fg, #fff);
+  color: var(--glass-btn-label);
   background-color: var(--glass-btn-bg);
-  background-image: var(--glass-btn-sheen);
-  -webkit-backdrop-filter: blur(12px) saturate(150%);
-  backdrop-filter: blur(12px) saturate(150%);
+  background-image: var(--glass-btn-glow, linear-gradient(transparent, transparent)), var(--glass-btn-sheen);
+  -webkit-backdrop-filter: blur(12px) saturate(160%);
+  backdrop-filter: blur(12px) saturate(160%);
   box-shadow:
     inset 0 1px 0 var(--glass-btn-edge),
-    inset 0 0 0 0.5px var(--glass-btn-edge),
+    inset 0 0 0 1px var(--glass-btn-rim, var(--glass-btn-edge)),
     var(--glass-btn-shadow);
   --color-ios-hover-highlight: var(--glass-btn-highlight);
   /* Le reflet Konsta pose une durée de transition en ligne : seul `scale` en profite (ni ombre ni fond animés). */
@@ -242,27 +262,19 @@ html.dark {
   box-shadow:
     inset 0 0 0 100vmax var(--glass-btn-press),
     inset 0 1px 0 var(--glass-btn-edge),
+    inset 0 0 0 1px var(--glass-btn-rim, var(--glass-btn-edge)),
     var(--glass-btn-shadow);
 }
 
-.glass-btn-new { --glass-btn-bg: var(--glass-btn-new); --glass-btn-solid: var(--glass-btn-new-solid); }
-.glass-btn-again { --glass-btn-bg: var(--glass-btn-again); --glass-btn-solid: var(--glass-btn-again-solid); --glass-btn-fg: var(--glass-btn-again-fg); --glass-btn-press: var(--glass-btn-tint-press); }
-.glass-btn-hard { --glass-btn-bg: var(--glass-btn-hard); --glass-btn-solid: var(--glass-btn-hard-solid); --glass-btn-fg: var(--glass-btn-hard-fg); --glass-btn-press: var(--glass-btn-tint-press); }
-.glass-btn-good { --glass-btn-bg: var(--glass-btn-good); --glass-btn-solid: var(--glass-btn-good-solid); --glass-btn-fg: var(--glass-btn-good-fg); --glass-btn-press: var(--glass-btn-tint-press); }
-
-/* Neutre (action secondaire) : verre des barres, libellé noir / blanc. */
-.glass-btn-neutral {
-  --glass-btn-bg: var(--glass-bg);
-  --glass-btn-solid: var(--glass-solid);
-  --glass-btn-press: rgb(0 0 0 / 0.08);
-  color: #000;
-}
-.dark .glass-btn-neutral {
-  color: #fff;
-}
+/* Lueur : ellipse centrée sous le bord bas, qui s'éteint avant le haut du bouton (libellé neutre au-dessus). */
+.glass-btn-new { --glass-btn-glow: radial-gradient(75% 110% at 50% 125%, var(--glow-new), transparent 75%); --glass-btn-rim: var(--rim-new); }
+.glass-btn-again { --glass-btn-glow: radial-gradient(90% 90% at 50% 120%, var(--glow-again), transparent 75%); --glass-btn-rim: var(--rim-again); }
+.glass-btn-hard { --glass-btn-glow: radial-gradient(90% 90% at 50% 120%, var(--glow-hard), transparent 75%); --glass-btn-rim: var(--rim-hard); }
+.glass-btn-good { --glass-btn-glow: radial-gradient(90% 90% at 50% 120%, var(--glow-good), transparent 75%); --glass-btn-rim: var(--rim-good); }
+/* .glass-btn-neutral : verre seul, sans lueur ni liseré coloré. */
 
 /*
- * Seul repli conservé : navigateur sans backdrop-filter → verre opaque.
+ * Seul repli conservé : navigateur sans backdrop-filter → verre opaque, sans lueur.
  * « Réduire la transparence » et « Augmenter le contraste » : replis retirés à la demande de Kyllian
  * (full liquid glass), reportés.
  */
@@ -272,7 +284,8 @@ html.dark {
     background-color: var(--glass-solid);
   }
   .glass-btn {
-    background-color: var(--glass-btn-solid);
+    background-color: var(--glass-solid);
+    background-image: none;
   }
 }
 

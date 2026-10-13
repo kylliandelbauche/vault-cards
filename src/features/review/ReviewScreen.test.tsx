@@ -89,7 +89,7 @@ describe('ReviewScreen', () => {
     expect(s.rate).toHaveBeenCalledWith(3)
   })
 
-  it('notation : 3 boutons en verre coloré indépendants (rouge, ambre, vert), cibles ≥ 44 px, sans opacité', () => {
+  it('notation : 3 boutons en verre indépendants (lueur rouge, ambre, vert), cibles ≥ 44 px, sans opacité', () => {
     renderScreen(reviewing({ revealed: true }))
     const buttons = within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')
     expect(buttons.map(b => b.className.match(/glass-btn-(\w+)/)?.[1])).toEqual(['again', 'hard', 'good'])
@@ -98,8 +98,22 @@ describe('ReviewScreen', () => {
       expect(b.getAttribute('type')).toBe('button')
       expect(b.className.split(' ')).toContain('glass-btn')
       expect(b.className).not.toMatch(/opacity/)
-      expect(b.className).toMatch(/\bmin-h-14\b/)
+      expect(b.className).toContain('min-h-[76px]')
       expect(b.closest('.glass, .glass-card')).toBeNull()
+    }
+  })
+
+  it('notation : pastille d’icône opaque, libellé neutre, intervalle dans la couleur de la note', () => {
+    renderScreen(reviewing({ revealed: true }))
+    const buttons = within(screen.getByRole('group', { name: 'Actions' })).getAllByRole('button')
+    for (const [b, tone] of buttons.map((b, i) => [b, ['again', 'hard', 'good'][i]] as const)) {
+      const [pill, label, interval] = [...b.children] as HTMLElement[]
+      expect(pill.getAttribute('aria-hidden')).toBe('true')
+      expect(pill.className).toContain(`bg-${tone}-pill`)
+      expect(pill.className).not.toMatch(/glass|backdrop/)
+      expect(label.className).toBe('')
+      expect(interval.className).toContain(`text-${tone}-glass`)
+      expect(interval.textContent).toMatch(/\d/)
     }
   })
 

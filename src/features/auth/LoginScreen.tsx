@@ -69,7 +69,7 @@ export function LoginScreen({ signIn }: Props) {
             </List>
           </div>
           <GlassButton tone="new" type="submit" disabled={sending} className={GLASS_PRIMARY}>
-            {sending ? <Preloader aria-label="Connexion en cours" colors={{ iconIos: 'text-white' }} /> : 'Se connecter'}
+            {sending ? <Preloader aria-label="Connexion en cours" /> : 'Se connecter'}
           </GlassButton>
           {/* Sur le fond décoratif, le message a sa propre pastille opaque (≥ 5:1 en clair comme en sombre). */}
           <p role="alert" aria-live="polite" className="flex min-h-8 justify-center text-center text-[15px]">
