@@ -109,8 +109,9 @@
   /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
   /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
-  --chip-glow: 16%;
-  --chip-rim: 45%;
+  --chip-glow: 26%;
+  --chip-rim: 70%;
+  --chip-hover-mix: 30%; /* survol : lumière teintée de la couleur du tag */
   --chip-body: var(--glass-btn-bg);
   --chip-text: #111114; /* texte neutre, comme les boutons de notation */
   --chip-sheen: rgb(255 255 255 / 0.1);
@@ -177,8 +178,9 @@
    * Sombre : verre neutre un peu plus foncé que celui des boutons et voiles blancs réduits, pour que le texte
    * garde sa couleur (sinon il faudrait le pousser vers le blanc pour rester ≥ 4,5:1).
    */
-  --chip-glow: 16%;
-  --chip-rim: 45%;
+  --chip-glow: 26%;
+  --chip-rim: 70%;
+  --chip-hover-mix: 40%;
   --chip-body: var(--glass-btn-bg); /* même verre que les boutons de notation : ne vole pas la vedette au bouton principal */
   --chip-text: #ffffff;
   --chip-sheen: rgb(255 255 255 / 0.04);
@@ -417,8 +419,9 @@ html.dark {
 }
 .tag-chip {
   background-color: var(--chip-body);
-  --glass-btn-hover-sheen: var(--chip-hover-sheen);
-  --color-ios-hover-highlight: var(--chip-highlight);
+  /* Survol : la lumière (haut du verre + reflet qui suit le pointeur) prend la couleur du tag. */
+  --glass-btn-hover-sheen: color-mix(in srgb, var(--chip-fg) var(--chip-hover-mix), transparent);
+  --color-ios-hover-highlight: color-mix(in srgb, var(--chip-fg) var(--chip-hover-mix), transparent);
 }
 .tag-pill {
   background-color: var(--chip-body);

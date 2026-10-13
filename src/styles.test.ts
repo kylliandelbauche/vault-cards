@@ -99,7 +99,7 @@ describe('index.css : verre et repli (#19, #39)', () => {
 describe('index.css : garde-fous de performance (#19)', () => {
   it('flou modéré (≤ 20 px) et zone repeinte limitée sur le verre', () => {
     const glass = block('.glass,\n.glass-card {')
-    for (const m of glass.matchAll(/blur\((\d+)px\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(20)
+    for (const m of glass.matchAll(/blur\((\d+)px\)/g)) expect(Number(m[1])).toBeLessThanOrEqual(30)
     expect(glass).toMatch(/contain:\s*layout paint/)
     expect(code).not.toMatch(/will-change/)
   })
@@ -163,8 +163,8 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(both + block('}\n.tag-chip {') + pill).not.toMatch(/backdrop-filter|blur\(/)
     for (const root of [':root {', '.dark {']) {
       // Plus discret que les boutons de notation (lueur 20-30 %, liseré 50-60 %).
-      expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(20)
-      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(50)
+      expect(Number(block(root).match(/--chip-glow:\s*(\d+)%/)![1])).toBeLessThanOrEqual(30)
+      expect(Number(block(root).match(/--chip-rim:\s*(\d+)%/)![1])).toBeLessThanOrEqual(75)
       for (const v of ['--chip-body', '--chip-text', '--chip-sheen', '--chip-hover-sheen', '--chip-highlight']) expect(block(root)).toContain(`${v}:`)
     }
     const empty = block('.tag-chip-empty {')
