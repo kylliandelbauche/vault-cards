@@ -25,9 +25,11 @@ node tools/dev/rest-check.ts
 ```
 
 - Le script demande ton **e-mail**, puis ton **mot de passe** (saisie masquée : rien ne s'affiche). Il ne les stocke ni ne les affiche.
-- Il lit seulement `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` (variables d'environnement, sinon ces deux lignes
-  de `.env.local`). La clé secrète du fichier n'est jamais lue dans le programme ; une clé secrète mise par erreur à la place
-  de la clé publishable est refusée.
+- Il n'utilise que `VITE_SUPABASE_URL` et `VITE_SUPABASE_PUBLISHABLE_KEY` (variables d'environnement, sinon `.env.local`).
+  Le fichier est lu en texte brut, mais seules ces deux lignes sont gardées puis analysées : la clé secrète n'est jamais
+  analysée, copiée ni affichée. Une clé secrète mise par erreur à la place de la clé publishable est refusée.
+- Il ne modifie jamais une vraie carte : la tentative sur une carte vault réécrit sa propre question (0 ligne attendue ;
+  même si la RLS cédait, le contenu resterait identique).
 - Il passe par l'API REST exactement comme l'app (supabase-js → PostgREST), puis affiche un tableau :
 
 | # | Étape | Attendu |
@@ -46,6 +48,7 @@ node tools/dev/rest-check.ts
 
 Code de sortie 0 si tout est ✓, 1 sinon. Colle le tableau dans la PR ou l'issue.
 
-Trace laissée : une carte `[rest-check] <date>` **supprimée en douce** (l'app n'a pas le droit de supprimer physiquement).
+Trace laissée : une carte `[rest-check] <date>` **supprimée en douce** (l'app n'a pas le droit de supprimer physiquement),
+y compris si le script s'arrête sur une erreur après l'avoir créée (nettoyage en `finally`).
 Elle est invisible dans l'app. Pour la purger : `delete from public.cards where front like '[rest-check]%' and source = 'manual';`
 dans l'éditeur SQL de Supabase (ses éventuelles reviews d'abord ; le script n'en crée pas).

@@ -2,14 +2,15 @@
 // Usage : node tools/dev/rest-check.ts   (dans un terminal interactif)
 // - Demande l'e-mail puis le mot de passe dans le terminal (mot de passe masqué, jamais stocké ni affiché).
 // - Se connecte avec la clé PUBLISHABLE de l'app (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY), jamais la clé secrète.
+// - Ne modifie jamais une vraie carte : la tentative sur une carte vault réécrit sa propre valeur (sans effet même si la RLS cédait).
 // - Laisse une carte « [rest-check] … » supprimée en douce (aucune suppression physique n'est permise à l'app) :
-//   invisible dans l'app (deleted_at posé).
+//   invisible dans l'app (deleted_at posé), y compris si le script s'arrête sur une erreur en cours de route.
 // Code de sortie : 0 si toutes les étapes sont conformes, 1 sinon.
 import fs from 'node:fs'
 import path from 'node:path'
 import readline from 'node:readline/promises'
 import { createClient } from '@supabase/supabase-js'
-import { expectDenied, expectRows, formatTable, pickPublicConfig, type ApiResponse, type StepResult } from './lib.ts'
+import { expectDenied, expectRows, formatTable, pickPublicConfig, typeKeys, type ApiResponse, type StepResult } from './lib.ts'
 
 const ENV_FILE = path.join(import.meta.dirname, '..', '..', '.env.local')
 
@@ -21,7 +22,7 @@ function readEnvFile(): string | null {
   }
 }
 
-/** Saisie masquée : rien n'est renvoyé à l'écran (pas même des étoiles). Ctrl-C annule. */
+/** Saisie masquée : rien n'est renvoyé à l'écran (pas même des étoiles). Ctrl-C annule ; flèches et autres séquences ignorées. */
 function askHidden(prompt: string): Promise<string> {
   const { stdin, stdout } = process
   if (!stdin.isTTY) throw new Error('terminal interactif requis (le mot de passe se tape au clavier)')
@@ -36,12 +37,10 @@ function askHidden(prompt: string): Promise<string> {
       fn()
     }
     const onData = (chunk: Buffer) => {
-      for (const ch of chunk.toString('utf8')) {
-        if (ch === '\r' || ch === '\n') return done(() => resolve(value))
-        if (ch === '\u0003') return done(() => reject(new Error('annulé')))
-        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1)
-        else if (ch >= ' ') value += ch
-      }
+      const typed = typeKeys(value, chunk.toString('utf8'))
+      value = typed.value
+      if (typed.done === 'enter') done(() => resolve(value))
+      else if (typed.done === 'cancel') done(() => reject(new Error('annulé')))
     }
     stdin.setRawMode(true)
     stdin.resume()
@@ -82,46 +81,59 @@ async function main(): Promise<number> {
   const front = `[rest-check] ${new Date().toISOString()}`
   const card = { id, source: 'manual', front, back: 'Carte de test créée par tools/dev/rest-check.ts', tags: ['dev'] }
 
-  // 1. Création (POST /rest/v1/cards), comme l'app : INSERT … ON CONFLICT (id) DO NOTHING.
-  const created = asResponse(await client.from('cards').upsert(card, { onConflict: 'id', ignoreDuplicates: true }).select('id'))
-  results.push(expectRows('créer une carte manual', '201, 1 ligne', created, 1, created.status === 201))
+  let softDeleted = false
+  try {
+    // 1. Création (POST /rest/v1/cards), comme l'app : INSERT … ON CONFLICT (id) DO NOTHING.
+    const created = asResponse(await client.from('cards').upsert(card, { onConflict: 'id', ignoreDuplicates: true }).select('id'))
+    results.push(expectRows('créer une carte manual', '201, 1 ligne', created, 1, created.status === 201))
 
-  // 2. Relecture (GET).
-  const read = await client.from('cards').select('id, source, deck, source_path, front, tags, deleted_at').eq('id', id)
-  const row = read.data?.[0]
-  results.push(expectRows('relire la carte', '200, source manual, deck/source_path nuls', asResponse(read), 1,
-    row?.source === 'manual' && row.deck === null && row.source_path === null && row.front === front))
+    // 2. Relecture (GET).
+    const read = await client.from('cards').select('id, source, deck, source_path, front, tags, deleted_at').eq('id', id)
+    const row = read.data?.[0]
+    results.push(expectRows('relire la carte', '200, source manual, deck/source_path nuls', asResponse(read), 1,
+      row?.source === 'manual' && row.deck === null && row.source_path === null && row.front === front))
 
-  // 3. Envoi rejoué (réponse perdue) : aucune ligne insérée, pas d'erreur.
-  const replay = asResponse(await client.from('cards').upsert(card, { onConflict: 'id', ignoreDuplicates: true }).select('id'))
-  results.push(expectRows('renvoyer la même carte', '0 ligne, pas de doublon', replay, 0))
+    // 3. Envoi rejoué (réponse perdue) : aucune ligne insérée, pas d'erreur.
+    const replay = asResponse(await client.from('cards').upsert(card, { onConflict: 'id', ignoreDuplicates: true }).select('id'))
+    results.push(expectRows('renvoyer la même carte', '0 ligne, pas de doublon', replay, 0))
 
-  // 4. Édition (PATCH) des colonnes autorisées.
-  const edited = asResponse(await client.from('cards').update({ front: `${front} (modifiée)`, back: 'Réponse modifiée', tags: ['dev', 'ia'] }).eq('id', id).select('id, front'))
-  results.push(expectRows('modifier front/back/tags', '200, 1 ligne', edited, 1))
+    // 4. Édition (PATCH) des colonnes autorisées.
+    const edited = asResponse(await client.from('cards').update({ front: `${front} (modifiée)`, back: 'Réponse modifiée', tags: ['dev', 'ia'] }).eq('id', id).select('id, front'))
+    results.push(expectRows('modifier front/back/tags', '200, 1 ligne', edited, 1))
 
-  // 5. Colonnes interdites (source) et suppression physique (DELETE) : refusées.
-  results.push(expectDenied('modifier la colonne source', asResponse(await client.from('cards').update({ source: 'vault' }).eq('id', id).select('id'))))
-  results.push(expectDenied('supprimer (DELETE)', asResponse(await client.from('cards').delete().eq('id', id).select('id'))))
+    // 5. Colonnes interdites (source) et suppression physique (DELETE) : refusées.
+    results.push(expectDenied('modifier la colonne source', asResponse(await client.from('cards').update({ source: 'vault' }).eq('id', id).select('id'))))
+    results.push(expectDenied('supprimer (DELETE)', asResponse(await client.from('cards').delete().eq('id', id).select('id'))))
 
-  // 6. Création d'une carte vault : refusée par la policy RLS.
-  const vaultInsert = await client.from('cards').insert({ id: crypto.randomUUID(), source: 'vault', front: '[rest-check] vault', back: 'R', tags: ['dev'] }).select('id')
-  results.push(expectDenied('créer une carte vault', asResponse(vaultInsert)))
+    // 6. Création d'une carte vault : refusée par la policy RLS.
+    const vaultInsert = await client.from('cards').insert({ id: crypto.randomUUID(), source: 'vault', front: '[rest-check] vault', back: 'R', tags: ['dev'] }).select('id')
+    results.push(expectDenied('créer une carte vault', asResponse(vaultInsert)))
 
-  // 7. Modification d'une carte vault : invisible pour l'update (RLS) → 0 ligne, carte intacte.
-  const target = await client.from('cards').select('id, front').eq('source', 'vault').is('deleted_at', null).limit(1)
-  const vault = target.data?.[0]
-  if (vault) {
-    const attempt = asResponse(await client.from('cards').update({ front: '[rest-check] piratée' }).eq('id', vault.id).select('id'))
-    const after = await client.from('cards').select('front').eq('id', vault.id)
-    results.push(expectRows('modifier une carte vault', '0 ligne (RLS), carte intacte', attempt, 0, after.data?.[0]?.front === vault.front))
-  } else {
-    results.push({ step: 'modifier une carte vault', expected: '0 ligne (RLS)', status: target.status, got: 'aucune carte vault à viser', ok: false })
+    // 7. Modification d'une carte vault : invisible pour l'update (RLS) → 0 ligne. La tentative réécrit la même question :
+    //    même si la RLS cédait (1 ligne, détectée comme ✗), aucune vraie carte ne serait abîmée.
+    const target = await client.from('cards').select('id, front').eq('source', 'vault').is('deleted_at', null).limit(1)
+    const vault = target.data?.[0]
+    if (vault) {
+      const attempt = asResponse(await client.from('cards').update({ front: vault.front }).eq('id', vault.id).select('id'))
+      const after = await client.from('cards').select('front').eq('id', vault.id)
+      results.push(expectRows('modifier une carte vault', '0 ligne (RLS), carte intacte', attempt, 0, after.data?.[0]?.front === vault.front))
+    } else {
+      results.push({ step: 'modifier une carte vault', expected: '0 ligne (RLS)', status: target.status, got: 'aucune carte vault à viser', ok: false })
+    }
+
+    // 8. Suppression douce.
+    const removed = asResponse(await client.from('cards').update({ deleted_at: new Date().toISOString() }).eq('id', id).select('id, deleted_at'))
+    results.push(expectRows('suppression douce (deleted_at)', '200, 1 ligne', removed, 1))
+    softDeleted = !removed.error
+  } finally {
+    // Arrêt sur une erreur avant l'étape 8 : la carte de test ne reste pas visible dans l'app.
+    if (!softDeleted) {
+      const cleanup = await client.from('cards').update({ deleted_at: new Date().toISOString() }).eq('id', id).is('deleted_at', null).select('id')
+      process.stderr.write(cleanup.error
+        ? `nettoyage : échec de la suppression douce de ${id} (${cleanup.error.message})\n`
+        : `nettoyage : ${cleanup.data.length ? `carte de test ${id} supprimée en douce` : 'aucune carte de test vivante à supprimer'}\n`)
+    }
   }
-
-  // 8. Suppression douce.
-  const removed = asResponse(await client.from('cards').update({ deleted_at: new Date().toISOString() }).eq('id', id).select('id, deleted_at'))
-  results.push(expectRows('suppression douce (deleted_at)', '200, 1 ligne', removed, 1))
 
   await client.auth.signOut()
   process.stdout.write('\n' + formatTable(results) + '\n')
