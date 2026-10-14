@@ -16,5 +16,6 @@ PWA de flashcards FSRS, hors ligne, synchronisée avec Supabase. Spec : docs/spe
 
 ## Commandes
 - `npm run dev` · `npm test` · `npm run build`
-- `node tools/cards/cli.ts scan|existing <path>|apply <file.json>`
+- `node tools/cards/cli.ts scan | all | existing <path> | apply <file.json> [--confirm-delete=<n>] | retag <file.json> | titles`
+  - Toute suppression de cartes exige `--confirm-delete=<n>` (n exact), seulement après confirmation explicite de Kyllian.
 - `supabase db push` (migrations dans `supabase/migrations/`)
