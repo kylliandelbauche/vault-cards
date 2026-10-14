@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { getTag } from '../../../shared/tags'
-import { activeFilter } from '../../lib/home'
 import type { VaultDB } from '../../lib/db'
 import { pendingCount } from '../../lib/sync'
 import { dexieStore } from '../review/dexieStore'
@@ -22,7 +21,7 @@ interface Props {
 }
 
 /**
- * App connectée : Accueil (filtre : tous / un tag ; → Mes tags) → Révision (toutes les cartes ou un tag) → Fin de session → Accueil.
+ * App connectée : Accueil (→ Mes tags) → Révision (toutes les cartes ou un tag) → Fin de session → Accueil.
  * La session et la synchro vivent ici, au-dessus des écrans : l'indicateur de synchro ne repart pas de zéro
  * à chaque changement d'écran, et une seule synchro tourne à la fois.
  */
@@ -37,11 +36,6 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
 
   // Accueil et Mes tags : abonnés au cache seulement quand ils sont affichés ; les derniers chiffres restent pendant la révision.
   const homeData = useHomeData(db, now, screen.name !== 'review')
-  // Filtre de l'accueil (#63) : gardé ici (l'accueil est démonté pendant la révision), pas de persistance.
-  const [filter, setFilter] = useState<string | null>(null)
-  // Tag filtré devenu vide (ou inconnu) : retour à « Tous » pour de bon, sans réactivation s'il revient après une
-  // synchro. Ajusté pendant le rendu (motif React « état dérivé d'une prop ») : pas d'effet, pas de rendu intermédiaire.
-  if (filter !== null && homeData.status === 'ready' && activeFilter(homeData.stats, filter) === null) setFilter(null)
 
   // Retour à l'accueil au milieu d'une session : pousse tout de suite les notes déjà données. Après une session
   // terminée, useAutoSync a déjà lancé la synchro de fin : pas de seconde synchro.
@@ -82,10 +76,8 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
       data={homeData}
       now={now}
       sync={sync}
-      filter={filter}
-      onFilter={setFilter}
       onStudy={study}
-      onReviewAll={tag => openReview({ mode: 'all', tag })}
+      onReviewAll={() => openReview({ mode: 'all' })}
       onOpenTags={openTags}
       onSignOut={signOutSafely}
     />

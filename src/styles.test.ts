@@ -169,7 +169,14 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(empty).toMatch(/outline:\s*1px dashed/)
   })
 
-  it('rangée de filtres (#63) : défilement horizontal natif, aimantation légère, sans barre ni touch-action', () => {
+  it('raccourcis de tags (#63) : survol Liquid Glass des boutons en verre, en lumière blanche, sans couleur', () => {
+    const chip = block('}\n.tag-chip {')
+    expect(chip).toMatch(/--glass-btn-hover-sheen:\s*var\(--chip-hover-sheen\)/)
+    expect(chip).not.toMatch(/color-mix|--rim-|--glow-/)
+    for (const root of [':root {', '.dark {']) expect(block(root)).toMatch(/--chip-hover-sheen:\s*rgb\(255 255 255 \/ 0\.\d+\)/)
+  })
+
+  it('rangée de tags (#63) : défilement horizontal natif, aimantation légère, sans barre ni touch-action', () => {
     const row = block('.chip-row {')
     expect(row).toMatch(/overflow-x:\s*auto/)
     expect(row).toMatch(/scroll-snap-type:\s*x proximity/)

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { VaultDB } from '../../lib/db'
@@ -53,12 +53,10 @@ describe('SignedInApp : navigation (#53)', () => {
     expect(screen.getByRole('button', { name: 'Réviser à nouveau' })).toBeTruthy()
   })
 
-  it('filtre « Dev & outils » : compteurs du tag, « Commencer à étudier » → session du tag ; filtre gardé au retour', async () => {
+  it('tap sur un tag (raccourci) : session limitée au tag, nom du tag dans la barre ; chevron → accueil', async () => {
     const { user } = renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
-    expect(heading()).toBe("2 cartes à revoir aujourd'hui")
-    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
     expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
     const seen = new Set<string>()
@@ -70,46 +68,14 @@ describe('SignedInApp : navigation (#53)', () => {
     }
     expect([...seen].sort()).toEqual(['Question b ?', 'Question c ?'])
     await user.click(within(document.querySelector('header')!).getByRole('button', { name: 'Accueil' }))
-    // Même filtre au retour : plus rien de dû dans Dev & outils.
-    await waitFor(() => expect(heading()).toBe("Aucune carte à revoir aujourd'hui"))
-    expect(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }).getAttribute('aria-pressed')).toBe('true')
-    await user.click(screen.getByRole('button', { name: 'Tous, 3 cartes' }))
-    expect(heading()).toBe("1 carte à revoir aujourd'hui") // il reste 'a' (IA)
+    await waitFor(() => expect(heading()).toBe("1 carte à revoir aujourd'hui")) // toutes les cartes : il reste 'a' (IA)
   })
 
-  it('filtre sans carte du jour : « Réviser à nouveau » → révision libre du tag', async () => {
-    const { user } = renderApp()
-    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
-    await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
-    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
-    await screen.findByRole('button', { name: 'Afficher la réponse' })
-    await rateAll(user)
-    await user.click(await screen.findByRole('button', { name: "Retour à l'accueil" }))
-    await waitFor(() => expect(heading()).toBe("Aucune carte à revoir aujourd'hui"))
-    await user.click(screen.getByRole('button', { name: 'Réviser à nouveau' }))
-    await screen.findByRole('button', { name: 'Afficher la réponse' })
-    expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
-  })
-
-  it('tag filtré devenu vide : retour à « Tous », qui reste sélectionné quand le tag revient après une synchro', async () => {
-    const { user } = renderApp()
-    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
-    await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
-    expect(heading()).toBe("2 cartes à revoir aujourd'hui")
-    await act(async () => { await db.cards.bulkPut([card('b', ['ia']), card('c', ['ia'])]) }) // plus aucune carte Dev
-    await waitFor(() => expect(screen.queryByRole('button', { name: /^Dev & outils/ })).toBeNull())
-    expect(screen.getByRole('button', { name: 'Tous, 3 cartes' }).getAttribute('aria-pressed')).toBe('true')
-    await act(async () => { await db.cards.put(card('c', ['dev'])) }) // Dev revient
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Dev & outils, 1 carte' })).toBeTruthy())
-    expect(screen.getByRole('button', { name: 'Dev & outils, 1 carte' }).getAttribute('aria-pressed')).toBe('false')
-    expect(screen.getByRole('button', { name: 'Tous, 3 cartes' }).getAttribute('aria-pressed')).toBe('true')
-  })
-
-  it('tags sans carte : absents de la rangée de filtres', async () => {
+  it('tags sans carte : absents de la rangée de raccourcis', async () => {
     renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
-    const row = screen.getByRole('list', { name: 'Filtrer les cartes' })
-    expect(within(row).getAllByRole('button').map(b => b.textContent)).toEqual(['Tous', 'IA & agents', 'Dev & outils'])
+    const row = screen.getByRole('list', { name: 'Réviser un tag' })
+    expect(within(row).getAllByRole('button').map(b => b.textContent)).toEqual(['IA & agents', 'Dev & outils'])
   })
 
   it('retour au milieu d’une session : accueil à jour et notes déjà données poussées tout de suite', async () => {

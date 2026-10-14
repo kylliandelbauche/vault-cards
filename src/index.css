@@ -105,10 +105,7 @@
   --dot-mastered: #34c759;
   /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
-  /*
-   * Tags (#63) : verre neutre comme les boutons de notation, aucune couleur par tag. Seul le filtre sélectionné
-   * de l'accueil s'allume (liseré + lueur bleus de « Commencer à étudier » : --rim-new / --glow-new).
-   */
+  /* Tags (#63) : verre neutre comme les boutons de notation, aucune couleur par tag. */
   --chip-body: var(--glass-btn-bg);
   --chip-text: #111114; /* texte neutre, comme les boutons de notation */
   --chip-sheen: rgb(255 255 255 / 0.1);
@@ -390,8 +387,8 @@ html.dark {
 /*
  * Tags (#53, #63) : même matériau que les boutons de notation, verre neutre, texte neutre (noir/blanc), aucune
  * couleur par tag. Posés sur une carte en verre : jamais de backdrop-filter propre.
- * `.tag-chip` : bouton (filtres de l'accueil, page Mes tags), sur `.glass-btn.on-glass` ; le filtre sélectionné
- * (`aria-pressed`) prend la classe `.glass-btn-new` (liseré + lueur bleus de « Commencer à étudier »).
+ * `.tag-chip` : bouton (raccourcis de l'accueil, page Mes tags), sur `.glass-btn.on-glass`. Survol (pointeur fin) :
+ * celui des boutons en verre (haut éclairci, léger soulèvement), en lumière blanche, sans couleur.
  * En sombre, reflet, survol et reflet Konsta plus discrets.
  * `.tag-pill` : étiquette non interactive de la carte de révision, même matériau.
  */
@@ -413,7 +410,7 @@ html.dark {
 }
 
 /*
- * Rangée de filtres de l'accueil (#63) : défilement horizontal natif (pas de touch-action : le navigateur
+ * Rangée de tags de l'accueil (#63) : défilement horizontal natif (pas de touch-action : le navigateur
  * gère le geste, la page défile encore verticalement), aimantation légère (`proximity`), sans barre visible.
  * Marge interne verticale : le liseré, la lueur de survol et l'anneau de focus ne sont pas rognés.
  */

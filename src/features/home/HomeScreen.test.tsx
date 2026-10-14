@@ -2,20 +2,14 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
-import { useState } from 'react'
 import { TAGS } from '../../../shared/tags'
 import type { HomeStats, TagCount } from '../../lib/home'
 import { HomeScreen } from './HomeScreen'
 import type { HomeData } from './useHomeData'
 
 const now = () => new Date('2026-10-13T10:00:00Z')
-const COUNTS: Record<string, Partial<TagCount>> = {
-  ia: { total: 7, today: 5, due: 2, fresh: 3, mastered: 1 },
-  dev: { total: 3, today: 0, due: 0, fresh: 0, mastered: 3, nextDueAt: new Date('2026-10-14T10:00:00Z') },
-  culture: { total: 5, today: 1, due: 1, fresh: 0, mastered: 0 },
-}
-const tagCounts = (): TagCount[] =>
-  TAGS.map(t => ({ ...t, total: 0, today: 0, due: 0, fresh: 0, mastered: 0, nextDueAt: null, ...COUNTS[t.slug] }))
+const COUNTS: Record<string, [number, number]> = { ia: [7, 5], dev: [3, 0], culture: [5, 1] }
+const tagCounts = (): TagCount[] => TAGS.map(t => ({ ...t, total: COUNTS[t.slug]?.[0] ?? 0, today: COUNTS[t.slug]?.[1] ?? 0 }))
 const stats = (over: Partial<HomeStats> = {}): HomeStats => ({
   today: 12, due: 4, fresh: 8, mastered: 30, total: 50, nextDueAt: null, tags: tagCounts(), ...over,
 })
@@ -23,25 +17,14 @@ const ready = (over: Partial<HomeStats> = {}): HomeData => ({ status: 'ready', s
 
 interface Handlers { onStudy?: () => void; onReviewAll?: () => void; onSignOut?: () => void }
 
-function renderHome(data: HomeData = ready(), handlers: Handlers = {}, filter: string | null = null) {
-  const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onSignOut: vi.fn(), onOpenTags: vi.fn(), onFilter: vi.fn(), ...handlers }
-  const r = render(<KApp theme="ios"><HomeScreen data={data} now={now} sync="synced" filter={filter} {...props} /></KApp>)
+function renderHome(data: HomeData = ready(), handlers: Handlers = {}) {
+  const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onSignOut: vi.fn(), onOpenTags: vi.fn(), ...handlers }
+  const r = render(<KApp theme="ios"><HomeScreen data={data} now={now} sync="synced" {...props} /></KApp>)
   return { ...r, ...props }
 }
 
-/** Filtre contrôlé, comme dans l'App : la sélection est gardée au-dessus de l'écran. */
-function Controlled({ onStudy }: { onStudy(tag?: string): void }) {
-  const [filter, setFilter] = useState<string | null>(null)
-  return (
-    <KApp theme="ios">
-      <HomeScreen data={ready()} now={now} filter={filter} onFilter={setFilter} onStudy={onStudy} onReviewAll={vi.fn()} onOpenTags={vi.fn()} />
-    </KApp>
-  )
-}
-
-const chipRow = () => screen.getByRole('list', { name: 'Filtrer les cartes' })
+const chipRow = () => screen.getByRole('list', { name: 'Réviser un tag' })
 const chips = () => within(chipRow()).getAllByRole('button')
-const pressed = () => chips().filter(b => b.getAttribute('aria-pressed') === 'true')
 
 // Surfaces floutées : les boutons `on-glass` (verre imité, sans backdrop-filter) n'en sont pas.
 const BLURRED = ['.glass', '.glass-card', '.glass-btn:not(.on-glass)']
@@ -59,7 +42,7 @@ describe('HomeScreen', () => {
     // Dans la carte du jour (comme la maquette), sans flou propre.
     expect(start.closest('section.glass-card')?.querySelector('h1')).toBeTruthy()
     await userEvent.setup().click(start)
-    expect(onStudy).toHaveBeenCalledWith(undefined) // « Tous » : pas de tag
+    expect(onStudy).toHaveBeenCalledWith()
   })
 
   it('singulier : « 1 carte à revoir aujourd’hui »', () => {
@@ -100,75 +83,27 @@ describe('HomeScreen', () => {
     expect(big.className).toMatch(/\bfont-bold\b/)
   })
 
-  it('filtres : « Tous » sélectionné par défaut, puis les tags non vides triés par nombre de cartes ; tags vides absents', () => {
+  it('tags = raccourcis : les tags non vides triés par nombre de cartes, texte seul ; tags vides absents ; rien de sélectionnable', () => {
     renderHome()
-    expect(chips().map(b => b.getAttribute('aria-label'))).toEqual(['Tous, 50 cartes', 'IA & agents, 7 cartes', 'Culture, 5 cartes', 'Dev & outils, 3 cartes'])
-    expect(chips().map(b => b.textContent)).toEqual(['Tous', 'IA & agents', 'Culture', 'Dev & outils'])
-    expect(pressed().map(b => b.textContent)).toEqual(['Tous'])
-    expect(chips().every(b => b.hasAttribute('aria-pressed'))).toBe(true)
+    expect(chips().map(b => b.getAttribute('aria-label'))).toEqual(['IA & agents, 7 cartes', 'Culture, 5 cartes', 'Dev & outils, 3 cartes'])
+    expect(chips().map(b => b.textContent)).toEqual(['IA & agents', 'Culture', 'Dev & outils'])
+    expect(screen.queryByRole('button', { name: /^Tous/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Sécurité/ })).toBeNull()
+    for (const b of chips()) {
+      expect(b.hasAttribute('aria-pressed')).toBe(false)
+      expect(b.className.split(' ')).toContain('glass-btn-neutral')
+      expect(b.className).not.toContain('glass-btn-new')
+    }
     // Aucun emoji rendu : un tag est du texte seul.
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
   })
 
-  it('filtre sélectionné : liseré et lueur bleus de « Commencer à étudier » ; les autres en verre neutre', () => {
-    renderHome(ready(), {}, 'culture')
-    const [all, ia, culture] = chips()
-    expect(pressed()).toEqual([culture])
-    expect(culture.className.split(' ')).toContain('glass-btn-new')
-    for (const b of [all, ia]) {
-      expect(b.className.split(' ')).toContain('glass-btn-neutral')
-      expect(b.className).not.toContain('glass-btn-new')
-    }
-  })
-
-  it('tap sur un filtre : onFilter(slug) ; « Tous » : onFilter(null)', async () => {
-    const { onFilter } = renderHome(ready(), {}, 'ia')
-    const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
-    expect(onFilter).toHaveBeenLastCalledWith('dev')
-    await user.click(screen.getByRole('button', { name: 'Tous, 50 cartes' }))
-    expect(onFilter).toHaveBeenLastCalledWith(null)
-  })
-
-  it('un seul filtre sélectionné ; chiffre et compteurs suivent le filtre ; « Commencer à étudier » lance la file du filtre', async () => {
-    const onStudy = vi.fn()
-    render(<Controlled onStudy={onStudy} />)
-    const user = userEvent.setup()
-    const title = () => screen.getByRole('heading', { level: 1 }).textContent
-    const values = () => screen.getAllByRole('definition').map(d => d.textContent)
-    await user.click(screen.getByRole('button', { name: 'IA & agents, 7 cartes' }))
-    expect(pressed().map(b => b.textContent)).toEqual(['IA & agents'])
-    expect(title()).toBe("5 cartes à revoir aujourd'hui")
-    expect(values()).toEqual(['2', '3', '1'])
-    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
-    expect(onStudy).toHaveBeenLastCalledWith('ia')
-
-    await user.click(screen.getByRole('button', { name: 'Culture, 5 cartes' }))
-    expect(pressed().map(b => b.textContent)).toEqual(['Culture'])
-    expect(title()).toBe("1 carte à revoir aujourd'hui")
-
-    await user.click(screen.getByRole('button', { name: 'Tous, 50 cartes' }))
-    expect(pressed().map(b => b.textContent)).toEqual(['Tous'])
-    expect(title()).toBe("12 cartes à revoir aujourd'hui")
-    expect(values()).toEqual(['4', '8', '30'])
-    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
-    expect(onStudy).toHaveBeenLastCalledWith(undefined)
-  })
-
-  it('filtre sans carte du jour : prochaine révision du tag et « Réviser à nouveau » limité au tag', async () => {
-    const { onReviewAll } = renderHome(ready(), {}, 'dev')
-    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("Aucune carte à revoir aujourd'hui")
-    expect(screen.getByText(/^Prochaine révision dans/)).toBeTruthy()
-    expect(screen.getAllByRole('definition').map(d => d.textContent)).toEqual(['0', '0', '3'])
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Réviser à nouveau' }))
-    expect(onReviewAll).toHaveBeenCalledWith('dev')
-  })
-
-  it('filtre retenu devenu vide ou inconnu : retour à « Tous »', () => {
-    renderHome(ready(), {}, 'securite')
-    expect(pressed().map(b => b.textContent)).toEqual(['Tous'])
+  it('tap sur un tag : session du tag ; le bloc du jour reste celui de toutes les cartes', async () => {
+    const { onStudy } = renderHome()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
+    expect(onStudy).toHaveBeenCalledWith('dev')
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("12 cartes à revoir aujourd'hui")
+    expect(screen.getAllByRole('definition').map(d => d.textContent)).toEqual(['4', '8', '30'])
   })
 
   it('rangée défilante : classe chip-row, chips sans retour à la ligne ni rétrécissement, cibles ≥ 44 px', () => {
@@ -181,32 +116,8 @@ describe('HomeScreen', () => {
     }
   })
 
-  it('retour avec un filtre hors champ : la rangée le ramène en vue, calculé par rapport à la rangée (getBoundingClientRect)', () => {
-    // Rangée de 300 px à x = 40 ; chip « Dev & outils » de 380 à 480 (hors champ à droite). offsetLeft ignoré (Safari iOS).
-    const rect = (left: number, width: number) => ({ left, right: left + width, width, top: 0, bottom: 44, height: 44, x: left, y: 0, toJSON() {} }) as DOMRect
-    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('chip-row')) return rect(40, 300)
-      if (this.getAttribute('aria-pressed') === 'true') return rect(380, 100)
-      return rect(0, 0)
-    })
-    renderHome(ready(), {}, 'dev')
-    expect(chipRow().scrollLeft).toBe(380 - 40 - 16)
-    spy.mockRestore()
-  })
-
-  it('filtre déjà visible : la rangée ne bouge pas', () => {
-    const rect = (left: number, width: number) => ({ left, right: left + width, width, top: 0, bottom: 44, height: 44, x: left, y: 0, toJSON() {} }) as DOMRect
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
-      if (this.classList.contains('chip-row')) return rect(40, 300)
-      if (this.getAttribute('aria-pressed') === 'true') return rect(120, 100)
-      return rect(0, 0)
-    })
-    renderHome(ready(), {}, 'ia')
-    expect(chipRow().scrollLeft).toBe(0)
-  })
-
   it('aucune couleur par tag : ni style en ligne, ni jeton --tag-<couleur>', () => {
-    const { container } = renderHome(ready(), {}, 'ia')
+    const { container } = renderHome()
     for (const b of chips()) expect(b.getAttribute('style') ?? '').not.toMatch(/--chip|--tag/)
     expect(container.innerHTML).not.toMatch(/--tag-[a-z]+-fg|--chip-fg/)
   })
@@ -242,19 +153,19 @@ describe('HomeScreen', () => {
     expect(screen.queryByRole('button', { name: /Créer/ })).toBeNull()
   })
 
-  it('aucune carte : message habituel, pas de bouton d’étude, seul le filtre « Tous »', () => {
+  it('aucune carte : message habituel, pas de bouton d’étude, aucun raccourci de tag', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    const empty = TAGS.map(t => ({ ...t, total: 0, today: 0, due: 0, fresh: 0, mastered: 0, nextDueAt: null }))
+    const empty = TAGS.map(t => ({ ...t, total: 0, today: 0 }))
     renderHome(ready({ today: 0, due: 0, fresh: 0, mastered: 0, total: 0, tags: empty }))
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("Aucune carte pour l'instant. Lance /flashcards sur le Mac.")
     expect(screen.queryByRole('button', { name: /Commencer|Réviser/ })).toBeNull()
-    expect(chips().map(b => b.textContent)).toEqual(['Tous'])
+    expect(within(chipRow()).queryAllByRole('button')).toHaveLength(0)
   })
 
   it('chargement puis erreur de lecture du cache', () => {
     const { rerender } = renderHome({ status: 'loading' })
     expect(screen.queryByRole('button', { name: 'Commencer à étudier' })).toBeNull()
-    rerender(<KApp theme="ios"><HomeScreen data={{ status: 'error' }} now={now} filter={null} onFilter={vi.fn()} onStudy={vi.fn()} onReviewAll={vi.fn()} onOpenTags={vi.fn()} /></KApp>)
+    rerender(<KApp theme="ios"><HomeScreen data={{ status: 'error' }} now={now} onStudy={vi.fn()} onReviewAll={vi.fn()} onOpenTags={vi.fn()} /></KApp>)
     expect(screen.getByRole('alert').textContent).toBe('Impossible de lire les cartes enregistrées sur cet appareil.')
   })
 })

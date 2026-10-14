@@ -12,7 +12,7 @@ export const MASTERED_STABILITY_DAYS = 21
 
 export const isMastered = (s: FsrsCard) => s.state === State.Review && s.stability >= MASTERED_STABILITY_DAYS
 
-/** Compteurs du bloc du jour, pour toutes les cartes ou pour un tag (filtre de l'accueil, #63). */
+/** Compteurs du bloc du jour (toutes les cartes) ; pour un tag, seuls `total` et `today` servent (page Mes tags). */
 export interface DayCounts {
   /** Taille de la file du jour = `due` + `fresh` (même calcul que la session « Commencer à étudier »). */
   today: number
@@ -28,8 +28,8 @@ export interface DayCounts {
   nextDueAt: Date | null
 }
 
-/** Un tag de shared/tags.ts avec ses compteurs (file du jour du tag : quota de nouvelles global). */
-export interface TagCount extends TagDef, DayCounts {}
+/** Un tag de shared/tags.ts avec son nombre de cartes et sa file du jour (quota de nouvelles global). */
+export interface TagCount extends TagDef, Pick<DayCounts, 'total' | 'today'> {}
 
 export interface HomeStats extends DayCounts {
   /** Les tags de shared/tags.ts, dans leur ordre, avec leurs compteurs. */
@@ -62,7 +62,10 @@ export function homeStats(cards: Card[], reviews: Review[], now: Date, newLimit 
   const items = scheduleItems(cards, grouped)
   return {
     ...dayCounts(items, grouped, now, newLimit),
-    tags: TAGS.map(({ slug, label }) => ({ slug, label, ...dayCounts(items, grouped, now, newLimit, slug) })),
+    tags: TAGS.map(({ slug, label }) => {
+      const { total, today } = dayCounts(items, grouped, now, newLimit, slug)
+      return { slug, label, total, today }
+    }),
   }
 }
 
@@ -70,15 +73,8 @@ export function homeStats(cards: Card[], reviews: Review[], now: Date, newLimit 
 export const sortTags = (tags: TagCount[]): TagCount[] =>
   tags.map((t, i) => ({ t, i })).sort((a, b) => b.t.total - a.t.total || a.i - b.i).map(x => x.t)
 
-/** Filtres de l'accueil (#63) : les tags non vides, triés (« Tous » est ajouté par l'écran). */
-export const filterTags = (tags: TagCount[]): TagCount[] => sortTags(tags).filter(t => t.total > 0)
-
-/**
- * Tag réellement filtré : `null` (« Tous ») si aucun filtre, ou si le tag retenu n'existe plus ou n'a plus
- * de carte (il a disparu de la rangée après une synchro).
- */
-export const activeFilter = (stats: HomeStats, tag: string | null): TagCount | null =>
-  (tag && stats.tags.find(t => t.slug === tag && t.total > 0)) || null
+/** Raccourcis de l'accueil (#63) : les tags non vides, triés. */
+export const shortcutTags = (tags: TagCount[]): TagCount[] => sortTags(tags).filter(t => t.total > 0)
 
 /** « 0 carte », « 1 carte », « 12 cartes » (en français, 0 et 1 au singulier). */
 export const cards = (n: number) => `${n} ${n > 1 ? 'cartes' : 'carte'}`

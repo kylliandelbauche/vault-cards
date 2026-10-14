@@ -9,7 +9,7 @@ import { TagsScreen } from './TagsScreen'
 const COUNTS: Record<string, [number, number]> = { ia: [7, 2], dev: [3, 3], culture: [5, 0] }
 const stats: HomeStats = {
   today: 5, due: 2, fresh: 3, mastered: 0, total: 15, nextDueAt: null,
-  tags: TAGS.map(t => ({ ...t, total: COUNTS[t.slug]?.[0] ?? 0, today: COUNTS[t.slug]?.[1] ?? 0, due: 0, fresh: 0, mastered: 0, nextDueAt: null })),
+  tags: TAGS.map(t => ({ ...t, total: COUNTS[t.slug]?.[0] ?? 0, today: COUNTS[t.slug]?.[1] ?? 0 })),
 }
 const SURFACES = '.glass, .glass-card, .glass-btn:not(.on-glass)'
 
