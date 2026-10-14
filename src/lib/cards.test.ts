@@ -33,6 +33,22 @@ describe('validateManualCard', () => {
     expect((err as CardValidationError).field).toBe(field)
   })
 
+  it.each([
+    ['caractère NUL', 'Q\u0000?', 'front'],
+    ['surrogate haut isolé', 'Q \ud83d', 'front'],
+    ['surrogate bas isolé', '\udc00 R', 'back'],
+  ])('%s refusé (Postgres le rejetterait à chaque envoi)', (_label, text, field) => {
+    const input = { front: 'Q', back: 'R', tags: ['ia'], [field]: text }
+    let err: unknown
+    try { validateManualCard(input) } catch (e) { err = e }
+    expect(err).toBeInstanceOf(CardValidationError)
+    expect((err as CardValidationError).field).toBe(field)
+  })
+
+  it('emojis (paires de surrogates complètes), accents et retours à la ligne acceptés', () => {
+    expect(validateManualCard({ front: 'Q 🧠 é\nsuite', back: 'R 👍🏽', tags: ['ia'] }).front).toBe('Q 🧠 é\nsuite')
+  })
+
   it('longueurs comptées en caractères (points de code) comme char_length en SQL : 500 emojis passent', () => {
     expect(validateManualCard({ front: '🧠'.repeat(FRONT_MAX), back: 'R', tags: ['mental'] }).front).toHaveLength(FRONT_MAX * 2)
   })

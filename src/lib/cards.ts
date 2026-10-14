@@ -33,9 +33,17 @@ export class CardValidationError extends Error {
 /** Longueur en caractères (points de code), comme `length()` / `char_length()` en SQL : un emoji compte pour 1. */
 const chars = (s: string) => Array.from(s).length
 
+/**
+ * Texte que Postgres refuserait (erreur 400 à chaque envoi) : caractère NUL (interdit dans `text`) ou surrogate UTF-16
+ * isolé (pas de point de code valide, donc pas d'UTF-8). Les paires complètes (emojis) passent.
+ */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+const unstorable = (s: string) => s.includes('\u0000') || LONE_SURROGATE.test(s)
+
 function text(field: 'front' | 'back', value: string, max: number, label: string): string {
   const v = value.trim()
   if (v === '') throw new CardValidationError(field, `${label} est vide`)
+  if (unstorable(v)) throw new CardValidationError(field, `${label} contient un caractère invalide`)
   if (chars(v) > max) throw new CardValidationError(field, `${label} est trop longue (${chars(v)} > ${max} caractères)`)
   return v
 }
