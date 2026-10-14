@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
-import { after as afterFilter, parseCursor, pendingCount, supabaseRemote, sync, type Cursor, type Remote } from './sync'
+import { after as afterFilter, outboxQueue, parseCursor, pendingCount, supabaseRemote, sync, SyncError, type Cursor, type OutboxQueue, type Remote } from './sync'
 import { buildQueue } from './session'
 import type { supabase } from './supabase'
 import type { Card, Review } from './types'
@@ -102,6 +102,8 @@ describe('sync : push des reviews', () => {
     await db.reviews.add(review('r1', 'a'))
     server.failPush = 'after'
 
+    // Pull coupé lui aussi : rien ne confirme r1, elle reste à envoyer et sera renvoyée.
+    server.remote.pullReviews.mockRejectedValueOnce(new Error('hors ligne'))
     await expect(sync(db, server.remote)).rejects.toThrow('délai dépassé')
     expect((await db.reviews.get('r1'))!.synced).toBe(0)
 
@@ -111,7 +113,7 @@ describe('sync : push des reviews', () => {
     expect((await db.reviews.get('r1'))!.synced).toBe(1)
   })
 
-  it('erreur réseau au push : sync rejette, rien n’est marqué, les données locales restent', async () => {
+  it('erreur réseau au push : sync rejette, rien n’est marqué, les données locales restent (le pull a lieu)', async () => {
     const server = fakeServer()
     await db.cards.add(server.putCard({ id: 'a' }))
     await db.reviews.bulkAdd([review('r1', 'a'), review('r2', 'a')])
@@ -123,6 +125,87 @@ describe('sync : push des reviews', () => {
     expect(await db.reviews.count()).toBe(2)
     expect(await db.cards.count()).toBe(1)
     expect(server.reviews.size).toBe(0)
+  })
+})
+
+describe('sync : push et pull indépendants', () => {
+  it('push en échec : le pull a lieu quand même ; SyncError dit ce qui a été tiré ; les reviews repartent au sync suivant', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    server.putCard({ id: 'b' })
+    await db.reviews.add(review('r1', 'a'))
+    server.failPush = 'before'
+
+    const err = await sync(db, server.remote).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(SyncError)
+    expect((err as SyncError).message).toBe('réseau coupé')
+    expect((err as SyncError).result).toEqual({ pushed: 0, pulledCards: 2, pulledReviews: 0 })
+    expect(await db.cards.count()).toBe(2)
+    expect((await db.reviews.get('r1'))!.synced).toBe(0)
+
+    server.failPush = null
+    expect(await sync(db, server.remote)).toEqual({ pushed: 1, pulledCards: 0, pulledReviews: 0 })
+    expect((await db.reviews.get('r1'))!.synced).toBe(1)
+  })
+
+  it('pull en échec après un push réussi : les reviews restent marquées envoyées, SyncError', async () => {
+    const server = fakeServer()
+    await db.reviews.add(review('r1', 'a'))
+    server.remote.pullCards.mockRejectedValueOnce(new Error('JWT expired'))
+
+    const err = await sync(db, server.remote).catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(SyncError)
+    expect((err as SyncError).result.pushed).toBe(1)
+    expect(await pendingCount(db)).toBe(0)
+  })
+
+  it('push et pull en échec : les deux erreurs dans le message', async () => {
+    const server = fakeServer()
+    await db.reviews.add(review('r1', 'a'))
+    server.failPush = 'before'
+    server.remote.pullCards.mockRejectedValueOnce(new Error('hors ligne'))
+    await expect(sync(db, server.remote)).rejects.toThrow('réseau coupé ; hors ligne')
+  })
+})
+
+describe('sync : files d’envoi (préparation #54)', () => {
+  const queue = (name: string, log: string[], { fail = false, count = 1 } = {}): OutboxQueue => ({
+    count: async () => count,
+    push: async () => { log.push(name); if (fail) throw new Error(`${name} refusé`); return count },
+  })
+
+  it('les files partent dans l’ordre ; une file en échec arrête les suivantes, le pull a lieu', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    const log: string[] = []
+
+    const err = await sync(db, server.remote, { outbox: [queue('cartes', log, { fail: true }), queue('reviews', log)] }).catch((e: unknown) => e)
+
+    expect(log).toEqual(['cartes'])
+    expect((err as SyncError).message).toBe('cartes refusé')
+    expect(await db.cards.count()).toBe(1)
+    expect((await sync(db, server.remote, { outbox: [queue('cartes', log), queue('reviews', log, { count: 2 })] })).pushed).toBe(3)
+    expect(log).toEqual(['cartes', 'cartes', 'reviews'])
+  })
+
+  it('pendingCount additionne toutes les files', async () => {
+    expect(await pendingCount(db, [queue('a', [], { count: 2 }), queue('b', [], { count: 3 })])).toBe(5)
+  })
+
+  it('outboxQueue : rien en attente → aucun envoi ; envoi en échec → rien n’est marqué', async () => {
+    const send = vi.fn().mockRejectedValueOnce(new Error('hors ligne')).mockResolvedValue(undefined)
+    const markSent = vi.fn(async () => {})
+    let rows = [] as string[]
+    const q = outboxQueue<string>({ count: async () => rows.length, pending: async () => rows, send, markSent })
+    expect(await q.push(db, fakeServer().remote)).toBe(0)
+    expect(send).not.toHaveBeenCalled()
+    rows = ['x']
+    await expect(q.push(db, fakeServer().remote)).rejects.toThrow('hors ligne')
+    expect(markSent).not.toHaveBeenCalled()
+    expect(await q.push(db, fakeServer().remote)).toBe(1)
+    expect(markSent).toHaveBeenCalledWith(db, ['x'])
   })
 })
 

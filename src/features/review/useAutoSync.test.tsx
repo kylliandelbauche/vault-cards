@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { VaultDB } from '../../lib/db'
+import { SyncError } from '../../lib/sync'
 import { RESUME_SYNC_MIN_INTERVAL_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
 
 type Result = { pushed: number; pulledCards: number; pulledReviews: number }
@@ -69,6 +70,14 @@ describe('useAutoSync', () => {
     renderHook(() => useAutoSync(s, vi.fn().mockResolvedValue(CARDS)))
     await flush()
     expect(s.restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('push en échec mais cartes tirées (SyncError) : recharge la session vide, indicateur en échec', async () => {
+    const s = sessionIn('empty')
+    const { result } = renderHook(() => useAutoSync(s, vi.fn().mockRejectedValue(new SyncError({ ...CARDS }, [new Error('réseau coupé')]))))
+    await flush()
+    expect(s.restart).toHaveBeenCalledTimes(1)
+    expect(result.current.lastSync).toBe('failed')
   })
 
   it('rien reçu : ne recharge pas', async () => {

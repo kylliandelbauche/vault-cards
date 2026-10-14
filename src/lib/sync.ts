@@ -127,30 +127,107 @@ async function mergeReviews(db: VaultDB, rows: ServerReview[]) {
   return fresh.length
 }
 
-export interface SyncOptions {
-  /** Taille de page des pulls (réduite en test). */
-  pageSize?: number
+/**
+ * File d'envoi : des lignes locales en attente, envoyées au serveur puis marquées comme parties.
+ * `pending` est un instantané : une ligne ajoutée pendant l'envoi n'est pas marquée et part au sync suivant.
+ * L'envoi doit être idempotent (INSERT … ON CONFLICT DO NOTHING) : une réponse perdue fait renvoyer les mêmes lignes.
+ */
+export interface Outbox<Row> {
+  /** Nombre de lignes en attente (indicateur de synchro, déconnexion sûre). */
+  count(db: VaultDB): Promise<number>
+  pending(db: VaultDB): Promise<Row[]>
+  send(remote: Remote, rows: Row[]): Promise<void>
+  markSent(db: VaultDB, rows: Row[]): Promise<void>
+}
+
+/** File typée réduite à ce dont `sync` a besoin, pour ranger des files de lignes différentes dans une même liste. */
+export interface OutboxQueue {
+  count(db: VaultDB): Promise<number>
+  /** Envoie les lignes en attente ; renvoie leur nombre. Rejette sans rien marquer si l'envoi échoue. */
+  push(db: VaultDB, remote: Remote): Promise<number>
+}
+
+export const outboxQueue = <Row>(o: Outbox<Row>): OutboxQueue => ({
+  count: db => o.count(db),
+  async push(db, remote) {
+    const rows = await o.pending(db)
+    if (!rows.length) return 0
+    await o.send(remote, rows)
+    await o.markSent(db, rows)
+    return rows.length
+  },
+})
+
+/** Reviews notées sur cet appareil (`synced: 0`). */
+export const reviewsOutbox: Outbox<Review> = {
+  count: db => db.reviews.where('synced').equals(0).count(),
+  pending: db => db.reviews.where('synced').equals(0).toArray(),
+  send: (remote, rows) => remote.pushReviews(rows.map(({ id, card_id, rating, reviewed_at }) => ({ id, card_id, rating, reviewed_at }))),
+  markSent: (db, rows) => db.reviews.bulkUpdate(rows.map(r => ({ key: r.id, changes: { synced: 1 as const } }))).then(() => {}),
 }
 
 /**
- * Pousse les reviews locales en attente, puis tire cartes et reviews modifiées après les curseurs
- * (pagination par clé (horodatage serveur, id) : ni ligne sautée, ni ligne relue).
+ * Files envoyées à chaque sync, dans cet ordre. Une file en échec arrête les suivantes (elles peuvent en
+ * dépendre : les cartes créées sur l'appareil, #54, passeront avant leurs reviews à cause de la clé étrangère
+ * reviews.card_id) ; le pull a lieu quand même.
  */
-export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE }: SyncOptions = {}) {
-  const pending = await db.reviews.where('synced').equals(0).toArray()
-  if (pending.length) {
-    await remote.pushReviews(pending.map(({ id, card_id, rating, reviewed_at }) => ({ id, card_id, rating, reviewed_at })))
-    await db.reviews.bulkUpdate(pending.map(r => ({ key: r.id, changes: { synced: 1 as const } })))
-  }
+export const OUTBOX: readonly OutboxQueue[] = [outboxQueue(reviewsOutbox)]
 
-  const result = { pushed: pending.length, pulledCards: 0, pulledReviews: 0 }
-  await pullAll(db, CURSOR_CARDS, db.cards, (a, n) => remote.pullCards(a, n), c => c.updated_at,
-    async cards => { await db.cards.bulkPut(cards); return cards.length },
-    pageSize, n => { result.pulledCards += n })
-  await pullAll(db, CURSOR_REVIEWS, db.reviews, (a, n) => remote.pullReviews(a, n), r => r.inserted_at,
-    reviews => mergeReviews(db, reviews),
-    pageSize, n => { result.pulledReviews += n })
+export interface SyncResult { pushed: number; pulledCards: number; pulledReviews: number }
+
+/**
+ * Sync incomplet : le push ou le pull a échoué. `result` dit ce qui a quand même été fait
+ * (des cartes tirées malgré un push en échec doivent recharger une session vide).
+ */
+export class SyncError extends Error {
+  readonly result: SyncResult
+  readonly causes: unknown[]
+  constructor(result: SyncResult, causes: unknown[]) {
+    super(causes.map(e => (e instanceof Error ? e.message : String(e))).join(' ; '))
+    this.name = 'SyncError'
+    this.result = result
+    this.causes = causes
+  }
+}
+
+export interface SyncOptions {
+  /** Taille de page des pulls (réduite en test). */
+  pageSize?: number
+  /** Files d'envoi (OUTBOX par défaut). */
+  outbox?: readonly OutboxQueue[]
+}
+
+/**
+ * Pousse les files d'envoi, puis tire cartes et reviews modifiées après les curseurs (pagination par clé
+ * (horodatage serveur, id) : ni ligne sautée, ni ligne relue). Push et pull sont indépendants : le pull a lieu
+ * même si le push échoue (les lignes non envoyées restent en attente et repartent au prochain sync).
+ * Rejette avec SyncError si l'un des deux a échoué, après avoir tenté les deux.
+ */
+export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE, outbox = OUTBOX }: SyncOptions = {}): Promise<SyncResult> {
+  const result: SyncResult = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
+  const errors: unknown[] = []
+  try {
+    for (const queue of outbox) result.pushed += await queue.push(db, remote)
+  } catch (e) {
+    errors.push(e)
+  }
+  try {
+    await pullAll(db, CURSOR_CARDS, db.cards, (a, n) => remote.pullCards(a, n), c => c.updated_at,
+      async cards => { await db.cards.bulkPut(cards); return cards.length },
+      pageSize, n => { result.pulledCards += n })
+    await pullAll(db, CURSOR_REVIEWS, db.reviews, (a, n) => remote.pullReviews(a, n), r => r.inserted_at,
+      reviews => mergeReviews(db, reviews),
+      pageSize, n => { result.pulledReviews += n })
+  } catch (e) {
+    errors.push(e)
+  }
+  if (errors.length) throw new SyncError(result, errors)
   return result
 }
 
-export const pendingCount = (db: VaultDB) => db.reviews.where('synced').equals(0).count()
+/** Lignes locales pas encore envoyées, toutes files confondues. */
+export const pendingCount = async (db: VaultDB, outbox: readonly OutboxQueue[] = OUTBOX) => {
+  let n = 0
+  for (const queue of outbox) n += await queue.count(db)
+  return n
+}

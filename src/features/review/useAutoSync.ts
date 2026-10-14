@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import type { VaultDB } from '../../lib/db'
-import { pendingCount } from '../../lib/sync'
+import { pendingCount, SyncError } from '../../lib/sync'
 import { SKIPPED, withSyncLock } from '../../lib/syncLock'
 import type { SyncIndicator } from '../../components/TopBar'
 import type { ReviewSession } from './useReviewSession'
@@ -50,6 +50,14 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   const stale = useRef(false)
   const lastStart = useRef(-Infinity)
 
+  // Données tirées : recharge une session rechargeable, ou le note si elle est encore en chargement.
+  const received = useCallback(({ pulledCards, pulledReviews }: SyncResult) => {
+    if (pulledCards + pulledReviews === 0) return
+    const s = io.current.session
+    if (reloadable(s)) s.restart()
+    else if (s.status === 'loading') stale.current = true
+  }, [])
+
   const trigger = useCallback(async () => {
     if (running.current) { again.current = true; return }
     running.current = true
@@ -61,22 +69,20 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
         try {
           const res = await withSyncLock(() => io.current.run())
           if (res === SKIPPED) continue // un autre onglet synchronise : il remplit le cache partagé pour nous
-          const { pulledCards, pulledReviews } = res
           setState(s => ({ ...s, lastSync: 'ok' }))
-          if (pulledCards + pulledReviews === 0) continue
-          const s = io.current.session
-          if (reloadable(s)) s.restart()
-          else if (s.status === 'loading') stale.current = true
-        } catch {
+          received(res)
+        } catch (e) {
           // Silencieux (aucun log) : l'indicateur passe à « Non synchronisé ».
           setState(s => ({ ...s, lastSync: 'failed' }))
+          // Push en échec mais pull réussi (ou l'inverse) : ce qui a été tiré compte quand même.
+          if (e instanceof SyncError) received(e.result)
         }
       } while (again.current)
     } finally {
       running.current = false
       setState(s => ({ ...s, syncing: false }))
     }
-  }, [])
+  }, [received])
 
   useEffect(() => {
     void trigger()
