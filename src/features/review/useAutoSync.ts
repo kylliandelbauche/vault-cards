@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import type { VaultDB } from '../../lib/db'
-import { pendingCount } from '../../lib/sync'
+import { pendingCount, SyncError } from '../../lib/sync'
+import { SKIPPED, withSyncLock } from '../../lib/syncLock'
 import type { SyncIndicator } from '../../components/TopBar'
 import type { ReviewSession } from './useReviewSession'
 
@@ -14,11 +15,25 @@ export interface AutoSync extends SyncState {
   syncNow(): void
 }
 
-/** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync par intervalle. */
+/**
+ * Sync sauté parce qu'un autre onglet synchronise, alors que des notes attendent : l'autre onglet a pu prendre
+ * son instantané avant elles. On réessaie une fois après ce délai.
+ */
+export const SKIPPED_RETRY_MS = 5_000
+
+export interface AutoSyncOptions {
+  /** Nombre de lignes locales en attente d'envoi (décide du réessai après un sync sauté). */
+  pending?(): Promise<number>
+}
+
+/** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync réussi par intervalle. */
 export const RESUME_SYNC_MIN_INTERVAL_MS = 30_000
 
-/** « Synchronisé » seulement si rien n'attend d'être poussé et que le dernier sync a réussi. */
-export const syncIndicator = (pending: number, { syncing, lastSync }: SyncState): SyncIndicator =>
+/**
+ * « Synchronisé » seulement si rien n'attend d'être poussé et que le dernier sync a réussi.
+ * `pending` null : pas encore compté (premier rendu), donc pas « Synchronisé ».
+ */
+export const syncIndicator = (pending: number | null, { syncing, lastSync }: SyncState): SyncIndicator =>
   syncing ? 'syncing' : pending === 0 && lastSync === 'ok' ? 'synced' : 'unsynced'
 
 /**
@@ -31,55 +46,87 @@ const reloadable = ({ status, stats }: AutoSyncSession) =>
 
 /**
  * Lance `run` (le sync) au montage, au retour du réseau, quand la session se termine, et au
- * retour au premier plan (`visibilitychange` → visible, `focus`) si le dernier sync a commencé
- * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS. Jamais deux syncs en parallèle.
+ * retour au premier plan (`visibilitychange` → visible, `focus`) si le dernier sync réussi a commencé
+ * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS (un sync en échec ne compte pas : on réessaie au prochain retour). Jamais deux syncs en parallèle : dans l'onglet (`running`), et entre
+ * onglets par le verrou Web Locks (withSyncLock) ; un sync sauté parce qu'un autre onglet synchronise ne change pas l'état.
  * Les erreurs sont avalées : hors ligne ou jeton expiré, on réessaiera au prochain déclencheur.
  * Si le sync a ramené des données alors que la session est rechargeable, appelle `restart()`.
  * Session `idle` (écran d'accueil) : rien à recharger, l'accueil suit lui-même le cache local.
  */
-export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>): AutoSync {
+export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>, options: AutoSyncOptions = {}): AutoSync {
   const [state, setState] = useState<SyncState>({ syncing: false, lastSync: null })
   // Dernières valeurs, lues à la fin d'un sync sans en faire des dépendances.
-  const io = useRef({ session, run })
-  useEffect(() => { io.current = { session, run } })
+  const io = useRef({ session, run, options })
+  useEffect(() => { io.current = { session, run, options } })
   const running = useRef(false)
   const again = useRef(false)
   // Données reçues pendant le chargement initial : à recharger s'il se termine vide.
   const stale = useRef(false)
-  const lastStart = useRef(-Infinity)
+  // Début du dernier sync réussi : un sync en échec, partiel ou sauté ne compte pas (on réessaie au prochain retour).
+  const lastOk = useRef(-Infinity)
+  const currentStart = useRef(-Infinity)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const mounted = useRef(false)
+  // Dernier `trigger`, pour le réessai programmé (défini plus bas).
+  const triggerRef = useRef<(isRetry?: boolean) => Promise<void>>(async () => {})
 
-  const trigger = useCallback(async () => {
+  // Réessai unique après un sync sauté, seulement si des notes attendent (sinon l'autre onglet a tout fait).
+  const retryIfPending = useCallback(async () => {
+    const n = await io.current.options.pending?.().catch(() => 0)
+    if (!n || !mounted.current) return
+    clearTimeout(retryTimer.current)
+    retryTimer.current = setTimeout(() => { void triggerRef.current(true) }, SKIPPED_RETRY_MS)
+  }, [])
+
+  // Données tirées : recharge une session rechargeable, ou le note si elle est encore en chargement.
+  const received = useCallback(({ pulledCards, pulledReviews }: SyncResult) => {
+    if (pulledCards + pulledReviews === 0) return
+    const s = io.current.session
+    if (reloadable(s)) s.restart()
+    else if (s.status === 'loading') stale.current = true
+  }, [])
+
+  const trigger = useCallback(async (isRetry = false) => {
     if (running.current) { again.current = true; return }
     running.current = true
     setState(s => ({ ...s, syncing: true }))
     try {
       do {
         again.current = false
-        lastStart.current = Date.now()
+        const started = (currentStart.current = Date.now())
         try {
-          const { pulledCards, pulledReviews } = await io.current.run()
+          const res = await withSyncLock(() => io.current.run())
+          if (res === SKIPPED) { // un autre onglet synchronise : il remplit le cache partagé pour nous
+            if (!isRetry) void retryIfPending()
+            continue
+          }
+          lastOk.current = started
           setState(s => ({ ...s, lastSync: 'ok' }))
-          if (pulledCards + pulledReviews === 0) continue
-          const s = io.current.session
-          if (reloadable(s)) s.restart()
-          else if (s.status === 'loading') stale.current = true
-        } catch {
+          received(res)
+        } catch (e) {
           // Silencieux (aucun log) : l'indicateur passe à « Non synchronisé ».
           setState(s => ({ ...s, lastSync: 'failed' }))
+          // Push en échec mais pull réussi (ou l'inverse) : ce qui a été tiré compte quand même.
+          if (e instanceof SyncError) received(e.result)
         }
       } while (again.current)
     } finally {
       running.current = false
       setState(s => ({ ...s, syncing: false }))
     }
-  }, [])
+  }, [received, retryIfPending])
+  useEffect(() => { triggerRef.current = trigger }, [trigger])
 
   useEffect(() => {
+    mounted.current = true
     void trigger()
     const onOnline = () => { void trigger() }
     const onResume = () => {
       if (document.visibilityState !== 'visible') return
-      if (Date.now() - lastStart.current < RESUME_SYNC_MIN_INTERVAL_MS) return
+      const t = Date.now()
+      // Un sync lancé il y a moins de l'intervalle et encore en cours suffit (focus + visibilitychange arrivent ensemble).
+      if (running.current && t - currentStart.current < RESUME_SYNC_MIN_INTERVAL_MS) return
+      if (t - lastOk.current < RESUME_SYNC_MIN_INTERVAL_MS) return
       void trigger()
     }
     window.addEventListener('online', onOnline)
@@ -89,6 +136,8 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
       window.removeEventListener('online', onOnline)
       window.removeEventListener('focus', onResume)
       document.removeEventListener('visibilitychange', onResume)
+      mounted.current = false
+      clearTimeout(retryTimer.current)
     }
   }, [trigger])
 
@@ -109,9 +158,12 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   return { ...state, syncNow }
 }
 
-/** Nombre de reviews locales pas encore poussées, mis à jour en direct (liveQuery Dexie). */
+/**
+ * Nombre de lignes locales pas encore poussées, mis à jour en direct (liveQuery Dexie) ; null avant le premier
+ * comptage (sinon un sync rapide afficherait « Synchronisé » un instant alors que des révisions attendent).
+ */
 export function usePendingCount(db: VaultDB) {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState<number | null>(null)
   useEffect(() => {
     const sub = liveQuery(() => pendingCount(db)).subscribe({ next: setCount, error: () => {} })
     return () => sub.unsubscribe()

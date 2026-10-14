@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { VaultDB } from '../../lib/db'
-import { RESUME_SYNC_MIN_INTERVAL_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
+import { SyncError } from '../../lib/sync'
+import { RESUME_SYNC_MIN_INTERVAL_MS, SKIPPED_RETRY_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
 
 type Result = { pushed: number; pulledCards: number; pulledReviews: number }
 const NOTHING: Result = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
@@ -71,6 +72,14 @@ describe('useAutoSync', () => {
     expect(s.restart).toHaveBeenCalledTimes(1)
   })
 
+  it('push en échec mais cartes tirées (SyncError) : recharge la session vide, indicateur en échec', async () => {
+    const s = sessionIn('empty')
+    const { result } = renderHook(() => useAutoSync(s, vi.fn().mockRejectedValue(new SyncError({ ...CARDS }, [new Error('réseau coupé')]))))
+    await flush()
+    expect(s.restart).toHaveBeenCalledTimes(1)
+    expect(result.current.lastSync).toBe('failed')
+  })
+
   it('rien reçu : ne recharge pas', async () => {
     const s = sessionIn('empty')
     renderHook(() => useAutoSync(s, vi.fn().mockResolvedValue(NOTHING)))
@@ -131,7 +140,8 @@ describe('syncIndicator', () => {
     [0, { syncing: false, lastSync: 'failed' }, 'unsynced'],
     [0, { syncing: false, lastSync: null }, 'unsynced'],
     [3, { syncing: true, lastSync: 'failed' }, 'syncing'],
-  ] as const)('%i en attente, %o → %s', (pending, state, expected) => {
+    [null, { syncing: false, lastSync: 'ok' }, 'unsynced'],
+  ] as const)('%s en attente, %o → %s', (pending, state, expected) => {
     expect(syncIndicator(pending, state)).toBe(expected)
   })
 })
@@ -188,6 +198,44 @@ describe('useAutoSync : retour au premier plan', () => {
     await flush()
     expect(run).toHaveBeenCalledTimes(1)
   })
+  it('sync en échec : ne compte pas pour l’intervalle, on réessaie au prochain retour au premier plan (#22)', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new Error('hors ligne')).mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1) // montage, en échec
+    vi.setSystemTime(T0 + 1000)
+    show()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2) // réessai tout de suite, réussi
+    vi.setSystemTime(T0 + 2000)
+    show()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2) // dernier sync réussi il y a 1 s : rien
+  })
+
+  it('sync partiel (SyncError) : compte comme un échec pour l’intervalle', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new SyncError({ ...NOTHING }, [new Error('réseau coupé')])).mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    vi.setSystemTime(T0 + 1000)
+    focus()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  it('démontage : les listeners (réseau, premier plan, focus) sont retirés', async () => {
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const { unmount } = renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    unmount()
+    vi.setSystemTime(T0 + 10 * RESUME_SYNC_MIN_INTERVAL_MS)
+    show()
+    focus()
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
   it('jamais deux syncs en parallèle', async () => {
     const d = deferred<Result>()
     const run = vi.fn().mockReturnValueOnce(d.promise).mockResolvedValue(NOTHING)
@@ -202,6 +250,89 @@ describe('useAutoSync : retour au premier plan', () => {
   })
 })
 
+describe('useAutoSync : un seul sync entre onglets (Web Locks)', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+  /** Faux navigator.locks dont le verrou est déjà tenu (ou non) par un autre onglet. */
+  const stubLocks = (heldElsewhere: boolean) => {
+    const request = vi.fn((_name: string, _opts: LockOptions, cb: (lock: Lock | null) => unknown) =>
+      Promise.resolve(cb(heldElsewhere ? null : { name: 'vault-cards-sync', mode: 'exclusive' })))
+    vi.stubGlobal('navigator', { ...navigator, locks: { request } })
+    return request
+  }
+
+  it('verrou libre : le sync passe sous le verrou « vault-cards-sync »', async () => {
+    const request = stubLocks(false)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const { result } = renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    expect(request).toHaveBeenCalledWith('vault-cards-sync', { ifAvailable: true }, expect.any(Function))
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(result.current.lastSync).toBe('ok')
+  })
+
+  it('verrou tenu par un autre onglet : pas de sync, ni ok ni échec, rien à recharger', async () => {
+    stubLocks(true)
+    const s = sessionIn('empty')
+    const run = vi.fn().mockResolvedValue(CARDS)
+    const { result } = renderHook(() => useAutoSync(s, run))
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    expect(result.current).toMatchObject({ syncing: false, lastSync: null })
+    expect(s.restart).not.toHaveBeenCalled()
+  })
+})
+
+describe('useAutoSync : sync sauté (autre onglet) avec des notes en attente (#22)', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  /** Verrou tenu ailleurs pour les `busy` premières demandes, libre ensuite. */
+  const stubLocks = (busy: number) => {
+    let calls = 0
+    vi.stubGlobal('navigator', { ...navigator, locks: { request: vi.fn((_n: string, _o: LockOptions, cb: (l: Lock | null) => unknown) =>
+      Promise.resolve(cb(calls++ < busy ? null : { name: 'vault-cards-sync', mode: 'exclusive' }))) } })
+  }
+  const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+
+  it('notes en attente : un seul réessai après SKIPPED_RETRY_MS', async () => {
+    vi.useFakeTimers()
+    stubLocks(1)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending: async () => 2 }))
+    await tick(0)
+    expect(run).not.toHaveBeenCalled()
+    await tick(SKIPPED_RETRY_MS - 1)
+    expect(run).not.toHaveBeenCalled()
+    await tick(1)
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('réessai sauté lui aussi : pas d’autre réessai (une fois seulement)', async () => {
+    vi.useFakeTimers()
+    stubLocks(10)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const pending = vi.fn(async () => 1)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending }))
+    await tick(10 * SKIPPED_RETRY_MS)
+    expect(run).not.toHaveBeenCalled()
+    expect(pending).toHaveBeenCalledTimes(1)
+  })
+
+  it('rien en attente : pas de réessai ; démontage : le réessai prévu est annulé', async () => {
+    vi.useFakeTimers()
+    stubLocks(1)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending: async () => 0 }))
+    await tick(2 * SKIPPED_RETRY_MS)
+    expect(run).not.toHaveBeenCalled()
+
+    stubLocks(1)
+    const { unmount } = renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending: async () => 3 }))
+    await tick(0)
+    unmount()
+    await tick(2 * SKIPPED_RETRY_MS)
+    expect(run).not.toHaveBeenCalled()
+  })
+})
+
 describe('usePendingCount', () => {
   let db: VaultDB
   beforeEach(() => { db = new VaultDB('test-' + crypto.randomUUID()) })
@@ -209,6 +340,7 @@ describe('usePendingCount', () => {
 
   it('suit le nombre de reviews à pousser', async () => {
     const { result } = renderHook(() => usePendingCount(db))
+    expect(result.current).toBeNull() // pas encore compté
     await waitFor(() => expect(result.current).toBe(0))
     await act(async () => { await db.reviews.add({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z', synced: 0 }) })
     await waitFor(() => expect(result.current).toBe(1))

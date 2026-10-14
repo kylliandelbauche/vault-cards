@@ -86,6 +86,32 @@ describe('useReviewSession', () => {
     expect(await store.loadReviews()).toHaveLength(cards.length + 1) // notée normalement
   })
 
+  it('révision libre : les notes sont marquées free (hors quota du jour) ; session normale : non (#22)', async () => {
+    const store = memoryStore(cards)
+    const { result, rerender } = renderHook(({ scope }) => useReviewSession(store, fixedNow, scope), { initialProps: { scope: { mode: 'all' } as SessionScope } })
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    act(() => result.current.reveal())
+    await act(async () => result.current.rate(3))
+    expect((await store.loadReviews()).map(r => r.free)).toEqual([true])
+
+    rerender({ scope: { mode: 'due' } })
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    act(() => result.current.reveal())
+    await act(async () => result.current.rate(3))
+    expect((await store.loadReviews()).map(r => r.free)).toEqual([true, undefined])
+  })
+
+  it('« Réviser à nouveau » depuis une session normale : notes marquées free', async () => {
+    const store = memoryStore(cards)
+    const { result } = renderHook(() => useReviewSession(store, fixedNow))
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    act(() => result.current.reviewAll())
+    await waitFor(() => expect(result.current.counts.new).toBe(cards.length))
+    act(() => result.current.reveal())
+    await act(async () => result.current.rate(3))
+    expect((await store.loadReviews()).map(r => r.free)).toEqual([true])
+  })
+
   describe('erreurs du stockage local', () => {
     it('chargement en échec : status error, puis restart() recharge', async () => {
       let fail = true

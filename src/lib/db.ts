@@ -30,7 +30,7 @@ export class VaultDB extends Dexie {
     // v3 : source_title (#35), colonne simple non indexée -> mêmes stores, seule la mise à niveau des données compte.
     // RÈGLE : toute nouvelle colonne de `cards` remplie côté serveur → supprimer cursor:cards dans l'upgrade.
     // Sans cela, une app qui s'est synchronisée après le backfill serveur mais avant la mise à niveau a un curseur
-    // déjà trop avancé : le pull incrémental (>= curseur) ne rapporte jamais la valeur (cf. #38, tags #26).
+    // déjà trop avancé : le pull incrémental (après le curseur) ne rapporte jamais la valeur (cf. #38, tags #26).
     // Sans curseur = pull complet une fois, idempotent (bulkPut écrase les lignes) ; reviews et cursor:reviews intacts.
     this.version(3)
       .stores({ cards: 'id, updated_at, source_path, *tags' })
