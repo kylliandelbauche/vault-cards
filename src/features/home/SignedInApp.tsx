@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { getTag } from '../../../shared/tags'
+import { activeFilter } from '../../lib/home'
 import type { VaultDB } from '../../lib/db'
 import { pendingCount } from '../../lib/sync'
 import { dexieStore } from '../review/dexieStore'
@@ -38,6 +39,9 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
   const homeData = useHomeData(db, now, screen.name !== 'review')
   // Filtre de l'accueil (#63) : gardé ici (l'accueil est démonté pendant la révision), pas de persistance.
   const [filter, setFilter] = useState<string | null>(null)
+  // Tag filtré devenu vide (ou inconnu) : retour à « Tous » pour de bon, sans réactivation s'il revient après une
+  // synchro. Ajusté pendant le rendu (motif React « état dérivé d'une prop ») : pas d'effet, pas de rendu intermédiaire.
+  if (filter !== null && homeData.status === 'ready' && activeFilter(homeData.stats, filter) === null) setFilter(null)
 
   // Retour à l'accueil au milieu d'une session : pousse tout de suite les notes déjà données. Après une session
   // terminée, useAutoSync a déjà lancé la synchro de fin : pas de seconde synchro.

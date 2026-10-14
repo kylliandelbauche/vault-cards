@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { VaultDB } from '../../lib/db'
@@ -89,6 +89,20 @@ describe('SignedInApp : navigation (#53)', () => {
     await user.click(screen.getByRole('button', { name: 'Réviser à nouveau' }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
     expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
+  })
+
+  it('tag filtré devenu vide : retour à « Tous », qui reste sélectionné quand le tag revient après une synchro', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
+    expect(heading()).toBe("2 cartes à revoir aujourd'hui")
+    await act(async () => { await db.cards.bulkPut([card('b', ['ia']), card('c', ['ia'])]) }) // plus aucune carte Dev
+    await waitFor(() => expect(screen.queryByRole('button', { name: /^Dev & outils/ })).toBeNull())
+    expect(screen.getByRole('button', { name: 'Tous, 3 cartes' }).getAttribute('aria-pressed')).toBe('true')
+    await act(async () => { await db.cards.put(card('c', ['dev'])) }) // Dev revient
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Dev & outils, 1 carte' })).toBeTruthy())
+    expect(screen.getByRole('button', { name: 'Dev & outils, 1 carte' }).getAttribute('aria-pressed')).toBe('false')
+    expect(screen.getByRole('button', { name: 'Tous, 3 cartes' }).getAttribute('aria-pressed')).toBe('true')
   })
 
   it('tags sans carte : absents de la rangée de filtres', async () => {
