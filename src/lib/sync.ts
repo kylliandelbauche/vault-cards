@@ -113,6 +113,20 @@ async function pullAll<T extends { id: string }>(
   }
 }
 
+/**
+ * Les reviews sont immuables côté serveur (insert seul) : une review déjà connue localement n'est pas réécrite
+ * (les champs locaux restent), elle est seulement marquée `synced: 1` si son push n'avait pas été confirmé.
+ * Renvoie le nombre de reviews vraiment nouvelles (d'un autre appareil) : relire les nôtres n'est pas un changement.
+ */
+async function mergeReviews(db: VaultDB, rows: ServerReview[]) {
+  const known = await db.reviews.bulkGet(rows.map(r => r.id))
+  const fresh = rows.filter((_, i) => !known[i])
+  const confirmed = known.filter(r => r?.synced === 0).map(r => ({ key: r!.id, changes: { synced: 1 as const } }))
+  await db.reviews.bulkAdd(fresh.map(({ id, card_id, rating, reviewed_at }) => ({ id, card_id, rating, reviewed_at, synced: 1 as const })))
+  if (confirmed.length) await db.reviews.bulkUpdate(confirmed)
+  return fresh.length
+}
+
 export interface SyncOptions {
   /** Taille de page des pulls (réduite en test). */
   pageSize?: number
@@ -134,10 +148,7 @@ export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE }: Syn
     async cards => { await db.cards.bulkPut(cards); return cards.length },
     pageSize, n => { result.pulledCards += n })
   await pullAll(db, CURSOR_REVIEWS, db.reviews, (a, n) => remote.pullReviews(a, n), r => r.inserted_at,
-    async reviews => {
-      await db.reviews.bulkPut(reviews.map(({ id, card_id, rating, reviewed_at }) => ({ id, card_id, rating, reviewed_at, synced: 1 as const })))
-      return reviews.length
-    },
+    reviews => mergeReviews(db, reviews),
     pageSize, n => { result.pulledReviews += n })
   return result
 }

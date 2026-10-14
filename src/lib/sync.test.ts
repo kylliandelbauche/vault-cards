@@ -233,6 +233,42 @@ describe('sync : pull des cartes', () => {
   })
 })
 
+describe('sync : seuls les vrais changements comptent (pas de restart() inutile)', () => {
+  it('syncs répétés sans changement serveur : 0 carte, 0 review ; nos propres reviews relues ne comptent pas', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 1, pulledReviews: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 0, pulledReviews: 0 })
+
+    await db.reviews.add(review('r1', 'a'))
+    // La review poussée revient par le pull : déjà connue localement, ce n'est pas un changement.
+    expect(await sync(db, server.remote)).toEqual({ pushed: 1, pulledCards: 0, pulledReviews: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 0, pulledReviews: 0 })
+  })
+
+  it('review locale déjà sur le serveur (réponse du push perdue) : le pull la marque synced: 1 sans la compter', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    server.insertReview({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z' })
+    await db.reviews.add(review('r1', 'a'))
+    server.remote.pushReviews.mockRejectedValueOnce(new Error('délai dépassé'))
+
+    await expect(sync(db, server.remote)).rejects.toThrow('délai dépassé')
+    await sync(db, server.remote)
+
+    expect(await db.reviews.get('r1')).toEqual(review('r1', 'a', 1))
+  })
+
+  it('review d’un autre appareil : comptée une fois', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    await sync(db, server.remote)
+    server.insertReview({ id: 'autre', card_id: 'a', rating: 2, reviewed_at: '2026-10-12T08:00:00.000Z' })
+    expect((await sync(db, server.remote)).pulledReviews).toBe(1)
+    expect((await sync(db, server.remote)).pulledReviews).toBe(0)
+  })
+})
+
 describe('parseCursor', () => {
   it.each([
     [undefined, null],
