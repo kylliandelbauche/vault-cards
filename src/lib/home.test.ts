@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TAGS } from '../../shared/tags'
-import { cards as cardsLabel, homeStats, isMastered, MASTERED_STABILITY_DAYS, sortTags, todaySuffix, type TagCount } from './home'
+import { activeFilter, cards as cardsLabel, filterTags, homeStats, isMastered, MASTERED_STABILITY_DAYS, sortTags, todaySuffix, type TagCount } from './home'
 import { stateFromReviews } from './scheduler'
 import { buildQueue } from './session'
 import type { Card, Review } from './types'
@@ -76,6 +76,9 @@ describe('homeStats : compteurs', () => {
   })
 })
 
+const tag = (slug: string, total: number): TagCount =>
+  ({ ...TAGS.find(t => t.slug === slug)!, total, today: 0, due: 0, fresh: 0, mastered: 0, nextDueAt: null })
+
 describe('homeStats : tags', () => {
   it('les 8 tags dans l’ordre de shared/tags.ts ; une carte à 2 tags compte dans les deux ; tags vides à 0', () => {
     const s = homeStats(
@@ -83,7 +86,7 @@ describe('homeStats : tags', () => {
       [], now,
     )
     expect(s.tags.map(t => t.slug)).toEqual(TAGS.map(t => t.slug))
-    const count = Object.fromEntries(s.tags.map(t => [t.slug, t.count]))
+    const count = Object.fromEntries(s.tags.map(t => [t.slug, t.total]))
     expect(count).toMatchObject({ ia: 3, dev: 1, securite: 0, culture: 0 })
   })
 
@@ -94,15 +97,46 @@ describe('homeStats : tags', () => {
     expect(today).toMatchObject({ ia: 2, dev: 1, culture: 0 })
   })
 
+  it('par tag (filtre de l’accueil, #63) : À revoir, Nouvelles, Maîtrisées, prochaine échéance du tag seul', () => {
+    const long = goodStreak('m', '2026-01-01T10:00:00Z', 6)
+    const cs = [card('m', ['dev']), card('d', ['dev', 'ia']), card('n1', ['ia']), card('n2', ['ia']), card('later', ['culture'])]
+    const rs = [...long, rv('d', '2026-09-01T10:00:00Z'), rv('later', ago(1))]
+    const s = homeStats(cs, rs, now)
+    const by = Object.fromEntries(s.tags.map(t => [t.slug, t]))
+    expect(by.ia).toMatchObject({ total: 3, due: 1, fresh: 2, today: 3, mastered: 0 })
+    expect(by.dev).toMatchObject({ total: 2, due: 1, fresh: 0, today: 1, mastered: 1 })
+    expect(by.culture).toMatchObject({ total: 1, due: 0, fresh: 0, today: 0, mastered: 0 })
+    expect(by.culture.nextDueAt!.getTime()).toBeGreaterThan(now.getTime())
+    // Même file que la session du tag.
+    for (const t of s.tags) expect(t.today).toBe(buildQueue(cs, rs, now, undefined, t.slug).length)
+  })
+
+  it('par tag : le quota de nouvelles reste global (nouvelles vues aujourd’hui hors du tag décomptées)', () => {
+    const cs = [...Array.from({ length: 25 }, (_, i) => card(`n${i}`, ['ia'])), card('x', ['dev'])]
+    const s = homeStats(cs, [rv('x', ago(30))], now)
+    expect(s.tags.find(t => t.slug === 'ia')!.fresh).toBe(19)
+  })
+
   it('tri : nombre de cartes décroissant, vides en dernier, ordre de shared/tags.ts à égalité', () => {
-    const tag = (slug: string, count: number) => ({ ...TAGS.find(t => t.slug === slug)!, count, today: 0 }) as TagCount
     const sorted = sortTags([tag('ia', 2), tag('dev', 5), tag('securite', 0), tag('marketing', 2), tag('argent', 0)])
     expect(sorted.map(t => t.slug)).toEqual(['dev', 'ia', 'marketing', 'securite', 'argent'])
   })
 
+  it('filtres de l’accueil : tags non vides seulement, triés', () => {
+    expect(filterTags([tag('ia', 2), tag('dev', 5), tag('securite', 0)]).map(t => t.slug)).toEqual(['dev', 'ia'])
+  })
+
+  it('filtre actif : le tag s’il a des cartes, sinon « Tous » (null)', () => {
+    const s = homeStats([card('a', ['ia'])], [], now)
+    expect(activeFilter(s, null)).toBeNull()
+    expect(activeFilter(s, 'ia')?.slug).toBe('ia')
+    expect(activeFilter(s, 'dev')).toBeNull() // vide (disparu de la rangée)
+    expect(activeFilter(s, 'cuisine')).toBeNull() // inconnu
+  })
+
   it('cache ancien sans `tags` : ignoré sans erreur', () => {
     const s = homeStats([card('a', null as unknown as string[])], [], now)
-    expect(s.tags.every(t => t.count === 0)).toBe(true)
+    expect(s.tags.every(t => t.total === 0)).toBe(true)
   })
 })
 

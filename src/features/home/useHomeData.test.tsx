@@ -22,11 +22,11 @@ describe('useHomeData', () => {
     await db.cards.bulkPut([card('a', ['ia']), card('b', ['ia', 'dev'])])
     const { result } = renderHook(() => useHomeData(db, now, true))
     await waitFor(() => expect(ready(result).today).toBe(2))
-    expect(ready(result).tags.find(t => t.slug === 'dev')!.count).toBe(1)
+    expect(ready(result).tags.find(t => t.slug === 'dev')!.total).toBe(1)
 
     await act(async () => { await db.cards.put(card('c', ['culture'])) }) // comme un sync
     await waitFor(() => expect(ready(result).total).toBe(3))
-    expect(ready(result).tags.find(t => t.slug === 'culture')!.count).toBe(1)
+    expect(ready(result).tags.find(t => t.slug === 'culture')!.total).toBe(1)
 
     await act(async () => { await db.reviews.add({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T09:00:00Z', synced: 0 }) })
     await waitFor(() => expect(ready(result).fresh).toBe(2)) // 'a' vue aujourd'hui : plus nouvelle
