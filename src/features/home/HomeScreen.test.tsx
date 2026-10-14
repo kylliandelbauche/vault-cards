@@ -181,6 +181,30 @@ describe('HomeScreen', () => {
     }
   })
 
+  it('retour avec un filtre hors champ : la rangée le ramène en vue, calculé par rapport à la rangée (getBoundingClientRect)', () => {
+    // Rangée de 300 px à x = 40 ; chip « Dev & outils » de 380 à 480 (hors champ à droite). offsetLeft ignoré (Safari iOS).
+    const rect = (left: number, width: number) => ({ left, right: left + width, width, top: 0, bottom: 44, height: 44, x: left, y: 0, toJSON() {} }) as DOMRect
+    const spy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('chip-row')) return rect(40, 300)
+      if (this.getAttribute('aria-pressed') === 'true') return rect(380, 100)
+      return rect(0, 0)
+    })
+    renderHome(ready(), {}, 'dev')
+    expect(chipRow().scrollLeft).toBe(380 - 40 - 16)
+    spy.mockRestore()
+  })
+
+  it('filtre déjà visible : la rangée ne bouge pas', () => {
+    const rect = (left: number, width: number) => ({ left, right: left + width, width, top: 0, bottom: 44, height: 44, x: left, y: 0, toJSON() {} }) as DOMRect
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains('chip-row')) return rect(40, 300)
+      if (this.getAttribute('aria-pressed') === 'true') return rect(120, 100)
+      return rect(0, 0)
+    })
+    renderHome(ready(), {}, 'ia')
+    expect(chipRow().scrollLeft).toBe(0)
+  })
+
   it('aucune couleur par tag : ni style en ligne, ni jeton --tag-<couleur>', () => {
     const { container } = renderHome(ready(), {}, 'ia')
     for (const b of chips()) expect(b.getAttribute('style') ?? '').not.toMatch(/--chip|--tag/)

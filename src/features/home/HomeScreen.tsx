@@ -142,9 +142,14 @@ interface FiltersProps {
 function Filters({ stats, selected, onFilter, onOpenTags }: FiltersProps) {
   const row = useRef<HTMLUListElement>(null)
   // Retour à l'accueil avec un filtre hors champ : la rangée le ramène en vue (une seule fois, au montage).
+  // Positions relatives à la rangée (getBoundingClientRect) : offsetLeft dépend de l'offsetParent (Safari iOS),
+  // et scrollIntoView pourrait faire défiler la page.
   useLayoutEffect(() => {
-    const el = row.current?.querySelector<HTMLElement>('[aria-pressed="true"]')
-    if (row.current && el && el.offsetLeft + el.offsetWidth > row.current.clientWidth) row.current.scrollLeft = el.offsetLeft - 16
+    const ul = row.current
+    const el = ul?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!ul || !el) return
+    const r = ul.getBoundingClientRect(), b = el.getBoundingClientRect()
+    if (b.right > r.right) ul.scrollLeft += b.left - r.left - 16
   }, [])
   const chips = [
     { slug: null, label: 'Tous', total: stats.total },
