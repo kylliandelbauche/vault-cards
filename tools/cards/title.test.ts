@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { extractTitle, humanizeFileName, SOURCE_TITLE_MAX } from '../../shared/source-title.ts'
+import { extractTitle, humanizeFileName, humanizeTitle, SOURCE_TITLE_MAX } from '../../shared/source-title.ts'
 
 /** Surrogate isolé = chaîne mal formée (String#isWellFormed n'est pas dans la lib ES2023 de l'outil). */
 const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
@@ -15,8 +15,8 @@ describe('humanizeFileName', () => {
   it('nom sans suffixe -synthese : retire seulement .md', () => {
     expect(humanizeFileName('notes-du-jour.md')).toBe('Notes du jour')
   })
-  it('conserve un emoji initial et ne casse pas les accents', () => {
-    expect(humanizeFileName('🛡️ x-synthese.md')).toBe('🛡️ x')
+  it('retire l’emoji initial et ne casse pas les accents', () => {
+    expect(humanizeFileName('🛡️ x-synthese.md')).toBe('X')
     expect(humanizeFileName('éthique-des-agents-synthese.md')).toBe('Éthique des agents')
   })
   it('espaces multiples écrasés, jamais vide', () => {
@@ -25,7 +25,40 @@ describe('humanizeFileName', () => {
   })
 })
 
+describe('humanizeTitle (#76 : H1 en slug « ⏳ vivre_maintenant »)', () => {
+  it('retire l’emoji de tête, _ → espace, majuscule initiale', () => {
+    expect(humanizeTitle('⏳ vivre_maintenant')).toBe('Vivre maintenant')
+    expect(humanizeTitle('🗄️ supabase_vs_convex')).toBe('Supabase vs convex')
+    expect(humanizeTitle('⛏️ minecraft_entre_amis')).toBe('Minecraft entre amis')
+    expect(humanizeTitle('🏗️ developper_avec_ia')).toBe('Developper avec ia')
+  })
+  it('emojis composés (ZWJ, modificateurs, drapeaux) et plusieurs emojis de tête', () => {
+    expect(humanizeTitle('👩‍💻 code_propre')).toBe('Code propre')
+    expect(humanizeTitle('👍🏽 ok')).toBe('Ok')
+    expect(humanizeTitle('🇫🇷 histoire')).toBe('Histoire')
+    expect(humanizeTitle('🧠🤖 deux_emojis')).toBe('Deux emojis')
+  })
+  it('titre déjà rédigé (avec espaces) : _ conservés, seul l’emoji part', () => {
+    expect(humanizeTitle('🏗️ Développeurs : 10 règles')).toBe('Développeurs : 10 règles')
+    expect(humanizeTitle('Variable my_var en Python')).toBe('Variable my_var en Python')
+  })
+  it('accents et chiffres de tête intacts', () => {
+    expect(humanizeTitle('éthique_des_agents')).toBe('Éthique des agents')
+    expect(humanizeTitle('10_regles')).toBe('10 regles')
+  })
+  it('jamais vide : un titre réduit à un emoji reste tel quel', () => {
+    expect(humanizeTitle('🧠')).toBe('🧠')
+    expect(humanizeTitle('_')).toBe('_')
+  })
+})
+
 describe('extractTitle', () => {
+  it('H1 en slug humanisé (#76)', () => {
+    expect(extractTitle('---\ntype: synthese\n---\n# ⏳ vivre_maintenant\n', '⏳ vivre_maintenant.md')).toBe('Vivre maintenant')
+  })
+  it('sans H1 : nom de fichier en slug humanisé aussi', () => {
+    expect(extractTitle('texte', '3-Resources/Second cerveau/⏳ vivre_maintenant.md')).toBe('Vivre maintenant')
+  })
   it('premier H1 du document, trim', () => {
     expect(extractTitle('# Mon titre  \n\ntexte', 'x-synthese.md')).toBe('Mon titre')
   })
@@ -65,7 +98,7 @@ describe('extractTitle', () => {
   })
   it('emoji juste avant la limite (199e point de code) : conservé entier', () => {
     const t = extractTitle('# ' + 'a'.repeat(198) + '😀' + 'zzz', 'x-synthese.md')
-    expect(t).toBe('a'.repeat(198) + '😀…')
+    expect(t).toBe('A' + 'a'.repeat(197) + '😀…') // majuscule initiale (humanizeTitle)
     expect(t).not.toMatch(LONE_SURROGATE)
   })
   it('200 points de code exactement : pas de troncature, même avec des emojis (> 200 unités UTF-16)', () => {
