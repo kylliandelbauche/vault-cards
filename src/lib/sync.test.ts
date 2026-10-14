@@ -209,6 +209,19 @@ describe('sync : cas limites (#22)', () => {
   })
 })
 
+describe('sync : anti-boucle (#22)', () => {
+  it('serveur qui ignore le curseur (pages pleines identiques) : le pull s’arrête dès que le curseur n’avance plus', async () => {
+    const server = fakeServer()
+    const page = [server.putCard({ id: 'a' }), server.putCard({ id: 'b' })]
+    server.remote.pullCards.mockImplementation(async () => page)
+
+    await sync(db, server.remote, { pageSize: 2 })
+
+    expect(server.remote.pullCards).toHaveBeenCalledTimes(2) // 1re page, puis la même : arrêt
+    expect(await db.cards.count()).toBe(2)
+  })
+})
+
 describe('sync : files d’envoi (préparation #54)', () => {
   const queue = (name: string, log: string[], { fail = false, count = 1 } = {}): OutboxQueue => ({
     count: async () => count,

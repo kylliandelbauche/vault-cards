@@ -105,6 +105,8 @@ async function pullAll<T extends { id: string }>(
     if (rows.length) {
       const last = rows[rows.length - 1]
       const next: Cursor = { at: stamp(last), id: last.id }
+      // Anti-boucle : un serveur qui ignorerait le filtre renverrait sans fin la même page pleine.
+      if (cursor && next.at === cursor.at && next.id === cursor.id) return
       await db.transaction('rw', table, db.meta, async () => {
         count(await onRows(rows))
         await db.meta.put({ key, value: JSON.stringify(next) })
