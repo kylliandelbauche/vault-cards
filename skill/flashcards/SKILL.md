@@ -32,12 +32,27 @@ Une exécution complète : dossier temporaire → scan → notes `changed` → d
 5. Nettoyage de `$RUN_DIR` (voir « Garde-fous »).
 6. Résumé final : « N notes · +X cartes · Y modifiées · Z supprimées », puis la liste des notes traitées, puis, s'il y en a, les suppressions non confirmées (notes `removed` et cartes retirées) en attente.
 
-## Règles des cartes
-- 3 à 8 cartes par note, selon la densité. Zéro carte si la note n'a rien à retenir (`cards: []`, le hash est quand même enregistré ; si la note avait déjà des cartes, c'est une suppression soumise à confirmation).
-- Français. Question ≤ 150 caractères, une seule idée. Réponse ≤ 3 phrases, autonome.
-- Viser les conclusions marquées ★, les chiffres, les définitions, les distinctions. Pas d'anecdote.
-- Jamais « selon la vidéo », « dans cette note » : la carte doit se comprendre seule.
-- Texte brut, pas de Markdown ni de HTML.
+## Règles de rédaction
+Une carte sert à retenir une idée utile, pas à prouver qu'on a vu la vidéo.
+
+- **Question autonome** : elle porte son contexte et se comprend seule, des mois plus tard, sans avoir vu la vidéo ni lu la note. Jamais « il », « l'auteur », « selon la vidéo », « dans cette note ».
+- **Concepts, pas chronologie** : pourquoi, comment, quand l'appliquer, quelle différence, quel risque. Jamais « de quoi parle-t-il ensuite », « à quel moment », « qui a dit ».
+- **Pas de trivia** : ni dates, ni chiffres anecdotiques, ni noms propres sans intérêt. Un nom d'outil ou de méthode reste permis s'il est le concept lui-même. Un chiffre reste permis s'il est l'ordre de grandeur à retenir pour décider.
+- **Interviews, conférences, débats** : extraire les idées importantes, pas le déroulé ni qui parle.
+- **Une idée par carte.** Question ≤ 150 caractères.
+- **Réponse** : l'essentiel dès la première phrase, puis 1 à 2 phrases d'explication au plus.
+- **Tags** : 1 tag principal, un 2e seulement s'il est vraiment pertinent (section « Tags »).
+- **Qualité plutôt que quantité** : souvent 4 à 8 cartes par note, jamais de remplissage. Viser les conclusions marquées ★, les définitions, les distinctions. Zéro carte si la note n'a rien à retenir (`cards: []`, le hash est quand même enregistré ; si la note avait déjà des cartes, c'est une suppression soumise à confirmation).
+- Français, texte brut (ni Markdown ni HTML).
+
+### Exemples
+| ❌ Avant | ✅ Après |
+|---|---|
+| Pourquoi préfère-t-il X ? | Pour réduire le coût en tokens d'un agent IA, pourquoi séparer le modèle de raisonnement du modèle d'exécution ? |
+| De quoi parle l'invité après la partie sur le recrutement ? | Pourquoi recruter lentement et licencier vite protège-t-il la culture d'une petite équipe ? |
+| En quelle année a été fondée l'entreprise de X ? | (à supprimer : trivia, rien à appliquer) |
+
+Réponse type : « Parce que le modèle d'exécution peut être petit et bon marché : seul le plan demande un gros modèle. Le gros modèle réfléchit une fois, le petit exécute les étapes répétitives. »
 
 ## Tags
 Chaque carte a **1 tag principal**, et un **2e seulement s'il est vraiment pertinent** (la carte relève autant des deux thèmes). Maximum 2. Le 1er tag de la liste est le principal. Liste fixe (source : `shared/tags.ts`, tout autre slug est refusé) :
