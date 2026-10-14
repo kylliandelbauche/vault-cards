@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import Dexie from 'dexie'
-import { VaultDB, addMissingSourceTitle, addMissingTags } from './db'
+import { VaultDB, addMissingSource, addMissingSourceTitle, addMissingTags } from './db'
 
 describe('VaultDB : migration v2 (tags)', () => {
   it('une carte en cache sans tags reçoit tags: [] après upgrade, sans perdre le reste', async () => {
@@ -13,7 +13,7 @@ describe('VaultDB : migration v2 (tags)', () => {
 
     const db = new VaultDB(name)
     try {
-      expect(await db.cards.get('a')).toEqual({ id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: [], source_title: null })
+      expect(await db.cards.get('a')).toEqual({ id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: [], source_title: null, source: 'vault' })
       expect(await db.reviews.count()).toBe(1)
     } finally {
       db.close()
@@ -43,7 +43,7 @@ describe('VaultDB : migration v3 (source_title)', () => {
 
     const db = new VaultDB(name)
     try {
-      expect(await db.cards.get('a')).toEqual({ id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'], source_title: null })
+      expect(await db.cards.get('a')).toEqual({ id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'], source_title: null, source: 'vault' })
       expect(await db.cards.where('tags').equals('ia').count()).toBe(1)
       expect(await db.reviews.count()).toBe(1)
     } finally {
@@ -84,5 +84,42 @@ describe('VaultDB : migration v3 (source_title)', () => {
     addMissingSourceTitle(without)
     expect(withTitle.source_title).toBe('Mon titre')
     expect(without.source_title).toBeNull()
+  })
+})
+
+describe('VaultDB : migration v4 (cartes manuelles, #54)', () => {
+  it('v3 -> v4 : source vault sur les cartes en cache, cursor:cards supprimé, reviews et cursor:reviews intacts', async () => {
+    const name = 'vault-cards-upgrade-' + crypto.randomUUID()
+    const v3 = new Dexie(name)
+    v3.version(1).stores({ cards: 'id, updated_at, source_path', reviews: 'id, card_id, synced, reviewed_at', meta: 'key' })
+    v3.version(2).stores({ cards: 'id, updated_at, source_path, *tags' })
+    v3.version(3).stores({ cards: 'id, updated_at, source_path, *tags' })
+    await v3.table('cards').put({ id: 'a', deck: 'd', source_path: 'd/a.md', source_title: 'T', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'] })
+    await v3.table('reviews').put({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: 't', synced: 0 })
+    await v3.table('meta').bulkPut([{ key: 'cursor:cards', value: '{"at":"x","id":"a"}' }, { key: 'cursor:reviews', value: '{"at":"y","id":"r"}' }])
+    v3.close()
+
+    const db = new VaultDB(name)
+    try {
+      expect(await db.cards.get('a')).toEqual({ id: 'a', source: 'vault', deck: 'd', source_path: 'd/a.md', source_title: 'T', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'] })
+      expect(await db.meta.get('cursor:cards')).toBeUndefined()
+      expect(await db.meta.get('cursor:reviews')).toEqual({ key: 'cursor:reviews', value: '{"at":"y","id":"r"}' })
+      expect((await db.reviews.get('r1'))!.synced).toBe(0)
+      // Index synced : seules les cartes à envoyer y figurent.
+      await db.cards.add({ id: 'm', source: 'manual', deck: null, source_path: null, tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null, synced: 0 })
+      expect(await db.cards.where('synced').equals(0).primaryKeys()).toEqual(['m'])
+    } finally {
+      db.close()
+      await Dexie.delete(name)
+    }
+  })
+
+  it('addMissingSource ne touche pas une source déjà présente', () => {
+    const manual: { source?: unknown } = { source: 'manual' }
+    const without: { source?: unknown } = {}
+    addMissingSource(manual)
+    addMissingSource(without)
+    expect(manual.source).toBe('manual')
+    expect(without.source).toBe('vault')
   })
 })

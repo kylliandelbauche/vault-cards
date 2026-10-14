@@ -32,14 +32,14 @@ describe('safeSignOut', () => {
   it('synchro en échec : demande confirmation ; annulation = pas de déconnexion', async () => {
     const d = deps([2], { sync: vi.fn(async () => { throw new Error('offline') }), confirm: vi.fn(() => false) })
     expect(await safeSignOut(d)).toBe(false)
-    expect(d.confirm).toHaveBeenCalledWith(expect.stringContaining('2 révisions pas encore synchronisées seront perdues'))
+    expect(d.confirm).toHaveBeenCalledWith(expect.stringContaining('2 modifications pas encore synchronisées (révisions, cartes) seront perdues'))
     expect(d.signOut).not.toHaveBeenCalled()
   })
 
   it('synchro en échec et confirmation acceptée : déconnecte', async () => {
     const d = deps([1], { sync: vi.fn(async () => { throw new Error('offline') }) })
     expect(await safeSignOut(d)).toBe(true)
-    expect(d.confirm).toHaveBeenCalledWith(expect.stringContaining('1 révision pas encore synchronisée sera perdue'))
+    expect(d.confirm).toHaveBeenCalledWith(expect.stringContaining('1 modification pas encore synchronisée (révision ou carte) sera perdue'))
     expect(d.signOut).toHaveBeenCalledTimes(1)
   })
 })

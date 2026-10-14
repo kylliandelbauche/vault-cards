@@ -4,7 +4,7 @@ import { pendingCount } from '../../lib/sync'
 import type { Card, Review } from '../../lib/types'
 import { dexieStore } from './dexieStore'
 
-const card: Card = { id: 'a', deck: 'd', tags: [], source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null }
+const card: Card = { id: 'a', source: 'vault', deck: 'd', tags: [], source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null }
 const review: Review = { id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z', synced: 0 }
 
 let db: VaultDB

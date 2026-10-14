@@ -7,7 +7,7 @@ import type { Card } from '../../lib/types'
 import { SignedInApp } from './SignedInApp'
 
 const card = (id: string, tags: string[]): Card => ({
-  id, deck: 'x', tags, source_path: `x/${id}.md`, front: `Question ${id} ?`, back: `Réponse ${id}.`,
+  id, source: 'vault', deck: 'x', tags, source_path: `x/${id}.md`, front: `Question ${id} ?`, back: `Réponse ${id}.`,
   updated_at: '2026-10-01T00:00:00Z', deleted_at: null,
 })
 // Horloge qui avance d'une seconde à chaque lecture : chaque tap tombe après la garde anti double tap.
