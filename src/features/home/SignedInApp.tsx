@@ -45,7 +45,7 @@ export function SignedInApp({ db, runSync, now, onSignOut }: Props) {
     const last = leftStatus.current
     if (last === null) return
     leftStatus.current = null
-    if (last !== 'done' && pending > 0) syncNow()
+    if (last !== 'done' && pending !== 0) syncNow() // null (pas encore compté) : dans le doute, on pousse
   }, [screen, session.status, pending, syncNow])
 
   // Jamais de révisions perdues : synchro d'abord, confirmation si elle échoue.

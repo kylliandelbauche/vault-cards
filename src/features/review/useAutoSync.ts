@@ -18,8 +18,11 @@ export interface AutoSync extends SyncState {
 /** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync réussi par intervalle. */
 export const RESUME_SYNC_MIN_INTERVAL_MS = 30_000
 
-/** « Synchronisé » seulement si rien n'attend d'être poussé et que le dernier sync a réussi. */
-export const syncIndicator = (pending: number, { syncing, lastSync }: SyncState): SyncIndicator =>
+/**
+ * « Synchronisé » seulement si rien n'attend d'être poussé et que le dernier sync a réussi.
+ * `pending` null : pas encore compté (premier rendu), donc pas « Synchronisé ».
+ */
+export const syncIndicator = (pending: number | null, { syncing, lastSync }: SyncState): SyncIndicator =>
   syncing ? 'syncing' : pending === 0 && lastSync === 'ok' ? 'synced' : 'unsynced'
 
 /**
@@ -125,9 +128,12 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   return { ...state, syncNow }
 }
 
-/** Nombre de reviews locales pas encore poussées, mis à jour en direct (liveQuery Dexie). */
+/**
+ * Nombre de lignes locales pas encore poussées, mis à jour en direct (liveQuery Dexie) ; null avant le premier
+ * comptage (sinon un sync rapide afficherait « Synchronisé » un instant alors que des révisions attendent).
+ */
 export function usePendingCount(db: VaultDB) {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState<number | null>(null)
   useEffect(() => {
     const sub = liveQuery(() => pendingCount(db)).subscribe({ next: setCount, error: () => {} })
     return () => sub.unsubscribe()

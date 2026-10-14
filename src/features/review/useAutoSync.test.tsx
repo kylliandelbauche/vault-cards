@@ -140,7 +140,8 @@ describe('syncIndicator', () => {
     [0, { syncing: false, lastSync: 'failed' }, 'unsynced'],
     [0, { syncing: false, lastSync: null }, 'unsynced'],
     [3, { syncing: true, lastSync: 'failed' }, 'syncing'],
-  ] as const)('%i en attente, %o → %s', (pending, state, expected) => {
+    [null, { syncing: false, lastSync: 'ok' }, 'unsynced'],
+  ] as const)('%s en attente, %o → %s', (pending, state, expected) => {
     expect(syncIndicator(pending, state)).toBe(expected)
   })
 })
@@ -222,6 +223,19 @@ describe('useAutoSync : retour au premier plan', () => {
     expect(run).toHaveBeenCalledTimes(2)
   })
 
+  it('démontage : les listeners (réseau, premier plan, focus) sont retirés', async () => {
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const { unmount } = renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    unmount()
+    vi.setSystemTime(T0 + 10 * RESUME_SYNC_MIN_INTERVAL_MS)
+    show()
+    focus()
+    act(() => { window.dispatchEvent(new Event('online')) })
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
   it('jamais deux syncs en parallèle', async () => {
     const d = deferred<Result>()
     const run = vi.fn().mockReturnValueOnce(d.promise).mockResolvedValue(NOTHING)
@@ -275,6 +289,7 @@ describe('usePendingCount', () => {
 
   it('suit le nombre de reviews à pousser', async () => {
     const { result } = renderHook(() => usePendingCount(db))
+    expect(result.current).toBeNull() // pas encore compté
     await waitFor(() => expect(result.current).toBe(0))
     await act(async () => { await db.reviews.add({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z', synced: 0 }) })
     await waitFor(() => expect(result.current).toBe(1))

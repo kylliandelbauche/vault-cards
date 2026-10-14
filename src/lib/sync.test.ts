@@ -170,6 +170,45 @@ describe('sync : push et pull indépendants', () => {
   })
 })
 
+describe('sync : cas limites (#22)', () => {
+  it('pull en échec : les curseurs ne bougent pas, rien n’est écrit', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    server.insertReview({ id: 'autre', card_id: 'a', rating: 2, reviewed_at: '2026-10-12T08:00:00.000Z' })
+    await sync(db, server.remote)
+    const before = await db.meta.toArray()
+    server.putCard({ id: 'b' })
+    server.insertReview({ id: 'autre2', card_id: 'b', rating: 3, reviewed_at: '2026-10-12T09:00:00.000Z' })
+
+    server.remote.pullCards.mockRejectedValueOnce(new Error('hors ligne'))
+    await expect(sync(db, server.remote)).rejects.toThrow('hors ligne')
+
+    expect(await db.meta.toArray()).toEqual(before)
+    expect(await db.cards.get('b')).toBeUndefined()
+    expect(await db.reviews.get('autre2')).toBeUndefined()
+  })
+
+  it('note donnée pendant un push : reste synced: 0, puis part au sync suivant', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    await db.reviews.add(review('r1', 'a'))
+    const push = server.remote.pushReviews.getMockImplementation() as Remote['pushReviews']
+    server.remote.pushReviews.mockImplementationOnce(async (rows: Parameters<Remote['pushReviews']>[0]) => {
+      await db.reviews.add(review('r2', 'a')) // l'utilisateur note une carte pendant que le push est en vol
+      await push(rows)
+    })
+
+    expect((await sync(db, server.remote)).pushed).toBe(1)
+    expect((await db.reviews.get('r1'))!.synced).toBe(1)
+    expect((await db.reviews.get('r2'))!.synced).toBe(0)
+    expect(server.reviews.has('r2')).toBe(false)
+
+    expect((await sync(db, server.remote)).pushed).toBe(1)
+    expect(server.remote.pushReviews).toHaveBeenLastCalledWith([{ id: 'r2', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z' }])
+    expect(await pendingCount(db)).toBe(0)
+  })
+})
+
 describe('sync : files d’envoi (préparation #54)', () => {
   const queue = (name: string, log: string[], { fail = false, count = 1 } = {}): OutboxQueue => ({
     count: async () => count,

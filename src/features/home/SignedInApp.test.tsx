@@ -125,6 +125,31 @@ describe('SignedInApp : navigation (#53)', () => {
   })
 })
 
+describe('SignedInApp : badge de synchro (#22)', () => {
+  const badge = () => screen.getByRole('status').textContent
+
+  it('« Synchronisation… » pendant le sync, puis « Synchronisé »', async () => {
+    let finish!: (v: typeof NOTHING) => void
+    renderApp(vi.fn().mockReturnValueOnce(new Promise(r => { finish = r })).mockResolvedValue(NOTHING))
+    await waitFor(() => expect(badge()).toBe('Synchronisation…'))
+    finish(NOTHING)
+    await waitFor(() => expect(badge()).toBe('Synchronisé'))
+  })
+
+  it('sync en échec : « Non synchronisé »', async () => {
+    renderApp(vi.fn().mockRejectedValue(new Error('hors ligne')))
+    await waitFor(() => expect(badge()).toBe('Non synchronisé'))
+  })
+
+  it('sync réussi mais une révision attend d’être envoyée : « Non synchronisé »', async () => {
+    await db.reviews.add({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z', synced: 0 })
+    const { runSync } = renderApp()
+    await waitFor(() => expect(runSync).toHaveBeenCalled())
+    await waitFor(() => expect(badge()).not.toBe('Synchronisation…'))
+    expect(badge()).toBe('Non synchronisé')
+  })
+})
+
 describe('SignedInApp : page Mes tags (#53)', () => {
   beforeEach(() => { window.history.replaceState(null, '') })
 
