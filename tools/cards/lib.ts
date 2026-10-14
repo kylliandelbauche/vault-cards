@@ -2,9 +2,13 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { SOURCE_TITLE_MAX, extractTitle } from '../../shared/source-title.ts'
-import { MAX_TAGS, isTagSlug } from '../../shared/tags.ts'
+import { MAX_TAGS, isTagSlug, type TagSlug } from '../../shared/tags.ts'
 
-export interface NoteFile { source_path: string; deck: string; content_hash: string; title: string; abs_path: string }
+/** `frontmatter_tags` : tags libres de la note ; `tag_hints` : leur correspondance dans la liste fixe (indices, pas une décision). */
+export interface NoteFile {
+  source_path: string; deck: string; content_hash: string; title: string; abs_path: string
+  frontmatter_tags: string[]; tag_hints: TagSlug[]
+}
 export interface IncomingCard { id?: string; front: string; back: string; tags: string[] }
 /** `source_title` : présent pour une note modifiée, absent pour une note `removed`. */
 export interface ApplyPayload { source_path: string; deck: string; content_hash: string; source_title?: string; cards: IncomingCard[] }
@@ -16,8 +20,14 @@ export interface NoteRow { source_path: string; content_hash: string }
 /** Hash stocké dans `notes` pour une note supprimée du vault (ses cartes sont supprimées). */
 export const REMOVED_HASH = 'removed'
 
-/** Dossier des notes de veille dans le vault ; le dossier suivant est le deck. */
-export const VEILLE_SUBDIR = '3-Resources/veille'
+/** Dossier des synthèses dans le vault (#76) : fichiers `.md` à plat, `Transcriptions/` et `.base` ignorés. */
+export const NOTES_SUBDIR = '3-Resources/Second cerveau'
+
+/** Deck unique des cartes du vault : le classement se fait par tags (#53), plus par dossier. */
+export const DECK = 'Second cerveau'
+
+/** Seule valeur de `type:` (frontmatter) qui donne des cartes. */
+export const SYNTHESE_TYPE = 'synthese'
 
 const FRONT_MAX = 500
 const BACK_MAX = 1500
@@ -27,22 +37,98 @@ function toPosix(rel: string): string {
   return rel.split(path.sep).join('/').normalize('NFC')
 }
 
-export async function listSyntheses(vaultRoot: string, subdir = VEILLE_SUBDIR): Promise<NoteFile[]> {
+/** Chemin relatif sans `.`, `..`, segment vide, antislash ni `/` initial (un `/` final est retiré par l'appelant si voulu). */
+function isSafeRelative(p: string): boolean {
+  return p !== '' && !p.includes('\\') && p.split('/').every(seg => seg !== '' && seg !== '.' && seg !== '..')
+}
+
+/** Dossier des notes : `VAULT_NOTES_DIR` (relatif au vault) ou NOTES_SUBDIR. */
+export function resolveNotesDir(value: string | undefined): string {
+  if (value === undefined || value.trim() === '') return NOTES_SUBDIR
+  const dir = value.trim().replace(/\/+$/, '')
+  if (!isSafeRelative(dir)) throw new Error('VAULT_NOTES_DIR invalide : chemin relatif au vault attendu, sans « . », « .. » ni antislash')
+  return dir
+}
+
+function unquote(v: string): string {
+  const t = v.trim()
+  return /^(["']).*\1$/.test(t) ? t.slice(1, -1).trim() : t
+}
+
+/** `type` et `tags` du frontmatter YAML de tête (sous-ensemble utile : `tags: [a, b]` ou liste en bloc). */
+export function parseFrontmatter(markdown: string): { type: string | null; tags: string[] } {
+  const lines = markdown.replace(/^\uFEFF/, '').split(/\r?\n/)
+  const none = { type: null, tags: [] }
+  if (lines[0]?.trim() !== '---') return none
+  const end = lines.findIndex((l, i) => i > 0 && /^(---|\.\.\.)\s*$/.test(l))
+  if (end === -1) return none
+  let type: string | null = null
+  let tags: string[] = []
+  for (let i = 1; i < end; i++) {
+    const m = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(lines[i])
+    if (!m) continue
+    if (m[1] === 'type') type = unquote(m[2])
+    if (m[1] !== 'tags') continue
+    const inline = /^\[(.*)\]\s*$/.exec(m[2].trim())
+    if (inline) tags = inline[1].split(',').map(unquote).filter(t => t !== '')
+    else if (m[2].trim() === '') {
+      tags = []
+      for (let j = i + 1; j < end; j++) {
+        const item = /^\s*-\s+(.*)$/.exec(lines[j])
+        if (!item) break
+        tags.push(unquote(item[1]))
+      }
+    } else tags = [unquote(m[2])]
+  }
+  return { type, tags }
+}
+
+export function isSynthese(markdown: string): boolean {
+  return parseFrontmatter(markdown).type === SYNTHESE_TYPE
+}
+
+/** Tags libres du vault → liste fixe (shared/tags.ts), quand la correspondance est évidente. Le reste : jugement du modèle. */
+const TAG_HINTS: Record<string, TagSlug> = {
+  ia: 'ia', agents: 'ia', agent: 'ia', claude_code: 'ia', modeles_ia: 'ia', llm: 'ia', prompt: 'ia', prompting: 'ia',
+  developpement: 'dev', dev: 'dev', python: 'dev', javascript: 'dev', typescript: 'dev', backend: 'dev', frontend: 'dev',
+  bases_de_donnees: 'dev', architecture: 'dev', tests: 'dev', outils: 'dev', mise_en_production: 'dev',
+  securite: 'securite', cybersecurite: 'securite', pentest: 'securite',
+  marketing: 'marketing', acquisition: 'marketing', copywriting: 'marketing', vente: 'marketing',
+  argent: 'argent', business: 'argent', saas: 'argent', finance: 'argent', entrepreneuriat: 'argent',
+  developpement_personnel: 'mental', psychologie: 'mental', mindset: 'mental', mental: 'mental', apprentissage: 'mental',
+  productivite: 'productivite', habitudes: 'productivite', priorites: 'productivite', organisation: 'productivite',
+  culture: 'culture', loisirs: 'culture', histoire: 'culture',
+}
+
+/** Indices de tags (ordre du frontmatter, sans doublon), toujours dans la liste fixe. */
+export function suggestTags(frontmatterTags: readonly string[]): TagSlug[] {
+  const out: TagSlug[] = []
+  for (const t of frontmatterTags) {
+    const slug = TAG_HINTS[t.trim().toLowerCase()]
+    if (slug && !out.includes(slug)) out.push(slug)
+  }
+  return out
+}
+
+/** Synthèses du vault : `.md` de premier niveau de `subdir` (non cachés) dont le frontmatter dit `type: synthese`. */
+export async function listSyntheses(vaultRoot: string, subdir = NOTES_SUBDIR): Promise<NoteFile[]> {
   const base = path.join(vaultRoot, subdir)
-  const entries = await fs.readdir(base, { recursive: true, withFileTypes: true })
+  const entries = await fs.readdir(base, { withFileTypes: true })
   const notes: NoteFile[] = []
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith('-synthese.md')) continue
-    const abs_path = path.join(entry.parentPath, entry.name)
-    const inSubdir = toPosix(path.relative(base, abs_path)).split('/')
-    if (inSubdir.length < 2) continue // fichier directement dans subdir : pas de deck
+    if (!entry.isFile() || !entry.name.endsWith('.md') || entry.name.startsWith('.')) continue
+    const abs_path = path.join(base, entry.name)
     const content = await fs.readFile(abs_path, 'utf8')
+    const fm = parseFrontmatter(content)
+    if (fm.type !== SYNTHESE_TYPE) continue
     notes.push({
       source_path: toPosix(path.relative(vaultRoot, abs_path)),
-      deck: inSubdir[0],
+      deck: DECK,
       content_hash: hashContent(content),
       title: extractTitle(content, entry.name),
       abs_path,
+      frontmatter_tags: fm.tags,
+      tag_hints: suggestTags(fm.tags),
     })
   }
   return notes.sort((a, b) => a.source_path.localeCompare(b.source_path))
@@ -176,7 +262,7 @@ export function assertDeleteConfirmed(source_path: string, toDelete: { id: strin
 }
 
 export const USAGE =
-  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles'
+  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>'
 
 export interface ParsedArgs { command: string | undefined; arg: string | undefined; confirmDelete: number | null }
 
@@ -226,13 +312,12 @@ export function assertContentHashFresh(declared: string, currentContent: string)
 }
 
 /**
- * `source_path` doit avoir exactement la forme produite par `scan` : `<subdir>/<deck>/…/<nom>-synthese.md`,
- * relatif, sans `.`, `..` ni segment vide, et `deck` doit être le dossier qui suit `<subdir>/`
- * (un deck erroné rangerait les cartes dans le mauvais paquet).
+ * `source_path` doit avoir exactement la forme produite par `scan` : `<subdir>/<nom>.md` (pas de sous-dossier,
+ * nom non caché), relatif, sans `.`, `..` ni segment vide, et `deck` doit valoir DECK.
  */
-export function assertDeckMatchesPath(source_path: string, deck: string, subdir = VEILLE_SUBDIR): void {
+export function assertDeckMatchesPath(source_path: string, deck: string, subdir = NOTES_SUBDIR): void {
   const invalid = (why: string): never => {
-    throw new Error(`source_path « ${source_path} » invalide : ${why} (attendu ${subdir}/<deck>/…/<nom>-synthese.md)`)
+    throw new Error(`source_path « ${source_path} » invalide : ${why} (attendu ${subdir}/<nom>.md)`)
   }
   const parts = source_path.split('/')
   if (source_path.includes('\\') || parts.some(p => p === '' || p === '.' || p === '..')) {
@@ -241,9 +326,10 @@ export function assertDeckMatchesPath(source_path: string, deck: string, subdir 
   const prefix = subdir.split('/')
   if (!prefix.every((seg, i) => parts[i] === seg)) invalid(`ne commence pas par ${subdir}/`)
   const rest = parts.slice(prefix.length)
-  if (rest.length < 2) invalid('pas de dossier de deck')
-  if (!rest[rest.length - 1].endsWith('-synthese.md')) invalid('le nom ne finit pas par -synthese.md')
-  if (rest[0] !== deck) throw new Error(`deck « ${deck} » incohérent avec source_path « ${source_path} » : attendu « ${rest[0]} »`)
+  if (rest.length !== 1) invalid('la note doit être directement dans le dossier (pas de sous-dossier)')
+  const name = rest[0]
+  if (!name.endsWith('.md') || name.startsWith('.')) invalid('pas un fichier .md visible')
+  if (deck !== DECK) throw new Error(`deck « ${deck} » incohérent avec source_path « ${source_path} » : attendu « ${DECK} »`)
 }
 
 /** Chemin absolu d'une note ; refuse tout ce qui sortirait du vault (défense en profondeur après assertDeckMatchesPath). */
@@ -339,4 +425,73 @@ export function vaultOnly<Q>(query: Q): Q {
   // Typage minimal volontaire : contraindre Q au constructeur de requêtes PostgREST fait exploser l'inférence (TS2589).
   // Les filtres PostgREST renvoient la requête elle-même (this).
   return (query as Q & { eq(column: string, value: string): Q }).eq('source', VAULT_SOURCE)
+}
+
+export interface RelinkEntry { from: string; to: string }
+
+/**
+ * Fichier de `relink` : liste non vide de {from, to}. `from` = ancien source_path (n'importe quel chemin relatif sûr),
+ * `to` = format exact de `scan`. Pas de doublon, pas de chaîne (un `to` réutilisé comme `from`).
+ */
+export function validateRelinkPayload(p: unknown, subdir = NOTES_SUBDIR): RelinkEntry[] {
+  if (!Array.isArray(p)) throw new Error('relink : liste JSON de {from, to} attendue')
+  if (p.length === 0) throw new Error('relink : liste vide')
+  const entries = p.map((raw: unknown, i: number): RelinkEntry => {
+    const where = `entrée ${i + 1}`
+    if (!isRecord(raw)) throw new Error(`${where} : objet {from, to} attendu`)
+    rejectUnknownKeys(raw, ['from', 'to'], where)
+    const from = requireText(raw, 'from', where)
+    const to = requireText(raw, 'to', where)
+    if (!isSafeRelative(from)) throw new Error(`${where} : « from » invalide (chemin relatif au vault, sans « . », « .. », segment vide ni antislash)`)
+    assertDeckMatchesPath(to, DECK, subdir)
+    if (from === to) throw new Error(`${where} : « from » et « to » identiques`)
+    return { from, to }
+  })
+  const froms = entries.map(e => e.from)
+  const tos = entries.map(e => e.to)
+  if (new Set(froms).size !== froms.length) throw new Error('relink : « from » en double')
+  if (new Set(tos).size !== tos.length) throw new Error('relink : « to » en double')
+  const chained = tos.find(t => froms.includes(t))
+  if (chained) throw new Error(`relink : chaîne interdite, « ${chained} » est à la fois un to et un from`)
+  return entries
+}
+
+/**
+ * État lu en base et sur disque pour une entrée : ids des cartes vivantes (vault) de `from`, nombre de cartes
+ * vivantes déjà sur `to`, titre et hash du fichier `to` (`to_title` null = introuvable ou pas une synthèse),
+ * présence des lignes `notes` de `from` et `to`.
+ */
+export interface RelinkState { from_ids: string[]; to_live: number; to_title: string | null; to_hash: string; from_row: boolean; to_row: boolean }
+
+/** rename : la ligne `from` devient `to` ; insert : `to` créée ; replace : `to` écrasée et `from` retirée ; unchanged : rien. */
+export type RelinkNotesAction = 'rename' | 'insert' | 'replace' | 'unchanged'
+export interface RelinkPlan { from: string; to: string; ids: string[]; source_title: string; content_hash: string; notes: RelinkNotesAction }
+
+/**
+ * Plan de `relink`, calculé pour TOUTES les entrées avant toute écriture : une seule entrée invalide fait tout refuser.
+ * Idempotent : une entrée déjà rattachée (plus rien sur `from`, ligne `to` présente) est `unchanged`.
+ */
+export function planRelink(entries: RelinkEntry[], states: Map<string, RelinkState>): RelinkPlan[] {
+  const errors: string[] = []
+  const plans: RelinkPlan[] = []
+  for (const e of entries) {
+    const st = states.get(e.from)
+    const pending = st !== undefined && (st.from_ids.length > 0 || st.from_row)
+    if (!st || (!pending && !st.to_row)) {
+      errors.push(`${e.from} : rien à rattacher (aucune carte vivante ni ligne notes à cet ancien chemin)`)
+      continue
+    }
+    if (st.to_title === null) {
+      errors.push(`${e.to} : fichier introuvable ou pas une synthèse (type: synthese)`)
+      continue
+    }
+    if (st.from_ids.length > 0 && st.to_live > 0) {
+      errors.push(`${e.to} : a déjà ${st.to_live} carte(s) vivante(s), fusion refusée`)
+      continue
+    }
+    const notes: RelinkNotesAction = !pending ? 'unchanged' : st.to_row ? 'replace' : st.from_row ? 'rename' : 'insert'
+    plans.push({ from: e.from, to: e.to, ids: st.from_ids, source_title: st.to_title, content_hash: st.to_hash, notes })
+  }
+  if (errors.length > 0) throw new Error(`relink refusé, rien n'a été écrit :\n${errors.map(m => '  - ' + m).join('\n')}`)
+  return plans
 }
