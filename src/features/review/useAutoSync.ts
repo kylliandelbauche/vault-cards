@@ -15,7 +15,7 @@ export interface AutoSync extends SyncState {
   syncNow(): void
 }
 
-/** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync par intervalle. */
+/** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync réussi par intervalle. */
 export const RESUME_SYNC_MIN_INTERVAL_MS = 30_000
 
 /** « Synchronisé » seulement si rien n'attend d'être poussé et que le dernier sync a réussi. */
@@ -32,8 +32,8 @@ const reloadable = ({ status, stats }: AutoSyncSession) =>
 
 /**
  * Lance `run` (le sync) au montage, au retour du réseau, quand la session se termine, et au
- * retour au premier plan (`visibilitychange` → visible, `focus`) si le dernier sync a commencé
- * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS. Jamais deux syncs en parallèle : dans l'onglet (`running`), et entre
+ * retour au premier plan (`visibilitychange` → visible, `focus`) si le dernier sync réussi a commencé
+ * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS (un sync en échec ne compte pas : on réessaie au prochain retour). Jamais deux syncs en parallèle : dans l'onglet (`running`), et entre
  * onglets par le verrou Web Locks (withSyncLock) ; un sync sauté parce qu'un autre onglet synchronise ne change pas l'état.
  * Les erreurs sont avalées : hors ligne ou jeton expiré, on réessaiera au prochain déclencheur.
  * Si le sync a ramené des données alors que la session est rechargeable, appelle `restart()`.
@@ -48,7 +48,9 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   const again = useRef(false)
   // Données reçues pendant le chargement initial : à recharger s'il se termine vide.
   const stale = useRef(false)
-  const lastStart = useRef(-Infinity)
+  // Début du dernier sync réussi : un sync en échec, partiel ou sauté ne compte pas (on réessaie au prochain retour).
+  const lastOk = useRef(-Infinity)
+  const currentStart = useRef(-Infinity)
 
   // Données tirées : recharge une session rechargeable, ou le note si elle est encore en chargement.
   const received = useCallback(({ pulledCards, pulledReviews }: SyncResult) => {
@@ -65,10 +67,11 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
     try {
       do {
         again.current = false
-        lastStart.current = Date.now()
+        const started = (currentStart.current = Date.now())
         try {
           const res = await withSyncLock(() => io.current.run())
           if (res === SKIPPED) continue // un autre onglet synchronise : il remplit le cache partagé pour nous
+          lastOk.current = started
           setState(s => ({ ...s, lastSync: 'ok' }))
           received(res)
         } catch (e) {
@@ -89,7 +92,10 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
     const onOnline = () => { void trigger() }
     const onResume = () => {
       if (document.visibilityState !== 'visible') return
-      if (Date.now() - lastStart.current < RESUME_SYNC_MIN_INTERVAL_MS) return
+      const t = Date.now()
+      // Un sync lancé il y a moins de l'intervalle et encore en cours suffit (focus + visibilitychange arrivent ensemble).
+      if (running.current && t - currentStart.current < RESUME_SYNC_MIN_INTERVAL_MS) return
+      if (t - lastOk.current < RESUME_SYNC_MIN_INTERVAL_MS) return
       void trigger()
     }
     window.addEventListener('online', onOnline)

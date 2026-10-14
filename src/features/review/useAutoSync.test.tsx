@@ -197,6 +197,31 @@ describe('useAutoSync : retour au premier plan', () => {
     await flush()
     expect(run).toHaveBeenCalledTimes(1)
   })
+  it('sync en échec : ne compte pas pour l’intervalle, on réessaie au prochain retour au premier plan (#22)', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new Error('hors ligne')).mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    expect(run).toHaveBeenCalledTimes(1) // montage, en échec
+    vi.setSystemTime(T0 + 1000)
+    show()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2) // réessai tout de suite, réussi
+    vi.setSystemTime(T0 + 2000)
+    show()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2) // dernier sync réussi il y a 1 s : rien
+  })
+
+  it('sync partiel (SyncError) : compte comme un échec pour l’intervalle', async () => {
+    const run = vi.fn().mockRejectedValueOnce(new SyncError({ ...NOTHING }, [new Error('réseau coupé')])).mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    vi.setSystemTime(T0 + 1000)
+    focus()
+    await flush()
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
   it('jamais deux syncs en parallèle', async () => {
     const d = deferred<Result>()
     const run = vi.fn().mockReturnValueOnce(d.promise).mockResolvedValue(NOTHING)
