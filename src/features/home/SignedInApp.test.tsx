@@ -53,10 +53,12 @@ describe('SignedInApp : navigation (#53)', () => {
     expect(screen.getByRole('button', { name: 'Réviser à nouveau' })).toBeTruthy()
   })
 
-  it('tap sur un tag : session limitée au tag, nom du tag dans la barre ; chevron → accueil', async () => {
+  it('filtre « Dev & outils » : compteurs du tag, « Commencer à étudier » → session du tag ; filtre gardé au retour', async () => {
     const { user } = renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
+    expect(heading()).toBe("2 cartes à revoir aujourd'hui")
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
     expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
     const seen = new Set<string>()
@@ -68,15 +70,32 @@ describe('SignedInApp : navigation (#53)', () => {
     }
     expect([...seen].sort()).toEqual(['Question b ?', 'Question c ?'])
     await user.click(within(document.querySelector('header')!).getByRole('button', { name: 'Accueil' }))
-    await waitFor(() => expect(heading()).toBe("1 carte à revoir aujourd'hui")) // il reste 'a' (IA)
+    // Même filtre au retour : plus rien de dû dans Dev & outils.
+    await waitFor(() => expect(heading()).toBe("Aucune carte à revoir aujourd'hui"))
+    expect(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }).getAttribute('aria-pressed')).toBe('true')
+    await user.click(screen.getByRole('button', { name: 'Tous, 3 cartes' }))
+    expect(heading()).toBe("1 carte à revoir aujourd'hui") // il reste 'a' (IA)
   })
 
-  it('tags sans carte : grisés et non cliquables', async () => {
+  it('filtre sans carte du jour : « Réviser à nouveau » → révision libre du tag', async () => {
     const { user } = renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
-    await user.click(screen.getByRole('button', { name: 'Sécurité, 0 carte' }))
-    expect(screen.queryByRole('button', { name: 'Afficher la réponse' })).toBeNull()
-    expect(heading()).toBe("3 cartes à revoir aujourd'hui")
+    await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    await rateAll(user)
+    await user.click(await screen.findByRole('button', { name: "Retour à l'accueil" }))
+    await waitFor(() => expect(heading()).toBe("Aucune carte à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Réviser à nouveau' }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
+  })
+
+  it('tags sans carte : absents de la rangée de filtres', async () => {
+    renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    const row = screen.getByRole('list', { name: 'Filtrer les cartes' })
+    expect(within(row).getAllByRole('button').map(b => b.textContent)).toEqual(['Tous', 'IA & agents', 'Dev & outils'])
   })
 
   it('retour au milieu d’une session : accueil à jour et notes déjà données poussées tout de suite', async () => {
