@@ -11,8 +11,10 @@ export interface ManualCardsOptions {
 }
 
 export interface ManualCards {
-  /** Cartes manuelles vivantes, la plus récemment créée ou modifiée d'abord ; null avant le premier chargement. */
+  /** Cartes manuelles vivantes, la plus récemment créée ou modifiée d'abord ; null avant le premier chargement ou en erreur. */
   cards: Card[] | null
+  /** Lecture du cache local en échec (aucun log) : l'écran peut l'afficher au lieu d'une liste vide trompeuse. */
+  error: Error | null
   /** Rejette avec CardValidationError (champ `field`) si la saisie est invalide : rien n'est écrit. */
   create(input: ManualCardInput): Promise<Card>
   update(id: string, patch: Partial<ManualCardInput>): Promise<Card>
@@ -26,13 +28,20 @@ export interface ManualCards {
  */
 export function useManualCards(db: VaultDB, options: ManualCardsOptions = {}): ManualCards {
   const [cards, setCards] = useState<Card[] | null>(null)
+  const [error, setError] = useState<Error | null>(null)
   const opts = useRef(options)
   useEffect(() => { opts.current = options })
 
   useEffect(() => {
     const sub = liveQuery(() => db.cards.filter(c => c.source === 'manual' && c.deleted_at === null).toArray()).subscribe({
-      next: rows => setCards(rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id))),
-      error: () => setCards([]),
+      next: rows => {
+        setError(null)
+        setCards(rows.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id)))
+      },
+      error: (e: unknown) => {
+        setCards(null)
+        setError(e instanceof Error ? e : new Error(String(e)))
+      },
     })
     return () => sub.unsubscribe()
   }, [db])
@@ -42,9 +51,10 @@ export function useManualCards(db: VaultDB, options: ManualCardsOptions = {}): M
     const written = <T>(value: T) => { opts.current.onWrite?.(); return value }
     return {
       cards,
+      error,
       create: async input => written(await createManualCard(db, input, { now })),
       update: async (id, patch) => written(await updateManualCard(db, id, patch, { now })),
       remove: async id => written(await deleteManualCard(db, id, { now })),
     }
-  }, [db, cards])
+  }, [db, cards, error])
 }

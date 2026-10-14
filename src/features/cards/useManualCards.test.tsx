@@ -17,6 +17,7 @@ describe('useManualCards', () => {
     const now = () => new Date((t += 1000))
     const { result } = renderHook(() => useManualCards(db, { onWrite, now }))
     await waitFor(() => expect(result.current.cards).toEqual([]))
+    expect(result.current.error).toBeNull()
 
     let a = '', b = ''
     await act(async () => { a = (await result.current.create({ front: 'A', back: 'R', tags: ['ia'] })).id })
@@ -43,5 +44,16 @@ describe('useManualCards', () => {
     })
     expect(onWrite).not.toHaveBeenCalled()
     expect(await db.cards.count()).toBe(0)
+  })
+})
+
+describe('useManualCards : lecture en échec', () => {
+  afterEach(() => { db = undefined as unknown as VaultDB })
+  it('remonte l’erreur (cards reste null) au lieu de faire croire à une liste vide', async () => {
+    // Cache local inaccessible (IndexedDB refusée ou corrompue) : la lecture lève.
+    const broken = { cards: { filter: () => ({ toArray: () => Promise.reject(new Error('IndexedDB indisponible')) }) } } as unknown as VaultDB
+    const { result } = renderHook(() => useManualCards(broken))
+    await waitFor(() => expect(result.current.error).toBeInstanceOf(Error))
+    expect(result.current.cards).toBeNull()
   })
 })
