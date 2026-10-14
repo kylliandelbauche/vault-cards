@@ -15,6 +15,17 @@ export interface AutoSync extends SyncState {
   syncNow(): void
 }
 
+/**
+ * Sync sauté parce qu'un autre onglet synchronise, alors que des notes attendent : l'autre onglet a pu prendre
+ * son instantané avant elles. On réessaie une fois après ce délai.
+ */
+export const SKIPPED_RETRY_MS = 5_000
+
+export interface AutoSyncOptions {
+  /** Nombre de lignes locales en attente d'envoi (décide du réessai après un sync sauté). */
+  pending?(): Promise<number>
+}
+
 /** Retour au premier plan (onglet, fenêtre, PWA iOS) : au plus un sync réussi par intervalle. */
 export const RESUME_SYNC_MIN_INTERVAL_MS = 30_000
 
@@ -42,11 +53,11 @@ const reloadable = ({ status, stats }: AutoSyncSession) =>
  * Si le sync a ramené des données alors que la session est rechargeable, appelle `restart()`.
  * Session `idle` (écran d'accueil) : rien à recharger, l'accueil suit lui-même le cache local.
  */
-export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>): AutoSync {
+export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncResult>, options: AutoSyncOptions = {}): AutoSync {
   const [state, setState] = useState<SyncState>({ syncing: false, lastSync: null })
   // Dernières valeurs, lues à la fin d'un sync sans en faire des dépendances.
-  const io = useRef({ session, run })
-  useEffect(() => { io.current = { session, run } })
+  const io = useRef({ session, run, options })
+  useEffect(() => { io.current = { session, run, options } })
   const running = useRef(false)
   const again = useRef(false)
   // Données reçues pendant le chargement initial : à recharger s'il se termine vide.
@@ -54,6 +65,18 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
   // Début du dernier sync réussi : un sync en échec, partiel ou sauté ne compte pas (on réessaie au prochain retour).
   const lastOk = useRef(-Infinity)
   const currentStart = useRef(-Infinity)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const mounted = useRef(false)
+  // Dernier `trigger`, pour le réessai programmé (défini plus bas).
+  const triggerRef = useRef<(isRetry?: boolean) => Promise<void>>(async () => {})
+
+  // Réessai unique après un sync sauté, seulement si des notes attendent (sinon l'autre onglet a tout fait).
+  const retryIfPending = useCallback(async () => {
+    const n = await io.current.options.pending?.().catch(() => 0)
+    if (!n || !mounted.current) return
+    clearTimeout(retryTimer.current)
+    retryTimer.current = setTimeout(() => { void triggerRef.current(true) }, SKIPPED_RETRY_MS)
+  }, [])
 
   // Données tirées : recharge une session rechargeable, ou le note si elle est encore en chargement.
   const received = useCallback(({ pulledCards, pulledReviews }: SyncResult) => {
@@ -63,7 +86,7 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
     else if (s.status === 'loading') stale.current = true
   }, [])
 
-  const trigger = useCallback(async () => {
+  const trigger = useCallback(async (isRetry = false) => {
     if (running.current) { again.current = true; return }
     running.current = true
     setState(s => ({ ...s, syncing: true }))
@@ -73,7 +96,10 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
         const started = (currentStart.current = Date.now())
         try {
           const res = await withSyncLock(() => io.current.run())
-          if (res === SKIPPED) continue // un autre onglet synchronise : il remplit le cache partagé pour nous
+          if (res === SKIPPED) { // un autre onglet synchronise : il remplit le cache partagé pour nous
+            if (!isRetry) void retryIfPending()
+            continue
+          }
           lastOk.current = started
           setState(s => ({ ...s, lastSync: 'ok' }))
           received(res)
@@ -88,9 +114,11 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
       running.current = false
       setState(s => ({ ...s, syncing: false }))
     }
-  }, [received])
+  }, [received, retryIfPending])
+  useEffect(() => { triggerRef.current = trigger }, [trigger])
 
   useEffect(() => {
+    mounted.current = true
     void trigger()
     const onOnline = () => { void trigger() }
     const onResume = () => {
@@ -108,6 +136,8 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
       window.removeEventListener('online', onOnline)
       window.removeEventListener('focus', onResume)
       document.removeEventListener('visibilitychange', onResume)
+      mounted.current = false
+      clearTimeout(retryTimer.current)
     }
   }, [trigger])
 

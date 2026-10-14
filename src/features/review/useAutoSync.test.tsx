@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { VaultDB } from '../../lib/db'
 import { SyncError } from '../../lib/sync'
-import { RESUME_SYNC_MIN_INTERVAL_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
+import { RESUME_SYNC_MIN_INTERVAL_MS, SKIPPED_RETRY_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
 
 type Result = { pushed: number; pulledCards: number; pulledReviews: number }
 const NOTHING: Result = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
@@ -279,6 +279,57 @@ describe('useAutoSync : un seul sync entre onglets (Web Locks)', () => {
     expect(run).not.toHaveBeenCalled()
     expect(result.current).toMatchObject({ syncing: false, lastSync: null })
     expect(s.restart).not.toHaveBeenCalled()
+  })
+})
+
+describe('useAutoSync : sync sauté (autre onglet) avec des notes en attente (#22)', () => {
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
+  /** Verrou tenu ailleurs pour les `busy` premières demandes, libre ensuite. */
+  const stubLocks = (busy: number) => {
+    let calls = 0
+    vi.stubGlobal('navigator', { ...navigator, locks: { request: vi.fn((_n: string, _o: LockOptions, cb: (l: Lock | null) => unknown) =>
+      Promise.resolve(cb(calls++ < busy ? null : { name: 'vault-cards-sync', mode: 'exclusive' }))) } })
+  }
+  const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms) })
+
+  it('notes en attente : un seul réessai après SKIPPED_RETRY_MS', async () => {
+    vi.useFakeTimers()
+    stubLocks(1)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending: async () => 2 }))
+    await tick(0)
+    expect(run).not.toHaveBeenCalled()
+    await tick(SKIPPED_RETRY_MS - 1)
+    expect(run).not.toHaveBeenCalled()
+    await tick(1)
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('réessai sauté lui aussi : pas d’autre réessai (une fois seulement)', async () => {
+    vi.useFakeTimers()
+    stubLocks(10)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const pending = vi.fn(async () => 1)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending }))
+    await tick(10 * SKIPPED_RETRY_MS)
+    expect(run).not.toHaveBeenCalled()
+    expect(pending).toHaveBeenCalledTimes(1)
+  })
+
+  it('rien en attente : pas de réessai ; démontage : le réessai prévu est annulé', async () => {
+    vi.useFakeTimers()
+    stubLocks(1)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending: async () => 0 }))
+    await tick(2 * SKIPPED_RETRY_MS)
+    expect(run).not.toHaveBeenCalled()
+
+    stubLocks(1)
+    const { unmount } = renderHook(() => useAutoSync(sessionIn('reviewing'), run, { pending: async () => 3 }))
+    await tick(0)
+    unmount()
+    await tick(2 * SKIPPED_RETRY_MS)
+    expect(run).not.toHaveBeenCalled()
   })
 })
 
