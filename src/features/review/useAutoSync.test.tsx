@@ -202,6 +202,38 @@ describe('useAutoSync : retour au premier plan', () => {
   })
 })
 
+describe('useAutoSync : un seul sync entre onglets (Web Locks)', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+  /** Faux navigator.locks dont le verrou est déjà tenu (ou non) par un autre onglet. */
+  const stubLocks = (heldElsewhere: boolean) => {
+    const request = vi.fn((_name: string, _opts: LockOptions, cb: (lock: Lock | null) => unknown) =>
+      Promise.resolve(cb(heldElsewhere ? null : { name: 'vault-cards-sync', mode: 'exclusive' })))
+    vi.stubGlobal('navigator', { ...navigator, locks: { request } })
+    return request
+  }
+
+  it('verrou libre : le sync passe sous le verrou « vault-cards-sync »', async () => {
+    const request = stubLocks(false)
+    const run = vi.fn().mockResolvedValue(NOTHING)
+    const { result } = renderHook(() => useAutoSync(sessionIn('reviewing'), run))
+    await flush()
+    expect(request).toHaveBeenCalledWith('vault-cards-sync', { ifAvailable: true }, expect.any(Function))
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(result.current.lastSync).toBe('ok')
+  })
+
+  it('verrou tenu par un autre onglet : pas de sync, ni ok ni échec, rien à recharger', async () => {
+    stubLocks(true)
+    const s = sessionIn('empty')
+    const run = vi.fn().mockResolvedValue(CARDS)
+    const { result } = renderHook(() => useAutoSync(s, run))
+    await flush()
+    expect(run).not.toHaveBeenCalled()
+    expect(result.current).toMatchObject({ syncing: false, lastSync: null })
+    expect(s.restart).not.toHaveBeenCalled()
+  })
+})
+
 describe('usePendingCount', () => {
   let db: VaultDB
   beforeEach(() => { db = new VaultDB('test-' + crypto.randomUUID()) })

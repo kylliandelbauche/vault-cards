@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import type { VaultDB } from '../../lib/db'
 import { pendingCount } from '../../lib/sync'
+import { SKIPPED, withSyncLock } from '../../lib/syncLock'
 import type { SyncIndicator } from '../../components/TopBar'
 import type { ReviewSession } from './useReviewSession'
 
@@ -32,7 +33,8 @@ const reloadable = ({ status, stats }: AutoSyncSession) =>
 /**
  * Lance `run` (le sync) au montage, au retour du réseau, quand la session se termine, et au
  * retour au premier plan (`visibilitychange` → visible, `focus`) si le dernier sync a commencé
- * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS. Jamais deux syncs en parallèle.
+ * il y a au moins RESUME_SYNC_MIN_INTERVAL_MS. Jamais deux syncs en parallèle : dans l'onglet (`running`), et entre
+ * onglets par le verrou Web Locks (withSyncLock) ; un sync sauté parce qu'un autre onglet synchronise ne change pas l'état.
  * Les erreurs sont avalées : hors ligne ou jeton expiré, on réessaiera au prochain déclencheur.
  * Si le sync a ramené des données alors que la session est rechargeable, appelle `restart()`.
  * Session `idle` (écran d'accueil) : rien à recharger, l'accueil suit lui-même le cache local.
@@ -57,7 +59,9 @@ export function useAutoSync(session: AutoSyncSession, run: () => Promise<SyncRes
         again.current = false
         lastStart.current = Date.now()
         try {
-          const { pulledCards, pulledReviews } = await io.current.run()
+          const res = await withSyncLock(() => io.current.run())
+          if (res === SKIPPED) continue // un autre onglet synchronise : il remplit le cache partagé pour nous
+          const { pulledCards, pulledReviews } = res
           setState(s => ({ ...s, lastSync: 'ok' }))
           if (pulledCards + pulledReviews === 0) continue
           const s = io.current.session
