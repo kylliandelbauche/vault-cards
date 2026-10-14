@@ -43,11 +43,12 @@ export type Database = {
         Row: {
           back: string
           created_at: string
-          deck: string
+          deck: string | null
           deleted_at: string | null
           front: string
           id: string
-          source_path: string
+          source: string
+          source_path: string | null
           source_title: string | null
           tags: string[]
           updated_at: string
@@ -55,11 +56,12 @@ export type Database = {
         Insert: {
           back: string
           created_at?: string
-          deck: string
+          deck?: string | null
           deleted_at?: string | null
           front: string
           id?: string
-          source_path: string
+          source?: string
+          source_path?: string | null
           source_title?: string | null
           tags?: string[]
           updated_at?: string
@@ -67,11 +69,12 @@ export type Database = {
         Update: {
           back?: string
           created_at?: string
-          deck?: string
+          deck?: string | null
           deleted_at?: string | null
           front?: string
           id?: string
-          source_path?: string
+          source?: string
+          source_path?: string | null
           source_title?: string | null
           tags?: string[]
           updated_at?: string
