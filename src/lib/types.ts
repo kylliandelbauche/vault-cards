@@ -18,4 +18,9 @@ export interface Review {
   rating: Rating
   reviewed_at: string // ISO
   synced: 0 | 1 // 0 = à pousser
+  /**
+   * Local seulement, jamais envoyé : notée en révision libre (« Réviser à nouveau »). La première note d'une carte
+   * en révision libre ne consomme pas le quota de nouvelles du jour. Absent sur les reviews tirées du serveur.
+   */
+  free?: boolean
 }

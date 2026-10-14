@@ -43,6 +43,21 @@ describe('quota du jour : jour local', () => {
   })
 })
 
+describe('quota du jour : révision libre (#22)', () => {
+  const cards = Array.from({ length: 30 }, (_, i) => card(`n${i}`))
+  const fresh = (reviews: Review[]) => buildQueue(cards, reviews, now, 20).filter(i => i.state.reps === 0).length
+
+  it('une nouvelle notée en révision libre ne consomme pas le quota (une autre nouvelle prend sa place)', () => {
+    expect(fresh([{ ...rv('n0', ago(10)), free: true }, { ...rv('n1', ago(9)), free: true }])).toBe(20)
+    expect(buildQueue(cards, [{ ...rv('n0', ago(10)), free: true }], now, 20).filter(i => i.state.reps === 0).map(i => i.card.id)).not.toContain('n0')
+  })
+
+  it('seule la première note compte : vue en session normale puis revue en libre → décomptée ; l’inverse → non', () => {
+    expect(fresh([rv('n0', ago(10)), { ...rv('n0', ago(5)), free: true }])).toBe(19)
+    expect(fresh([{ ...rv('n0', ago(10)), free: true }, rv('n0', ago(5))])).toBe(20)
+  })
+})
+
 describe('countKinds / nextDue', () => {
   it('compte nouvelles / en apprentissage / dues', () => {
     const q = buildQueue([card('n'), card('l'), card('d')],

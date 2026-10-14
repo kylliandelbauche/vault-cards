@@ -52,6 +52,8 @@ export interface ReviewSession {
 interface State {
   /** Session à laquelle cet état appartient (identité de l'objet) ; un état d'une autre session est ignoré. */
   scope: SessionScope | null
+  /** File chargée : du jour (`due`) ou révision libre (`all`, notes marquées `free`). */
+  mode: SessionScope['mode']
   status: Status
   queue: SessionItem[]
   revealed: boolean
@@ -71,7 +73,7 @@ interface State {
 export const SCREEN_CHANGE_GUARD_MS = 400
 
 const ZERO: Stats = { again: 0, hard: 0, good: 0 }
-const INITIAL: State = { scope: null, status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
+const INITIAL: State = { scope: null, mode: 'due', status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
 const failed = (scope: SessionScope): State => ({ ...INITIAL, scope, status: 'error' })
 const STAT_KEY = { 1: 'again', 2: 'hard', 3: 'good' } as const
 const systemNow = () => new Date()
@@ -113,6 +115,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
       commit({
         ...INITIAL,
         scope: target,
+        mode,
         status: queue.length ? 'reviewing' : hasLiveCards ? 'done' : 'empty',
         queue,
         nextDueAt: queue.length ? null : nextDue(cs, rs, t, target.tag),
@@ -152,6 +155,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         rating: r,
         reviewed_at: now().toISOString(),
         synced: 0,
+        ...(s.mode === 'all' && { free: true }),
       }
       try {
         await store.addReview(review)

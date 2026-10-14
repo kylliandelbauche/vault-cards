@@ -46,6 +46,15 @@ describe('homeStats : compteurs', () => {
     expect(homeStats(cs.slice(0, 5), [], now).fresh).toBe(5)
   })
 
+  it('nouvelles notées en révision libre : quota intact, mêmes chiffres que la file de la session (#22)', () => {
+    const cs = Array.from({ length: 30 }, (_, i) => card(`n${i}`))
+    const free = [{ ...rv('n0', ago(120)), free: true }, { ...rv('n1', ago(119)), free: true }]
+    const s = homeStats(cs, free, now)
+    expect(s.fresh).toBe(20)
+    expect(s.today).toBe(buildQueue(cs, free, now).length)
+    expect(s.tags.find(t => t.slug === 'ia')!.today).toBe(buildQueue(cs, free, now, undefined, 'ia').length)
+  })
+
   it('cartes du jour = dues + nouvelles = taille exacte de la file « Commencer à étudier »', () => {
     const cs = [...Array.from({ length: 25 }, (_, i) => card(`n${i}`)), card('d1'), card('d2')]
     const rs = [rv('d1', '2026-09-01T10:00:00Z'), rv('d2', '2026-09-02T10:00:00Z'), rv('n0', ago(120))]

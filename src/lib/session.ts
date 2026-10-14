@@ -23,11 +23,14 @@ export function scheduleItems(cards: Card[], grouped: Map<string, Review[]>): Se
   return cards.filter(c => !c.deleted_at).map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
 }
 
-/** Cartes vues pour la première fois aujourd'hui (jour local), toutes cartes confondues. */
+/**
+ * Cartes introduites aujourd'hui (jour local), toutes cartes confondues : première note aujourd'hui, donnée
+ * hors révision libre (une nouvelle découverte en « Réviser à nouveau » ne consomme pas le quota).
+ */
 function introducedToday(grouped: Map<string, Review[]>, now: Date) {
   return [...grouped.values()].filter(rs => {
     const first = rs.reduce((a, b) => (a.reviewed_at < b.reviewed_at ? a : b))
-    return sameLocalDay(new Date(first.reviewed_at), now)
+    return !first.free && sameLocalDay(new Date(first.reviewed_at), now)
   }).length
 }
 

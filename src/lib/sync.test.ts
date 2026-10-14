@@ -5,7 +5,7 @@ import { buildQueue } from './session'
 import type { supabase } from './supabase'
 import type { Card, Review } from './types'
 
-type ServerReview = Omit<Review, 'synced'> & { inserted_at: string }
+type ServerReview = Omit<Review, 'synced' | 'free'> & { inserted_at: string }
 
 /**
  * Faux serveur Supabase en mémoire : attribue lui-même `updated_at` / `inserted_at`,
@@ -50,7 +50,7 @@ function fakeServer() {
       reviews.set(r.id, { ...r, inserted_at: stamp() })
     },
     remote: {
-      pushReviews: vi.fn(async (rows: Omit<Review, 'synced'>[]) => {
+      pushReviews: vi.fn(async (rows: Omit<Review, 'synced' | 'free'>[]) => {
         if (server.failPush === 'before') throw new Error('réseau coupé')
         const at = stamp()
         for (const r of rows) if (!reviews.has(r.id)) reviews.set(r.id, { ...r, inserted_at: at })
@@ -340,6 +340,15 @@ describe('sync : seuls les vrais changements comptent (pas de restart() inutile)
     await sync(db, server.remote)
 
     expect(await db.reviews.get('r1')).toEqual(review('r1', 'a', 1))
+  })
+
+  it('révision libre : le marqueur local free n’est jamais envoyé et survit à la relecture par le pull', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' })
+    await db.reviews.add({ ...review('r1', 'a'), free: true })
+    await sync(db, server.remote)
+    expect(server.remote.pushReviews).toHaveBeenCalledWith([{ id: 'r1', card_id: 'a', rating: 3, reviewed_at: '2026-10-13T08:00:00.000Z' }])
+    expect(await db.reviews.get('r1')).toEqual({ ...review('r1', 'a', 1), free: true })
   })
 
   it('review d’un autre appareil : comptée une fois', async () => {

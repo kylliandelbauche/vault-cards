@@ -2,7 +2,9 @@ import type { VaultDB } from './db'
 import type { supabase } from './supabase'
 import type { Card, Rating, Review } from './types'
 
-type ServerReview = Omit<Review, 'synced'> & { inserted_at: string }
+/** Colonnes d'une review côté serveur (`synced` et `free` sont locaux). */
+type ReviewRow = Pick<Review, 'id' | 'card_id' | 'rating' | 'reviewed_at'>
+type ServerReview = ReviewRow & { inserted_at: string }
 
 /**
  * Position dans un pull : dernière ligne reçue, dans l'ordre (horodatage serveur, id).
@@ -11,7 +13,7 @@ type ServerReview = Omit<Review, 'synced'> & { inserted_at: string }
 export interface Cursor { at: string; id: string }
 
 export interface Remote {
-  pushReviews(rows: Omit<Review, 'synced'>[]): Promise<void>
+  pushReviews(rows: ReviewRow[]): Promise<void>
   /** Au plus `limit` cartes strictement après `after` dans l'ordre (updated_at, id), triées dans cet ordre. */
   pullCards(after: Cursor | null, limit: number): Promise<Card[]>
   /** Au plus `limit` reviews strictement après `after` dans l'ordre (inserted_at, id), triées dans cet ordre. */
