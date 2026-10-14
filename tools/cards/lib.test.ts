@@ -423,9 +423,13 @@ describe('cartes manuelles (#54) : jamais touchées par l’outil', () => {
 
   it('cli.ts : toute lecture ou modification de cards passe par vaultOnly, et les insertions sont source vault', async () => {
     const cli = await fs.readFile(path.join(import.meta.dirname, 'cli.ts'), 'utf8')
-    const uses = cli.match(/\.from\('cards'\)/g) ?? []
+    // Guillemets simples, doubles ou backticks : toute mention de la table compte.
+    const uses = cli.match(/\.from\(\s*['"`]cards['"`]\s*\)/g) ?? []
     const filtered = cli.match(/vaultOnly\(db\.from\('cards'\)\.(select|update)\(/g) ?? []
     const inserts = cli.match(/db\.from\('cards'\)\.insert\(/g) ?? []
+    // Aucun autre chemin vers la table : pas de nom de table ailleurs que dans .from(…), pas d'appel RPC.
+    expect(cli.match(/['"`]cards['"`]/g) ?? []).toHaveLength(uses.length)
+    expect(cli).not.toMatch(/\.rpc\(/)
     expect(uses.length).toBeGreaterThan(0)
     expect(filtered.length + inserts.length).toBe(uses.length)
     expect(inserts.length).toBe(1)

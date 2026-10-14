@@ -36,10 +36,11 @@ describe('buildQueue', () => {
 describe('cartes manuelles (#54) : sans source_path', () => {
   it('nouvelles manuelles et vault mélangées : pas d’erreur, manuelles d’abord (créées exprès), puis l’ordre habituel', () => {
     const now = new Date('2026-10-14T10:00:00Z')
-    const manual = (id: string) => card(id, { source: 'manual', deck: null, source_path: null })
-    const q = buildQueue([card('v2'), manual('m2'), card('v1'), manual('m1')], [], now)
-    expect(q.map(i => i.card.id)).toEqual(['m1', 'm2', 'v1', 'v2'])
-    expect(nextDue([manual('m1')], [], now)).toBeNull()
+    const manual = (id: string, created_at: string) => card(id, { source: 'manual', deck: null, source_path: null, created_at })
+    // UUID aléatoires : l'ordre des id ne dit rien ; les manuelles suivent leur date de création.
+    const q = buildQueue([card('v2'), manual('m-a', '2026-10-14T09:00:00Z'), card('v1'), manual('m-z', '2026-10-14T08:00:00Z'), manual('m-b', '2026-10-14T09:00:00Z')], [], now)
+    expect(q.map(i => i.card.id)).toEqual(['m-z', 'm-a', 'm-b', 'v1', 'v2'])
+    expect(nextDue([manual('m1', '2026-10-14T08:00:00Z')], [], now)).toBeNull()
   })
 })
 

@@ -71,6 +71,7 @@ export interface WriteOptions {
 
 /** Crée une carte manuelle dans le cache local (visible aussitôt dans les sessions et compteurs), à envoyer. */
 export async function createManualCard(db: VaultDB, input: ManualCardInput, { now = () => new Date(), uuid = () => crypto.randomUUID() }: WriteOptions = {}): Promise<Card> {
+  const at = now().toISOString()
   const card: Card = {
     id: uuid(),
     source: 'manual',
@@ -78,7 +79,8 @@ export async function createManualCard(db: VaultDB, input: ManualCardInput, { no
     source_path: null,
     source_title: null,
     ...validateManualCard(input),
-    updated_at: now().toISOString(),
+    created_at: at,
+    updated_at: at,
     deleted_at: null,
     synced: 0,
   }

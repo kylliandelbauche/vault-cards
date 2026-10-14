@@ -43,7 +43,7 @@ export class VaultDB extends Dexie {
         await tx.table('cards').toCollection().modify(addMissingSourceTitle)
         await tx.table('meta').delete('cursor:cards')
       })
-    // v4 : cartes manuelles (#54). Colonne `source` remplie côté serveur → règle ci-dessus (cursor:cards supprimé).
+    // v4 : cartes manuelles (#54). Colonnes `source` et `created_at` désormais tirées du serveur → règle ci-dessus (cursor:cards supprimé).
     // Index `synced` : file d'envoi des cartes manuelles (absent sur les cartes tirées du serveur, donc non indexées).
     this.version(4)
       .stores({ cards: 'id, updated_at, source_path, *tags, synced' })

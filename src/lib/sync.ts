@@ -78,7 +78,7 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
   },
 
   async pullCards(cursor, limit) {
-    let q = client.from('cards').select('id, source, deck, source_path, source_title, tags, front, back, updated_at, deleted_at')
+    let q = client.from('cards').select('id, source, deck, source_path, source_title, tags, front, back, created_at, updated_at, deleted_at')
     if (cursor) q = q.or(after('updated_at', cursor))
     const rows = rowsOf(await q.order('updated_at').order('id').limit(limit))
     return rows.map(c => ({ ...c, source: c.source as CardSource })) // contrainte SQL : 'vault' ou 'manual'

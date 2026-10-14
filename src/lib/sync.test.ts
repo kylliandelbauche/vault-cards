@@ -518,7 +518,7 @@ describe('supabaseRemote', () => {
     expect(got).toHaveLength(1000)
     expect(calls).toHaveLength(1)
     expect(calls[0].ops).toEqual([
-      ['select', 'id, source, deck, source_path, source_title, tags, front, back, updated_at, deleted_at'],
+      ['select', 'id, source, deck, source_path, source_title, tags, front, back, created_at, updated_at, deleted_at'],
       ['or', `updated_at.gt."${at}",and(updated_at.eq."${at}",id.gt."abc")`],
       ['order', 'updated_at'],
       ['order', 'id'],

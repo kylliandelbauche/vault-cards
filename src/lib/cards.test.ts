@@ -59,7 +59,7 @@ describe('createManualCard', () => {
     const card = await createManualCard(db, { front: ' Q ', back: ' R ', tags: ['ia'] }, opts())
     expect(card).toEqual({
       id: '11111111-1111-4111-8111-111111111111', source: 'manual', deck: null, source_path: null, source_title: null,
-      tags: ['ia'], front: 'Q', back: 'R', updated_at: NOW.toISOString(), deleted_at: null, synced: 0,
+      tags: ['ia'], front: 'Q', back: 'R', created_at: NOW.toISOString(), updated_at: NOW.toISOString(), deleted_at: null, synced: 0,
     })
     expect(await db.cards.get(card.id)).toEqual(card)
     expect(await pendingCount(db)).toBe(1)

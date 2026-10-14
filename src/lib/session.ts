@@ -35,6 +35,17 @@ function introducedToday(grouped: Map<string, Review[]>, now: Date) {
 }
 
 /**
+ * Ordre des nouvelles cartes. Cartes manuelles (#54) d'abord (pas de source_path : créées exprès pour être apprises),
+ * dans l'ordre de création (leur id est un UUID aléatoire) ; puis cartes du vault par note, puis id.
+ */
+function freshOrder({ card: a }: SessionItem, { card: b }: SessionItem) {
+  const byPath = (a.source_path ?? '').localeCompare(b.source_path ?? '')
+  if (byPath) return byPath
+  const byCreation = a.source === 'manual' && b.source === 'manual' ? (a.created_at ?? '').localeCompare(b.created_at ?? '') : 0
+  return byCreation || a.id.localeCompare(b.id)
+}
+
+/**
  * File du jour à partir d'éléments déjà planifiés : dues (échéance la plus ancienne d'abord), puis nouvelles
  * dans la limite du quota restant. Avec `tag`, seules les cartes du tag ; le quota reste global
  * (les nouvelles déjà vues aujourd'hui, tous tags confondus, sont décomptées).
@@ -44,8 +55,7 @@ export function queueOf(items: SessionItem[], grouped: Map<string, Review[]>, no
   const due = scoped.filter(i => !isNew(i.state) && i.state.due <= now)
     .sort((a, b) => a.state.due.getTime() - b.state.due.getTime())
   const fresh = scoped.filter(i => isNew(i.state))
-    // Carte manuelle (#54) : pas de source_path, clé vide → avant les cartes du vault (créée exprès pour être apprise).
-    .sort((a, b) => (a.card.source_path ?? '').localeCompare(b.card.source_path ?? '') || a.card.id.localeCompare(b.card.id))
+    .sort(freshOrder)
     .slice(0, Math.max(0, newLimit - introducedToday(grouped, now)))
   return [...due, ...fresh]
 }

@@ -12,6 +12,8 @@ export interface Card {
   tags: string[] // slugs de shared/tags.ts (0 à 2) ; inconnu = ignoré à l'affichage
   front: string
   back: string
+  /** Création (horodatage serveur ; pour une carte manuelle pas encore envoyée, horloge de l'appareil). Absent d'un vieux cache. */
+  created_at?: string
   updated_at: string
   deleted_at: string | null
   /**
