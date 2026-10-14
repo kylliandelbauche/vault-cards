@@ -235,9 +235,10 @@ export const reviewsOutbox: Outbox<Review> = {
 }
 
 /**
- * Files envoyées à chaque sync, dans cet ordre. Une file en échec arrête les suivantes (elles peuvent en
- * dépendre : les cartes créées sur l'appareil, #54, partent avant leurs reviews à cause de la clé étrangère
- * reviews.card_id) ; le pull a lieu quand même.
+ * Files envoyées à chaque sync, dans cet ordre : les cartes créées sur l'appareil (#54) avant les reviews (clé étrangère
+ * reviews.card_id). Chaque file est tentée même si une précédente a échoué : une carte refusée durablement ne bloque pas
+ * les reviews des autres cartes. La dépendance est tenue par reviewsOutbox.pending, qui écarte les reviews d'une carte
+ * pas encore envoyée. Une file en échec fait échouer le sync (badge « Non synchronisé ») ; le pull a lieu quand même.
  */
 export const OUTBOX: readonly OutboxQueue[] = [outboxQueue(cardsOutbox), outboxQueue(reviewsOutbox)]
 
@@ -274,10 +275,12 @@ export interface SyncOptions {
 export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE, outbox = OUTBOX }: SyncOptions = {}): Promise<SyncResult> {
   const result: SyncResult = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
   const errors: unknown[] = []
-  try {
-    for (const queue of outbox) result.pushed += await queue.push(db, remote)
-  } catch (e) {
-    errors.push(e)
+  for (const queue of outbox) {
+    try {
+      result.pushed += await queue.push(db, remote)
+    } catch (e) {
+      errors.push(e)
+    }
   }
   try {
     await pullAll(db, CURSOR_CARDS, db.cards, (a, n) => remote.pullCards(a, n), c => c.updated_at,

@@ -247,18 +247,25 @@ describe('sync : files d’envoi (préparation #54)', () => {
     push: async () => { log.push(name); if (fail) throw new Error(`${name} refusé`); return count },
   })
 
-  it('les files partent dans l’ordre ; une file en échec arrête les suivantes, le pull a lieu', async () => {
+  it('les files partent dans l’ordre, chacune tentée même si une précédente échoue ; le sync échoue quand même, le pull a lieu', async () => {
     const server = fakeServer()
     server.putCard({ id: 'a' })
     const log: string[] = []
 
-    const err = await sync(db, server.remote, { outbox: [queue('cartes', log, { fail: true }), queue('reviews', log)] }).catch((e: unknown) => e)
+    const err = await sync(db, server.remote, { outbox: [queue('cartes', log, { fail: true }), queue('reviews', log, { count: 2 })] }).catch((e: unknown) => e)
 
-    expect(log).toEqual(['cartes'])
+    expect(log).toEqual(['cartes', 'reviews'])
+    expect(err).toBeInstanceOf(SyncError)
     expect((err as SyncError).message).toBe('cartes refusé')
+    expect((err as SyncError).result.pushed).toBe(2) // ce que les autres files ont envoyé compte
     expect(await db.cards.count()).toBe(1)
     expect((await sync(db, server.remote, { outbox: [queue('cartes', log), queue('reviews', log, { count: 2 })] })).pushed).toBe(3)
-    expect(log).toEqual(['cartes', 'cartes', 'reviews'])
+    expect(log).toEqual(['cartes', 'reviews', 'cartes', 'reviews'])
+  })
+
+  it('deux files en échec : les deux erreurs sont remontées', async () => {
+    const err = await sync(db, fakeServer().remote, { outbox: [queue('cartes', [], { fail: true }), queue('reviews', [], { fail: true })] }).catch((e: unknown) => e)
+    expect((err as SyncError).message).toBe('cartes refusé ; reviews refusé')
   })
 
   it('pendingCount additionne toutes les files', async () => {
@@ -600,7 +607,7 @@ describe('sync : cartes manuelles (#54)', () => {
     expect(local.synced).not.toBe(0)
   })
 
-  it('envoi des cartes en échec : la review de la carte attend (rien n’est envoyé), puis carte → review au sync suivant', async () => {
+  it('envoi des cartes en échec : la review de la carte attend (aucune review à envoyer), puis carte → review au sync suivant', async () => {
     const server = fakeServer()
     server.enforceFk = true
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] })
@@ -617,6 +624,23 @@ describe('sync : cartes manuelles (#54)', () => {
     expect(server.cards.has(card.id)).toBe(true)
     expect(server.reviews.has('r1')).toBe(true)
     expect(await pendingCount(db)).toBe(0)
+  })
+
+  it('carte refusée durablement par la base : les reviews des autres cartes partent quand même, la sienne attend ; sync en échec', async () => {
+    const server = fakeServer()
+    server.enforceFk = true
+    server.putCard({ id: 'v' })
+    await db.cards.add({ ...server.cards.get('v')! })
+    const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] })
+    await db.reviews.bulkAdd([review('r-manuelle', card.id), review('r-vault', 'v')])
+    server.remote.pushCards.mockRejectedValue(new Error('invalid byte sequence'))
+
+    for (let i = 0; i < 2; i++) await expect(sync(db, server.remote)).rejects.toThrow('invalid byte sequence')
+
+    expect([...server.reviews.keys()]).toEqual(['r-vault'])
+    expect((await db.reviews.get('r-vault'))!.synced).toBe(1)
+    expect((await db.reviews.get('r-manuelle'))!.synced).toBe(0)
+    expect(await pendingCount(db)).toBe(2) // la carte et sa review restent à envoyer (badge « Non synchronisé »)
   })
 
   it('une review sur une carte encore à envoyer n’est pas dans la file des reviews (même créée pendant l’envoi des cartes)', async () => {
