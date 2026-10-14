@@ -1,7 +1,6 @@
 import type { Card as CardData } from '../../lib/types'
 import { humanizeFileName } from '../../../shared/source-title'
 import { getTag, type TagDef } from '../../../shared/tags'
-import { tagColorVars } from '../../lib/tagColor'
 
 interface Props {
   card: CardData
@@ -34,7 +33,7 @@ export function CardView({ card, revealed, onReveal }: Props) {
   )
 }
 
-/** Pastilles de texte (libellé seul, pas d'icône). Tag inconnu (liste locale plus ancienne que la base) : ignoré. Doublon : affiché une fois. */
+/** Pastilles de texte en verre neutre (libellé seul : ni icône ni couleur, #63). Tag inconnu (liste locale plus ancienne que la base) : ignoré. Doublon : affiché une fois. */
 function TagPills({ slugs }: { slugs: readonly string[] | null | undefined }) {
   const tags = [...new Set(slugs ?? [])].map(getTag).filter((t): t is TagDef => t !== undefined)
   if (tags.length === 0) return null
@@ -42,13 +41,7 @@ function TagPills({ slugs }: { slugs: readonly string[] | null | undefined }) {
     // role="list" : sans puces (preflight Tailwind), Safari/VoiceOver retire sinon la sémantique de liste.
     <ul role="list" className="mt-2 flex flex-wrap gap-1.5" aria-label="Tags">
       {tags.map(t => (
-        <li
-          key={t.slug}
-          className="tag-pill rounded-full px-2 py-0.5 text-xs leading-5 font-medium"
-          style={tagColorVars(t.color)}
-        >
-          {t.label}
-        </li>
+        <li key={t.slug} className="tag-pill rounded-full px-2 py-0.5 text-xs leading-5 font-medium">{t.label}</li>
       ))}
     </ul>
   )
