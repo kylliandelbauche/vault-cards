@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { withTimeout } from './fetchTimeout'
 import type { Database } from './supabase-types'
 
 const url = import.meta.env.VITE_SUPABASE_URL
@@ -11,4 +12,6 @@ export const AUTH_STORAGE_KEY = 'vault-cards-auth'
 
 export const supabase = createClient<Database>(url, key, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: AUTH_STORAGE_KEY },
+  // Chaque requête est bornée : une requête bloquée ne garde pas le verrou de synchro (Web Locks) indéfiniment.
+  global: { fetch: withTimeout((input, init) => fetch(input, init)) },
 })
