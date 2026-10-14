@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle } from './lib.ts'
+import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle, vaultOnly, VAULT_SOURCE } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 
@@ -409,5 +409,26 @@ describe('cardsNeedingTitle', () => {
       { id: '4', source_title: null },
     ]
     expect(cardsNeedingTitle(existing, 'T', new Set(['3']), new Set(['4']))).toEqual(['1'])
+  })
+})
+
+describe('cartes manuelles (#54) : jamais touchées par l’outil', () => {
+  it('vaultOnly ajoute le filtre source = vault et renvoie la requête chaînable', () => {
+    const calls: [string, string][] = []
+    const q = { eq(column: string, value: string) { calls.push([column, value]); return q } }
+    expect(vaultOnly(q)).toBe(q)
+    expect(calls).toEqual([['source', VAULT_SOURCE]])
+    expect(VAULT_SOURCE).toBe('vault')
+  })
+
+  it('cli.ts : toute lecture ou modification de cards passe par vaultOnly, et les insertions sont source vault', async () => {
+    const cli = await fs.readFile(path.join(import.meta.dirname, 'cli.ts'), 'utf8')
+    const uses = cli.match(/\.from\('cards'\)/g) ?? []
+    const filtered = cli.match(/vaultOnly\(db\.from\('cards'\)\.(select|update)\(/g) ?? []
+    const inserts = cli.match(/db\.from\('cards'\)\.insert\(/g) ?? []
+    expect(uses.length).toBeGreaterThan(0)
+    expect(filtered.length + inserts.length).toBe(uses.length)
+    expect(inserts.length).toBe(1)
+    expect(cli).toMatch(/source: VAULT_SOURCE/)
   })
 })

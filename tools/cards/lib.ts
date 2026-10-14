@@ -327,3 +327,16 @@ export function computeScan(files: NoteFile[], rows: NoteRow[]): { changed: Note
     .sort()
   return { changed, removed }
 }
+
+/** Origine des cartes que l'outil gère. Les cartes `manual` (créées dans l'app, #54) ne sont jamais lues ni écrites par lui. */
+export const VAULT_SOURCE = 'vault'
+
+/**
+ * Restreint une requête PostgREST sur `cards` (select ou update) aux cartes du vault. Seule porte d'accès de
+ * cli.ts à la table (vérifié par lib.test.ts) : scan, existing, all, apply, retag et titles ignorent les cartes manuelles.
+ */
+export function vaultOnly<Q>(query: Q): Q {
+  // Typage minimal volontaire : contraindre Q au constructeur de requêtes PostgREST fait exploser l'inférence (TS2589).
+  // Les filtres PostgREST renvoient la requête elle-même (this).
+  return (query as Q & { eq(column: string, value: string): Q }).eq('source', VAULT_SOURCE)
+}
