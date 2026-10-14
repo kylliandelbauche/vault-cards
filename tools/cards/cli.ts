@@ -1,12 +1,13 @@
 // Outil local (Mac) : lit les notes de veille du vault et écrit les cartes dans Supabase avec la clé secrète.
 // Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles
+// Cartes : uniquement source = 'vault' (vaultOnly) ; les cartes créées à la main dans l'app (#54) ne sont jamais lues ni modifiées.
 // Sortie : JSON sur stdout uniquement. Erreurs sur stderr, code 1. Aucune valeur de variable d'environnement n'est jamais affichée.
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload,
+  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
   type ExistingCard, type NoteRow, type RetagTarget, type TitledCard,
 } from './lib.ts'
 import { extractTitle } from '../../shared/source-title.ts'
@@ -45,9 +46,7 @@ function fail(step: string, error: { message: string }): never {
 }
 
 async function fetchExisting(db: SupabaseClient, sourcePath: string): Promise<(ExistingCard & { source_title: string | null })[]> {
-  const { data, error } = await db
-    .from('cards')
-    .select('id, front, back, tags, source_title')
+  const { data, error } = await vaultOnly(db.from('cards').select('id, front, back, tags, source_title'))
     .eq('source_path', sourcePath)
     .is('deleted_at', null)
     .order('created_at')
@@ -57,9 +56,7 @@ async function fetchExisting(db: SupabaseClient, sourcePath: string): Promise<(E
 
 /** Toutes les cartes vivantes (lecture seule) : base de la procédure de re-tag. */
 async function fetchAll(db: SupabaseClient) {
-  const { data, error } = await db
-    .from('cards')
-    .select('id, source_path, source_title, front, back, tags')
+  const { data, error } = await vaultOnly(db.from('cards').select('id, source_path, source_title, front, back, tags'))
     .is('deleted_at', null)
     .order('source_path')
     .order('created_at')
@@ -74,9 +71,7 @@ async function fetchLiveCardPaths(db: SupabaseClient, paths: string[]): Promise<
   const rows: { source_path: string }[] = []
   for (const group of chunk(paths, PATHS_PER_QUERY)) {
     for (let from = 0; ; from += PAGE_SIZE) {
-      const { data, error } = await db
-        .from('cards')
-        .select('source_path')
+      const { data, error } = await vaultOnly(db.from('cards').select('source_path'))
         .in('source_path', group)
         .is('deleted_at', null)
         .order('id')
@@ -128,14 +123,12 @@ async function apply(file: string, confirmDelete: number | null) {
 
   // Chaque étape lève en cas d'échec : le hash de la note n'est alors pas écrit et elle sera retraitée au prochain scan.
   if (toInsert.length > 0) {
-    const rows = toInsert.map(c => ({ deck, source_path, source_title, front: c.front, back: c.back, tags: c.tags }))
+    const rows = toInsert.map(c => ({ source: VAULT_SOURCE, deck, source_path, source_title, front: c.front, back: c.back, tags: c.tags }))
     const { error } = await db.from('cards').insert(rows)
     if (error) fail('ajout des cartes', error)
   }
   for (const c of toUpdate) {
-    const { error } = await db
-      .from('cards')
-      .update({ front: c.front, back: c.back, tags: c.tags, source_title })
+    const { error } = await vaultOnly(db.from('cards').update({ front: c.front, back: c.back, tags: c.tags, source_title }))
       .eq('id', c.id)
       .eq('source_path', source_path)
     if (error) fail(`modification de la carte ${c.id}`, error)
@@ -146,16 +139,14 @@ async function apply(file: string, confirmDelete: number | null) {
     ? []
     : cardsNeedingTitle(existing, source_title, new Set(toUpdate.map(c => c.id)), new Set(toDelete))
   if (titleIds.length > 0) {
-    const { data, error } = await db.from('cards').update({ source_title }).in('id', titleIds).eq('source_path', source_path).is('deleted_at', null).select('id')
+    const { data, error } = await vaultOnly(db.from('cards').update({ source_title })).in('id', titleIds).eq('source_path', source_path).is('deleted_at', null).select('id')
     if (error) fail('mise à jour du titre des cartes', error)
     if (data.length !== titleIds.length) {
       throw new Error(`mise à jour du titre des cartes de ${source_path} : ${data.length} ligne(s) modifiée(s) sur ${titleIds.length} (cartes supprimées entre-temps ? relancer apply)`)
     }
   }
   if (toDelete.length > 0) {
-    const { error } = await db
-      .from('cards')
-      .update({ deleted_at: new Date().toISOString() })
+    const { error } = await vaultOnly(db.from('cards').update({ deleted_at: new Date().toISOString() }))
       .in('id', toDelete)
       .eq('source_path', source_path)
     if (error) fail('suppression des cartes', error)
@@ -175,14 +166,14 @@ async function retag(db: SupabaseClient, file: string) {
   const existing: RetagTarget[] = []
   const ids = entries.map(e => e.id)
   for (let i = 0; i < ids.length; i += 100) {
-    const { data, error } = await db.from('cards').select('id, tags, deleted_at').in('id', ids.slice(i, i + 100))
+    const { data, error } = await vaultOnly(db.from('cards').select('id, tags, deleted_at')).in('id', ids.slice(i, i + 100))
     if (error) fail('lecture des cartes', error)
     existing.push(...(data as RetagTarget[]))
   }
   const { toUpdate, unchanged } = planRetag(existing, entries)
   // Pas de transaction, mais idempotent : après une erreur, relancer le même fichier (les cartes déjà à jour sont « unchanged »).
   for (const e of toUpdate) {
-    const { data, error } = await db.from('cards').update({ tags: e.tags }).eq('id', e.id).is('deleted_at', null).select('id')
+    const { data, error } = await vaultOnly(db.from('cards').update({ tags: e.tags })).eq('id', e.id).is('deleted_at', null).select('id')
     if (error) fail(`re-tag de la carte ${e.id}`, error)
     if (data.length === 0) throw new Error(`re-tag de la carte ${e.id} : aucune ligne modifiée (supprimée entre-temps ?)`)
   }
@@ -197,9 +188,7 @@ async function retag(db: SupabaseClient, file: string) {
 async function titles(db: SupabaseClient) {
   const cards: TitledCard[] = []
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await db
-      .from('cards')
-      .select('id, source_path, source_title')
+    const { data, error } = await vaultOnly(db.from('cards').select('id, source_path, source_title'))
       .is('deleted_at', null)
       .order('id')
       .range(from, from + PAGE_SIZE - 1)
@@ -219,7 +208,7 @@ async function titles(db: SupabaseClient) {
   let updated = 0
   for (const g of toUpdate) {
     for (const ids of chunk(g.ids, 100)) {
-      const { data, error } = await db.from('cards').update({ source_title: g.source_title }).in('id', ids).is('deleted_at', null).select('id')
+      const { data, error } = await vaultOnly(db.from('cards').update({ source_title: g.source_title })).in('id', ids).is('deleted_at', null).select('id')
       if (error) fail('mise à jour du titre des cartes', error)
       if (data.length !== ids.length) throw new Error(`mise à jour du titre « ${g.source_title} » : ${data.length} ligne(s) modifiée(s) sur ${ids.length} (cartes supprimées entre-temps ? relancer)`)
       updated += data.length

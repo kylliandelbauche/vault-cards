@@ -1,5 +1,5 @@
 export interface SafeSignOutDeps {
-  /** Nombre de reviews locales pas encore poussées (`synced: 0`). */
+  /** Nombre de lignes locales pas encore poussées (reviews et cartes manuelles `synced: 0`). */
   pending(): Promise<number>
   /** Synchro complète ; rejette hors ligne. */
   sync(): Promise<unknown>
@@ -8,7 +8,7 @@ export interface SafeSignOutDeps {
 }
 
 export const unsyncedWarning = (n: number) =>
-  `${n} ${n > 1 ? 'révisions pas encore synchronisées seront perdues' : 'révision pas encore synchronisée sera perdue'} si tu te déconnectes. Te déconnecter quand même ?`
+  `${n} ${n > 1 ? 'modifications pas encore synchronisées (révisions, cartes) seront perdues' : 'modification pas encore synchronisée (révision ou carte) sera perdue'} si tu te déconnectes. Te déconnecter quand même ?`
 
 /**
  * Déconnexion sans perdre de révisions : s'il en reste à pousser, on tente d'abord une synchro ;

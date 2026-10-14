@@ -17,6 +17,7 @@ const RAW: [path: string, front: string, back: string][] = [
 
 export const SAMPLE_CARDS: Card[] = RAW.map(([source_path, front, back], i) => ({
   id: `sample-${i}`,
+  source: 'vault' as const,
   deck: source_path.split('/')[0],
   source_path,
   tags: [],

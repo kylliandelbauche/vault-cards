@@ -2,6 +2,9 @@ import type { Card as CardData } from '../../lib/types'
 import { humanizeFileName } from '../../../shared/source-title'
 import { getTag, type TagDef } from '../../../shared/tags'
 
+/** Ligne de titre d'une carte créée à la main (#54), qui n'a pas de note source. Libellé provisoire, à remplacer par la maquette. */
+export const MANUAL_CARD_LABEL = 'Carte perso'
+
 interface Props {
   card: CardData
   revealed: boolean
@@ -14,7 +17,7 @@ interface Props {
  * Titre de la source sur une ligne tronquée ; sans titre (cache d'avant #35), nom de fichier humanisé. Jamais le chemin local.
  */
 export function CardView({ card, revealed, onReveal }: Props) {
-  const title = card.source_title?.trim() || humanizeFileName(card.source_path)
+  const title = card.source_title?.trim() || (card.source_path ? humanizeFileName(card.source_path) : MANUAL_CARD_LABEL)
   return (
     <article
       className={`glass-card mt-[6dvh] shrink-0 rounded-[28px] p-5 text-black dark:text-white ${revealed ? '' : 'cursor-pointer'}`}

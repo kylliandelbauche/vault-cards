@@ -11,7 +11,12 @@ export function addMissingSourceTitle(card: { source_title?: unknown }): void {
   if (typeof card.source_title !== 'string') card.source_title = null
 }
 
-/** Cache local (IndexedDB) : cartes, reviews (`synced: 0` = à pousser) et curseurs de synchro. */
+/** Upgrade v4 : les cartes mises en cache avant #54 viennent toutes du vault. */
+export function addMissingSource(card: { source?: unknown }): void {
+  if (card.source !== 'vault' && card.source !== 'manual') card.source = 'vault'
+}
+
+/** Cache local (IndexedDB) : cartes et reviews (`synced: 0` = à pousser) et curseurs de synchro. */
 export class VaultDB extends Dexie {
   cards!: Table<Card, string>
   reviews!: Table<Review, string>
@@ -36,6 +41,14 @@ export class VaultDB extends Dexie {
       .stores({ cards: 'id, updated_at, source_path, *tags' })
       .upgrade(async tx => {
         await tx.table('cards').toCollection().modify(addMissingSourceTitle)
+        await tx.table('meta').delete('cursor:cards')
+      })
+    // v4 : cartes manuelles (#54). Colonnes `source` et `created_at` désormais tirées du serveur → règle ci-dessus (cursor:cards supprimé).
+    // Index `synced` : file d'envoi des cartes manuelles (absent sur les cartes tirées du serveur, donc non indexées).
+    this.version(4)
+      .stores({ cards: 'id, updated_at, source_path, *tags, synced' })
+      .upgrade(async tx => {
+        await tx.table('cards').toCollection().modify(addMissingSource)
         await tx.table('meta').delete('cursor:cards')
       })
   }

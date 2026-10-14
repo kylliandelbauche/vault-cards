@@ -5,7 +5,7 @@ import type { Card } from '../../lib/types'
 import { msUntilNextLocalDay, useHomeData } from './useHomeData'
 
 const card = (id: string, tags: string[]): Card => ({
-  id, deck: 'x', tags, source_path: `x/${id}.md`, front: id, back: id, updated_at: '2026-10-01T00:00:00Z', deleted_at: null,
+  id, source: 'vault', deck: 'x', tags, source_path: `x/${id}.md`, front: id, back: id, updated_at: '2026-10-01T00:00:00Z', deleted_at: null,
 })
 const now = () => new Date('2026-10-13T10:00:00Z')
 let db: VaultDB
