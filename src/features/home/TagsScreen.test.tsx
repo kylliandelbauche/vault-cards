@@ -9,7 +9,7 @@ import { TagsScreen } from './TagsScreen'
 const COUNTS: Record<string, [number, number]> = { ia: [7, 2], dev: [3, 3], culture: [5, 0] }
 const stats: HomeStats = {
   today: 5, due: 2, fresh: 3, mastered: 0, total: 15, nextDueAt: null,
-  tags: TAGS.map(t => ({ ...t, count: COUNTS[t.slug]?.[0] ?? 0, today: COUNTS[t.slug]?.[1] ?? 0 })),
+  tags: TAGS.map(t => ({ ...t, total: COUNTS[t.slug]?.[0] ?? 0, today: COUNTS[t.slug]?.[1] ?? 0 })),
 }
 const SURFACES = '.glass, .glass-card, .glass-btn:not(.on-glass)'
 
@@ -54,9 +54,20 @@ describe('TagsScreen', () => {
   })
 })
 
-describe('TagsScreen : texte seul', () => {
+describe('TagsScreen : texte seul, verre neutre (#63)', () => {
   it('aucun emoji rendu', () => {
     renderTags()
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
+  })
+
+  it('aucune couleur par tag : verre neutre, sans style en ligne ; vides grisés (tag-chip-empty)', () => {
+    const { container } = renderTags()
+    const buttons = within(screen.getByRole('list')).getAllByRole('button')
+    for (const b of buttons) {
+      expect(b.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn-neutral', 'on-glass', 'tag-chip']))
+      expect(b.getAttribute('style') ?? '').not.toMatch(/--chip|--tag/)
+    }
+    expect(container.innerHTML).not.toMatch(/--tag-[a-z]+-fg|--chip-fg/)
+    expect(buttons.slice(3).every(b => b.className.includes('tag-chip-empty'))).toBe(true)
   })
 })

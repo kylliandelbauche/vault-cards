@@ -3,23 +3,28 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { TAGS } from '../../../shared/tags'
-import type { HomeStats } from '../../lib/home'
+import type { HomeStats, TagCount } from '../../lib/home'
 import { HomeScreen } from './HomeScreen'
 import type { HomeData } from './useHomeData'
 
 const now = () => new Date('2026-10-13T10:00:00Z')
+const COUNTS: Record<string, [number, number]> = { ia: [7, 5], dev: [3, 0], culture: [5, 1] }
+const tagCounts = (): TagCount[] => TAGS.map(t => ({ ...t, total: COUNTS[t.slug]?.[0] ?? 0, today: COUNTS[t.slug]?.[1] ?? 0 }))
 const stats = (over: Partial<HomeStats> = {}): HomeStats => ({
-  today: 12, due: 4, fresh: 8, mastered: 30, total: 50, nextDueAt: null,
-  tags: TAGS.map(t => ({ ...t, count: t.slug === 'ia' ? 7 : t.slug === 'dev' ? 3 : t.slug === 'culture' ? 5 : 0, today: 0 })),
-  ...over,
+  today: 12, due: 4, fresh: 8, mastered: 30, total: 50, nextDueAt: null, tags: tagCounts(), ...over,
 })
 const ready = (over: Partial<HomeStats> = {}): HomeData => ({ status: 'ready', stats: stats(over) })
 
-function renderHome(data: HomeData = ready(), handlers: { onStudy?: () => void; onReviewAll?: () => void; onSignOut?: () => void } = {}) {
+interface Handlers { onStudy?: () => void; onReviewAll?: () => void; onSignOut?: () => void }
+
+function renderHome(data: HomeData = ready(), handlers: Handlers = {}) {
   const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onSignOut: vi.fn(), onOpenTags: vi.fn(), ...handlers }
   const r = render(<KApp theme="ios"><HomeScreen data={data} now={now} sync="synced" {...props} /></KApp>)
   return { ...r, ...props }
 }
+
+const chipRow = () => screen.getByRole('list', { name: 'Réviser un tag' })
+const chips = () => within(chipRow()).getAllByRole('button')
 
 // Surfaces floutées : les boutons `on-glass` (verre imité, sans backdrop-filter) n'en sont pas.
 const BLURRED = ['.glass', '.glass-card', '.glass-btn:not(.on-glass)']
@@ -63,16 +68,58 @@ describe('HomeScreen', () => {
     expect(values).toEqual(['4', '8', '30'])
   })
 
-  it('Mes tags : 4 tags au plus, triés par nombre de cartes décroissant (vides en dernier) ; tap → session du tag', async () => {
-    const { onStudy } = renderHome()
-    const list = within(screen.getByRole('region', { name: 'Mes tags' })).getByRole('list')
-    const buttons = within(list).getAllByRole('button')
-    expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['IA & agents, 7 cartes', 'Culture, 5 cartes', 'Dev & outils, 3 cartes', 'Sécurité, 0 carte'])
-    expect(buttons[0].textContent).toBe('IA & agents7')
+  it('compteurs : pastille colorée décorative (orange, bleu, vert), aria-hidden', () => {
+    const { container } = renderHome()
+    const dots = [...container.querySelectorAll('dt > span')]
+    expect(dots.map(d => d.className.match(/bg-dot-\w+/)?.[0])).toEqual(['bg-dot-due', 'bg-dot-new', 'bg-dot-mastered'])
+    for (const d of dots) expect(d.getAttribute('aria-hidden')).toBe('true')
+  })
+
+  it('grand chiffre mis en avant, puis le texte (même titre)', () => {
+    renderHome()
+    const big = screen.getByRole('heading', { level: 1 }).firstElementChild as HTMLElement
+    expect(big.textContent).toBe('12')
+    expect(big.className).toMatch(/text-\[52px\]/)
+    expect(big.className).toMatch(/\bfont-bold\b/)
+  })
+
+  it('tags = raccourcis : les tags non vides triés par nombre de cartes, texte seul ; tags vides absents ; rien de sélectionnable', () => {
+    renderHome()
+    expect(chips().map(b => b.getAttribute('aria-label'))).toEqual(['IA & agents, 7 cartes', 'Culture, 5 cartes', 'Dev & outils, 3 cartes'])
+    expect(chips().map(b => b.textContent)).toEqual(['IA & agents', 'Culture', 'Dev & outils'])
+    expect(screen.queryByRole('button', { name: /^Tous/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Sécurité/ })).toBeNull()
+    for (const b of chips()) {
+      expect(b.hasAttribute('aria-pressed')).toBe(false)
+      expect(b.className.split(' ')).toContain('glass-btn-neutral')
+      expect(b.className).not.toContain('glass-btn-new')
+    }
     // Aucun emoji rendu : un tag est du texte seul.
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
+  })
+
+  it('tap sur un tag : session du tag ; le bloc du jour reste celui de toutes les cartes', async () => {
+    const { onStudy } = renderHome()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
     expect(onStudy).toHaveBeenCalledWith('dev')
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("12 cartes à revoir aujourd'hui")
+    expect(screen.getAllByRole('definition').map(d => d.textContent)).toEqual(['4', '8', '30'])
+  })
+
+  it('rangée défilante : classe chip-row, chips sans retour à la ligne ni rétrécissement, cibles ≥ 44 px', () => {
+    renderHome()
+    expect(chipRow().className.split(' ')).toEqual(expect.arrayContaining(['chip-row', 'flex']))
+    for (const li of within(chipRow()).getAllByRole('listitem')) expect(li.className).toContain('shrink-0')
+    for (const b of chips()) {
+      expect(b.className).toMatch(/\bwhitespace-nowrap\b/)
+      expect(b.className).toMatch(/\bmin-h-11\b/)
+    }
+  })
+
+  it('aucune couleur par tag : ni style en ligne, ni jeton --tag-<couleur>', () => {
+    const { container } = renderHome()
+    for (const b of chips()) expect(b.getAttribute('style') ?? '').not.toMatch(/--chip|--tag/)
+    expect(container.innerHTML).not.toMatch(/--tag-[a-z]+-fg|--chip-fg/)
   })
 
   it('« Mes tags › » : toute la ligne du titre (≥ 44 px) ouvre la page de tous les tags', async () => {
@@ -85,26 +132,6 @@ describe('HomeScreen', () => {
     expect(onOpenTags).toHaveBeenCalledTimes(1)
   })
 
-  it('tags sans carte : grisés, aria-disabled, non cliquables ; cibles ≥ 44 px', async () => {
-    const { onStudy } = renderHome()
-    const empty = screen.getByRole('button', { name: 'Sécurité, 0 carte' })
-    expect(empty.getAttribute('aria-disabled')).toBe('true')
-    expect(empty.className).toContain('tag-chip-empty')
-    expect(empty.getAttribute('style') ?? '').not.toContain('--chip')
-    await userEvent.setup().click(empty)
-    expect(onStudy).not.toHaveBeenCalled()
-    const ia = screen.getByRole('button', { name: 'IA & agents, 7 cartes' })
-    expect(ia.hasAttribute('aria-disabled')).toBe(false)
-    // Couleur propre au tag : verre teinté et texte dans la couleur du tag.
-    expect(ia.style.getPropertyValue('--chip-bg')).toBe('') // verre neutre : aucun remplissage coloré
-    expect(ia.style.getPropertyValue('--chip-fg')).toBe('var(--tag-violet-fg)')
-    const dev = screen.getByRole('button', { name: 'Dev & outils, 3 cartes' })
-    expect(dev.style.getPropertyValue('--chip-fg')).toBe('var(--tag-bleu-fg)')
-    // Verre imité (posé sur la carte « Mes tags ») : bouton en verre sans flou propre.
-    expect(ia.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'on-glass', 'tag-chip']))
-    for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|min-h-12|size-11|h-14)\b/)
-  })
-
   it('surfaces floutées : barre + carte du jour + carte des tags = 3, aucune imbriquée ; bouton, pastilles et compteurs sans flou', () => {
     const { container } = renderHome()
     expect(container.querySelectorAll(SURFACES)).toHaveLength(3)
@@ -112,6 +139,7 @@ describe('HomeScreen', () => {
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
     for (const el of container.querySelectorAll('dl div')) expect(el.className).not.toMatch(/glass|backdrop|blur/)
     for (const el of container.querySelectorAll('.tag-chip')) expect(el.className).toContain('on-glass')
+    for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|size-11|h-14)\b/)
   })
 
   it('barre du haut en verre : titre, état de synchro, déconnexion ; pas de bouton « Créer une carte »', async () => {
@@ -125,13 +153,13 @@ describe('HomeScreen', () => {
     expect(screen.queryByRole('button', { name: /Créer/ })).toBeNull()
   })
 
-  it('aucune carte : message habituel, pas de bouton d’étude, tous les tags grisés', () => {
+  it('aucune carte : message habituel, pas de bouton d’étude, aucun raccourci de tag', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
-    renderHome(ready({ today: 0, due: 0, fresh: 0, mastered: 0, total: 0, tags: TAGS.map(t => ({ ...t, count: 0, today: 0 })) }))
+    const empty = TAGS.map(t => ({ ...t, total: 0, today: 0 }))
+    renderHome(ready({ today: 0, due: 0, fresh: 0, mastered: 0, total: 0, tags: empty }))
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("Aucune carte pour l'instant. Lance /flashcards sur le Mac.")
     expect(screen.queryByRole('button', { name: /Commencer|Réviser/ })).toBeNull()
-    const tags = within(within(screen.getByRole('region', { name: 'Mes tags' })).getByRole('list')).getAllByRole('button')
-    expect(tags.every(b => b.getAttribute('aria-disabled') === 'true')).toBe(true)
+    expect(within(chipRow()).queryAllByRole('button')).toHaveLength(0)
   })
 
   it('chargement puis erreur de lecture du cache', () => {

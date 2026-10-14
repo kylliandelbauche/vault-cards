@@ -2,9 +2,8 @@ import { Page, Preloader } from 'konsta/react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { BarTitle, EDGES, SignOutButton, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { formatInterval } from '../../lib/format'
-import { HOME_TAGS, sortTags, todaySuffix, type HomeStats, type TagCount } from '../../lib/home'
+import { cards, shortcutTags, todaySuffix, type HomeStats, type TagCount } from '../../lib/home'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
-import { TagChip } from './TagChip'
 import type { HomeData } from './useHomeData'
 
 interface Props {
@@ -15,14 +14,14 @@ interface Props {
   onStudy(tag?: string): void
   /** « Réviser à nouveau » quand rien n'est dû : révision libre de toutes les cartes. */
   onReviewAll(): void
-  /** Flèche « › » de « Mes tags » : page de tous les tags. */
+  /** Ligne « Mes tags › » : page de tous les tags. */
   onOpenTags(): void
   onSignOut?(): void
 }
 
 /**
- * Écran d'accueil (#53). Surfaces floutées : barre du haut, carte « aujourd'hui », carte « Mes tags » (3, aucune
- * imbriquée). Le bouton d'action, les compteurs et les pastilles de tags sont posés sur les cartes, sans flou propre.
+ * Écran d'accueil (#53, #63). Surfaces floutées : barre du haut, carte « aujourd'hui », carte « Mes tags » (3,
+ * aucune imbriquée). Le bouton d'action, les compteurs et les tags sont posés sur les cartes, sans flou propre.
  */
 export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, onSignOut }: Props) {
   return (
@@ -57,10 +56,17 @@ interface TodayProps {
   onReviewAll(): void
 }
 
+const COUNTERS = [
+  { label: 'À revoir', key: 'due', dot: 'bg-dot-due' },
+  { label: 'Nouvelles', key: 'fresh', dot: 'bg-dot-new' },
+  { label: 'Maîtrisées', key: 'mastered', dot: 'bg-dot-mastered' },
+] as const
+
 /**
- * Bloc principal : cartes du jour, 3 compteurs et le bouton d'action, dans la même carte en verre. Chiffres et
- * libellés neutres (noir / blanc, label-2). Le bouton est en verre imité (`on-glass` : teinte, lueur, liseré,
- * reflet, sans backdrop-filter) : pas de flou imbriqué.
+ * Bloc du jour (maquette 1, #63), toutes les cartes : grand chiffre mis en avant suivi de « cartes à revoir aujourd'hui » (même
+ * ligne si la largeur le permet), 3 compteurs en tuiles avec pastille colorée décorative, puis le bouton d'action,
+ * dans la même carte en verre. Chiffres et libellés neutres. Le bouton est en verre imité (`on-glass` : teinte,
+ * lueur, liseré, reflet, sans backdrop-filter) : pas de flou imbriqué.
  */
 function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
   if (stats.total === 0) {
@@ -73,17 +79,12 @@ function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
       </h1>
     )
   }
-  const counters = [
-    { label: 'À revoir', n: stats.due, dot: 'bg-hard-pill' },
-    { label: 'Nouvelles', n: stats.fresh, dot: 'bg-new-pill' },
-    { label: 'Maîtrisées', n: stats.mastered, dot: 'bg-good-pill' },
-  ]
   return (
     <section aria-labelledby="today" className="glass-card rounded-[28px] p-5 text-black dark:text-white">
       {stats.today > 0 ? (
-        <h1 id="today" className="text-[22px] leading-tight font-semibold">
-          <span className="text-[44px] leading-none font-bold tabular-nums">{stats.today}</span>
-          {' '}{todaySuffix(stats.today)}
+        <h1 id="today" className="flex flex-wrap items-baseline gap-x-2 text-[19px] leading-tight font-semibold">
+          <span className="text-[52px] leading-[1.05] font-bold tracking-tight tabular-nums">{stats.today}</span>
+          {' '}<span>{todaySuffix(stats.today)}</span>
         </h1>
       ) : (
         <>
@@ -95,13 +96,13 @@ function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
       )}
       {/* Pavés opaques (léger voile neutre), jamais floutés : pas de flou imbriqué dans la carte. */}
       <dl className="mt-4 grid grid-cols-3 gap-2">
-        {counters.map(c => (
+        {COUNTERS.map(c => (
           <div key={c.label} className="flex flex-col-reverse items-center rounded-2xl bg-black/4 px-1 py-2.5 dark:bg-white/7">
             <dt className="flex items-center gap-1.5 text-[13px] leading-4 text-label-2">
               <span aria-hidden="true" className={`size-2 shrink-0 rounded-full ${c.dot}`} />
               {c.label}
             </dt>
-            <dd className="text-[26px] leading-8 font-bold tabular-nums">{c.n}</dd>
+            <dd className="text-[28px] leading-8 font-bold tabular-nums">{stats[c.key]}</dd>
           </div>
         ))}
       </dl>
@@ -113,13 +114,14 @@ function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
 }
 
 /**
- * « Mes tags » : les HOME_TAGS tags les plus fournis (vides en dernier). Toute la ligne du titre (≥ 44 px)
- * ouvre la page de tous les tags.
+ * « Mes tags » (#63) : la ligne du titre (≥ 44 px) ouvre la page de tous les tags ; dessous, une rangée défilante
+ * de raccourcis : les tags non vides, triés par nombre de cartes, en verre neutre (texte seul). Tap → session du
+ * tag, comme sur la page Mes tags. Rien n'est sélectionnable.
  */
 function Tags({ tags, onStudy, onOpenTags }: { tags: TagCount[]; onStudy(tag: string): void; onOpenTags(): void }) {
   return (
-    <section aria-labelledby="tags-title" className="glass-card rounded-[28px] p-4 text-black dark:text-white">
-      <h2 className="mb-2">
+    <section aria-labelledby="tags-title" className="glass-card rounded-[28px] pt-4 pb-3 text-black dark:text-white">
+      <h2 className="mx-4">
         <button
           type="button"
           onClick={onOpenTags}
@@ -132,9 +134,19 @@ function Tags({ tags, onStudy, onOpenTags }: { tags: TagCount[]; onStudy(tag: st
           </svg>
         </button>
       </h2>
-      <ul role="list" className="grid auto-rows-fr grid-cols-2 gap-2">
-        {sortTags(tags).slice(0, HOME_TAGS).map(t => (
-          <li key={t.slug}><TagChip tag={t} onStudy={onStudy} variant="grid" /></li>
+      {/* Pleine largeur de la carte (les chips glissent jusqu'au bord) ; marges internes = alignement du titre. */}
+      <ul role="list" aria-label="Réviser un tag" className="chip-row flex gap-2 scroll-px-4 px-4 py-1">
+        {shortcutTags(tags).map(t => (
+          <li key={t.slug} className="shrink-0">
+            <GlassButton
+              tone="neutral"
+              aria-label={`${t.label}, ${cards(t.total)}`}
+              onClick={() => onStudy(t.slug)}
+              className="on-glass tag-chip flex min-h-11 items-center rounded-full px-4 text-[15px] leading-tight font-medium whitespace-nowrap"
+            >
+              {t.label}
+            </GlassButton>
+          </li>
         ))}
       </ul>
     </section>

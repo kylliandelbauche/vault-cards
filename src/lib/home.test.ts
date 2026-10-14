@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { TAGS } from '../../shared/tags'
-import { cards as cardsLabel, homeStats, isMastered, MASTERED_STABILITY_DAYS, sortTags, todaySuffix, type TagCount } from './home'
+import { cards as cardsLabel, homeStats, isMastered, MASTERED_STABILITY_DAYS, shortcutTags, sortTags, todaySuffix, type TagCount } from './home'
 import { stateFromReviews } from './scheduler'
 import { buildQueue } from './session'
 import type { Card, Review } from './types'
@@ -76,6 +76,9 @@ describe('homeStats : compteurs', () => {
   })
 })
 
+const tag = (slug: string, total: number): TagCount =>
+  ({ ...TAGS.find(t => t.slug === slug)!, total, today: 0 })
+
 describe('homeStats : tags', () => {
   it('les 8 tags dans l’ordre de shared/tags.ts ; une carte à 2 tags compte dans les deux ; tags vides à 0', () => {
     const s = homeStats(
@@ -83,7 +86,7 @@ describe('homeStats : tags', () => {
       [], now,
     )
     expect(s.tags.map(t => t.slug)).toEqual(TAGS.map(t => t.slug))
-    const count = Object.fromEntries(s.tags.map(t => [t.slug, t.count]))
+    const count = Object.fromEntries(s.tags.map(t => [t.slug, t.total]))
     expect(count).toMatchObject({ ia: 3, dev: 1, securite: 0, culture: 0 })
   })
 
@@ -94,15 +97,31 @@ describe('homeStats : tags', () => {
     expect(today).toMatchObject({ ia: 2, dev: 1, culture: 0 })
   })
 
+  it('par tag : file du jour = celle de la session du tag', () => {
+    const cs = [card('d', ['dev', 'ia']), card('n1', ['ia']), card('later', ['culture'])]
+    const rs = [rv('d', '2026-09-01T10:00:00Z'), rv('later', ago(1))]
+    const s = homeStats(cs, rs, now)
+    for (const t of s.tags) expect(t.today).toBe(buildQueue(cs, rs, now, undefined, t.slug).length)
+  })
+
+  it('par tag : le quota de nouvelles reste global (nouvelles vues aujourd’hui hors du tag décomptées)', () => {
+    const cs = [...Array.from({ length: 25 }, (_, i) => card(`n${i}`, ['ia'])), card('x', ['dev'])]
+    const s = homeStats(cs, [rv('x', ago(30))], now)
+    expect(s.tags.find(t => t.slug === 'ia')!.today).toBe(19)
+  })
+
   it('tri : nombre de cartes décroissant, vides en dernier, ordre de shared/tags.ts à égalité', () => {
-    const tag = (slug: string, count: number) => ({ ...TAGS.find(t => t.slug === slug)!, count, today: 0 }) as TagCount
     const sorted = sortTags([tag('ia', 2), tag('dev', 5), tag('securite', 0), tag('marketing', 2), tag('argent', 0)])
     expect(sorted.map(t => t.slug)).toEqual(['dev', 'ia', 'marketing', 'securite', 'argent'])
   })
 
+  it('raccourcis de l’accueil : tags non vides seulement, triés', () => {
+    expect(shortcutTags([tag('ia', 2), tag('dev', 5), tag('securite', 0)]).map(t => t.slug)).toEqual(['dev', 'ia'])
+  })
+
   it('cache ancien sans `tags` : ignoré sans erreur', () => {
     const s = homeStats([card('a', null as unknown as string[])], [], now)
-    expect(s.tags.every(t => t.count === 0)).toBe(true)
+    expect(s.tags.every(t => t.total === 0)).toBe(true)
   })
 })
 

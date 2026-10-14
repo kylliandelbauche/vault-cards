@@ -14,7 +14,7 @@ interface Props {
 }
 
 /**
- * Page « Mes tags » (#53) : les 8 tags, triés comme sur l'accueil. Surfaces floutées : barre du haut et carte
+ * Page « Mes tags » (#53) : les 8 tags (vides compris, grisés), triés comme sur l'accueil ; tap → session du tag. Surfaces floutées : barre du haut et carte
  * de la liste (2) ; les pastilles posées sur la carte n'ont pas de flou.
  */
 export function TagsScreen({ data, sync, onStudy, onBack }: Props) {
@@ -35,7 +35,7 @@ export function TagsScreen({ data, sync, onStudy, onBack }: Props) {
             <h1 id="all-tags" className="mb-3 px-1 text-[22px] leading-tight font-semibold">Mes tags</h1>
             <ul role="list" className="flex flex-col gap-2">
               {sortTags(data.stats.tags).map(t => (
-                <li key={t.slug}><TagChip tag={t} onStudy={onStudy} variant="row" /></li>
+                <li key={t.slug}><TagChip tag={t} onStudy={onStudy} /></li>
               ))}
             </ul>
           </section>

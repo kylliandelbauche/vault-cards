@@ -33,6 +33,9 @@
   --color-again-pill: var(--again-pill);
   --color-hard-pill: var(--hard-pill);
   --color-good-pill: var(--good-pill);
+  --color-dot-due: var(--dot-due);
+  --color-dot-new: var(--dot-new);
+  --color-dot-mastered: var(--dot-mastered);
 }
 
 :root {
@@ -94,24 +97,15 @@
   --good-pill: #1f8a3c;
 
   /*
-   * Couleur des tags (shared/tags.ts → clé `color`, #53) : teintes douces et désaturées, de simples repères.
-   * Texte du tag, liseré et lueur des pastilles en verre neutre. Ratio = pire cas sur le fond réel (fond décoratif
-   * saturé, carte en verre, verre de la pastille, lueur pleine sous le texte, survol / appui compris), AA ≥ 4,5:1.
+   * Pastilles des compteurs du bloc du jour (#63) : couleurs système Apple (orange, bleu, vert), décoratives
+   * (aria-hidden, le libellé porte le sens).
    */
-  --tag-violet-fg: #af52de; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-bleu-fg: #0a84ff; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-rouge-fg: #ff3b30; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-orange-fg: #ff9f0a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-vert-fg: #34c759; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-rose-fg: #ff2d55; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-jaune-fg: #ffcc00; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-turquoise-fg: #30b0c7; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --dot-due: #ff9500;
+  --dot-new: #007aff;
+  --dot-mastered: #34c759;
   /* Tag sans carte (#53) : texte gris sur la carte en verre ; pire cas (fond décoratif saturé) : 5,60:1. */
   --tag-empty-fg: #58585d;
-  /* Pastilles de tags (#53) : lueur et liseré de la couleur du tag, plus discrets que sur les boutons de notation. */
-  --chip-glow: 16%;
-  --chip-rim: 41%; /* ~18 % plus doux que le bouton « Commencer à étudier » */
-  --chip-hover-mix: 10%; /* survol : lumière teintée de la couleur du tag */
+  /* Tags (#63) : verre neutre comme les boutons de notation, aucune couleur par tag. */
   --chip-body: var(--glass-btn-bg);
   --chip-text: #111114; /* texte neutre, comme les boutons de notation */
   --chip-sheen: rgb(255 255 255 / 0.1);
@@ -163,24 +157,12 @@
   --hard-glass: #ffd685;
   --good-glass: #93f0ad;
 
-  /* Couleur des tags, sombre : teintes claires et douces. */
-  --tag-violet-fg: #bf5af2; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-bleu-fg: #0a84ff; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-rouge-fg: #ff453a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-orange-fg: #ff9f0a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-vert-fg: #30d158; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-rose-fg: #ff375f; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-jaune-fg: #ffd60a; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
-  --tag-turquoise-fg: #40c8e0; /* couleur système Apple : liseré et lueur seulement (texte neutre) */
+  --dot-due: #ff9f0a;
+  --dot-new: #0a84ff;
+  --dot-mastered: #30d158;
   /* Tag vide sur la carte, pire cas : 5,87:1. */
   --tag-empty-fg: #d1d1d6;
-  /*
-   * Sombre : verre neutre un peu plus foncé que celui des boutons et voiles blancs réduits, pour que le texte
-   * garde sa couleur (sinon il faudrait le pousser vers le blanc pour rester ≥ 4,5:1).
-   */
-  --chip-glow: 22%;
-  --chip-rim: 49%; /* ~18 % plus doux que le bouton « Commencer à étudier » */
-  --chip-hover-mix: 13%;
+  /* Sombre : voiles blancs réduits sur les tags (un voile blanc éclaircit le fond sous le texte clair). */
   --chip-body: var(--glass-btn-bg); /* même verre que les boutons de notation : ne vole pas la vedette au bouton principal */
   --chip-text: #ffffff;
   --chip-sheen: rgb(255 255 255 / 0.04);
@@ -403,35 +385,50 @@ html.dark {
 }
 
 /*
- * Tags (#53) : même matériau que les boutons de notation, en plus discret. Corps en verre neutre translucide,
- * liseré et petite lueur (depuis le bas) de la couleur du tag (`--tag-<color>-fg`, posée en ligne en `--chip-fg`),
- * reflet en haut ; texte neutre (noir/blanc) comme les boutons de notation : la couleur ne sert qu'au liseré et à la lueur. Posés sur une carte en verre : jamais de backdrop-filter propre.
- * `.tag-chip` : bouton (accueil, page Mes tags), sur `.glass-btn.on-glass`. En sombre, reflet, survol et reflet
- * Konsta plus discrets (un voile blanc éclaircit le fond sous le texte clair).
+ * Tags (#53, #63) : même matériau que les boutons de notation, verre neutre, texte neutre (noir/blanc), aucune
+ * couleur par tag. Posés sur une carte en verre : jamais de backdrop-filter propre.
+ * `.tag-chip` : bouton (raccourcis de l'accueil, page Mes tags), sur `.glass-btn.on-glass`. Survol (pointeur fin) :
+ * celui des boutons en verre (haut éclairci, léger soulèvement), en lumière blanche, sans couleur.
+ * En sombre, reflet, survol et reflet Konsta plus discrets.
  * `.tag-pill` : étiquette non interactive de la carte de révision, même matériau.
  */
 .tag-chip,
 .tag-pill {
-  --glass-btn-glow: radial-gradient(90% 120% at 50% 135%, color-mix(in srgb, var(--chip-fg) var(--chip-glow), transparent), transparent 75%);
-  --glass-btn-rim: color-mix(in srgb, var(--chip-fg) var(--chip-rim), transparent);
   --glass-btn-sheen: linear-gradient(180deg, var(--chip-sheen), transparent 60%);
+  background-color: var(--chip-body);
   color: var(--chip-text);
 }
 .tag-chip {
-  background-color: var(--chip-body);
-  /* Survol : la lumière (haut du verre + reflet qui suit le pointeur) prend la couleur du tag. */
-  --glass-btn-hover-sheen: color-mix(in srgb, var(--chip-fg) var(--chip-hover-mix), transparent);
-  --color-ios-hover-highlight: color-mix(in srgb, var(--chip-fg) var(--chip-hover-mix), transparent);
+  --glass-btn-hover-sheen: var(--chip-hover-sheen);
+  --color-ios-hover-highlight: var(--chip-highlight);
 }
 .tag-pill {
-  background-color: var(--chip-body);
-  background-image: var(--glass-btn-glow), var(--glass-btn-sheen);
+  background-image: var(--glass-btn-sheen);
   box-shadow:
     inset 0 1px 0 var(--glass-btn-edge),
-    inset 0 0 0 1px var(--glass-btn-rim);
+    inset 0 0 0 1px var(--glass-btn-edge);
 }
+
 /*
- * Tag sans carte : grisé et sans remplissage, contour en pointillés (jamais confondu avec un tag coloré),
+ * Rangée de tags de l'accueil (#63) : défilement horizontal natif (pas de touch-action : le navigateur
+ * gère le geste, la page défile encore verticalement), aimantation légère (`proximity`), sans barre visible.
+ * Marge interne verticale : le liseré, la lueur de survol et l'anneau de focus ne sont pas rognés.
+ */
+.chip-row {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+.chip-row > * {
+  scroll-snap-align: start;
+}
+
+/*
+ * Tag sans carte (page Mes tags) : grisé et sans remplissage, contour en pointillés (jamais confondu avec un tag actif),
  * texte gris (--tag-empty-fg), ni survol ni appui. Le focus clavier (outline plein) reste prioritaire.
  */
 .tag-chip-empty {
