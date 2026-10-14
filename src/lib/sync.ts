@@ -1,10 +1,17 @@
 import type { VaultDB } from './db'
 import type { supabase } from './supabase'
-import type { Card, Rating, Review } from './types'
+import type { Card, CardSource, Rating, Review } from './types'
 
 /** Colonnes d'une review côté serveur (`synced` et `free` sont locaux). */
 type ReviewRow = Pick<Review, 'id' | 'card_id' | 'rating' | 'reviewed_at'>
 type ServerReview = ReviewRow & { inserted_at: string }
+
+/**
+ * Colonnes qu'envoie l'app pour une carte manuelle (#54) : exactement celles que le rôle authenticated peut écrire
+ * (migration 20261015000000_manual_cards). `source = 'manual'` est ajouté à l'insertion ; deck, source_path,
+ * source_title et les horodatages restent au serveur.
+ */
+export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'>
 
 /**
  * Position dans un pull : dernière ligne reçue, dans l'ordre (horodatage serveur, id).
@@ -13,6 +20,8 @@ type ServerReview = ReviewRow & { inserted_at: string }
 export interface Cursor { at: string; id: string }
 
 export interface Remote {
+  /** Crée ou met à jour des cartes manuelles ; idempotent (un envoi rejoué réécrit le même contenu). */
+  pushCards(rows: ManualCardRow[]): Promise<void>
   pushReviews(rows: ReviewRow[]): Promise<void>
   /** Au plus `limit` cartes strictement après `after` dans l'ordre (updated_at, id), triées dans cet ordre. */
   pullCards(after: Cursor | null, limit: number): Promise<Card[]>
@@ -42,6 +51,25 @@ const rowsOf = <T>({ data, error }: Page<T>) => {
 }
 
 export const supabaseRemote = (client: typeof supabase): Remote => ({
+  async pushCards(rows) {
+    if (!rows.length) return
+    // 1. INSERT … ON CONFLICT (id) DO NOTHING en un appel : la réponse ne contient que les lignes vraiment insérées.
+    //    Pas d'upsert « merge » : il mettrait aussi à jour id et source, colonnes que authenticated ne peut pas modifier.
+    const { data, error } = await client
+      .from('cards')
+      .upsert(rows.map(r => ({ ...r, source: 'manual' })), { onConflict: 'id', ignoreDuplicates: true })
+      .select('id')
+    if (error) throw new Error(error.message)
+    const inserted = new Set((data ?? []).map(r => r.id))
+    // 2. Cartes déjà présentes (édition, suppression douce, ou envoi rejoué) : UPDATE des seules colonnes autorisées.
+    //    0 ligne = carte invisible pour la policy (carte vault, ou supprimée côté serveur) : erreur, la carte reste à envoyer.
+    for (const { id, front, back, tags, deleted_at } of rows.filter(r => !inserted.has(r.id))) {
+      const res = await client.from('cards').update({ front, back, tags, deleted_at }).eq('id', id).eq('source', 'manual').select('id')
+      if (res.error) throw new Error(res.error.message)
+      if (!res.data?.length) throw new Error(`carte ${id} : aucune ligne modifiée`)
+    }
+  },
+
   async pushReviews(rows) {
     // INSERT … ON CONFLICT (id) DO NOTHING : un push rejoué ne crée pas de doublon,
     // et ne tente jamais d'UPDATE (le rôle authenticated n'a que select + insert sur reviews).
@@ -50,9 +78,10 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
   },
 
   async pullCards(cursor, limit) {
-    let q = client.from('cards').select('id, deck, source_path, source_title, tags, front, back, updated_at, deleted_at')
+    let q = client.from('cards').select('id, source, deck, source_path, source_title, tags, front, back, updated_at, deleted_at')
     if (cursor) q = q.or(after('updated_at', cursor))
-    return rowsOf(await q.order('updated_at').order('id').limit(limit))
+    const rows = rowsOf(await q.order('updated_at').order('id').limit(limit))
+    return rows.map(c => ({ ...c, source: c.source as CardSource })) // contrainte SQL : 'vault' ou 'manual'
   },
 
   async pullReviews(cursor, limit) {
@@ -132,6 +161,17 @@ async function mergeReviews(db: VaultDB, rows: ServerReview[]) {
 }
 
 /**
+ * Cartes tirées du serveur. Une carte manuelle modifiée sur cet appareil et pas encore envoyée (`synced: 0`)
+ * n'est pas écrasée : elle part au prochain envoi (la dernière écriture envoyée l'emporte), puis revient du serveur.
+ */
+async function mergeCards(db: VaultDB, rows: Card[]) {
+  const local = await db.cards.bulkGet(rows.map(c => c.id))
+  const fresh = rows.filter((_, i) => local[i]?.synced !== 0)
+  await db.cards.bulkPut(fresh)
+  return fresh.length
+}
+
+/**
  * File d'envoi : des lignes locales en attente, envoyées au serveur puis marquées comme parties.
  * `pending` est un instantané : une ligne ajoutée pendant l'envoi n'est pas marquée et part au sync suivant.
  * L'envoi doit être idempotent (INSERT … ON CONFLICT DO NOTHING) : une réponse perdue fait renvoyer les mêmes lignes.
@@ -162,20 +202,44 @@ export const outboxQueue = <Row>(o: Outbox<Row>): OutboxQueue => ({
   },
 })
 
-/** Reviews notées sur cet appareil (`synced: 0`). */
+const sameContent = (a: ManualCardRow, b: ManualCardRow) =>
+  a.front === b.front && a.back === b.back && a.deleted_at === b.deleted_at
+  && a.tags.length === b.tags.length && a.tags.every((t, i) => t === b.tags[i])
+
+/** Cartes manuelles créées, modifiées ou supprimées (douce) sur cet appareil (`synced: 0`, #54). */
+export const cardsOutbox: Outbox<Card> = {
+  count: db => db.cards.where('synced').equals(0).count(),
+  pending: db => db.cards.where('synced').equals(0).toArray(),
+  send: (remote, rows) => remote.pushCards(rows.map(({ id, front, back, tags, deleted_at }) => ({ id, front, back, tags, deleted_at }))),
+  // Une carte modifiée pendant l'envoi garde `synced: 0` : seule une carte encore identique à ce qui est parti est marquée.
+  markSent: (db, rows) => db.transaction('rw', db.cards, async () => {
+    const current = await db.cards.bulkGet(rows.map(r => r.id))
+    const sent = rows.filter((r, i) => current[i]?.synced === 0 && sameContent(current[i]!, r))
+    await db.cards.bulkUpdate(sent.map(r => ({ key: r.id, changes: { synced: 1 as const } })))
+  }),
+}
+
+/**
+ * Reviews notées sur cet appareil (`synced: 0`). Une review dont la carte manuelle n'est pas encore envoyée attend
+ * (clé étrangère reviews.card_id) : elle part au sync qui suit l'envoi de sa carte. Elle compte quand même dans `count`.
+ */
 export const reviewsOutbox: Outbox<Review> = {
   count: db => db.reviews.where('synced').equals(0).count(),
-  pending: db => db.reviews.where('synced').equals(0).toArray(),
+  pending: async db => {
+    const waiting = new Set(await db.cards.where('synced').equals(0).primaryKeys())
+    const rows = await db.reviews.where('synced').equals(0).toArray()
+    return rows.filter(r => !waiting.has(r.card_id))
+  },
   send: (remote, rows) => remote.pushReviews(rows.map(({ id, card_id, rating, reviewed_at }) => ({ id, card_id, rating, reviewed_at }))),
   markSent: (db, rows) => db.reviews.bulkUpdate(rows.map(r => ({ key: r.id, changes: { synced: 1 as const } }))).then(() => {}),
 }
 
 /**
  * Files envoyées à chaque sync, dans cet ordre. Une file en échec arrête les suivantes (elles peuvent en
- * dépendre : les cartes créées sur l'appareil, #54, passeront avant leurs reviews à cause de la clé étrangère
+ * dépendre : les cartes créées sur l'appareil, #54, partent avant leurs reviews à cause de la clé étrangère
  * reviews.card_id) ; le pull a lieu quand même.
  */
-export const OUTBOX: readonly OutboxQueue[] = [outboxQueue(reviewsOutbox)]
+export const OUTBOX: readonly OutboxQueue[] = [outboxQueue(cardsOutbox), outboxQueue(reviewsOutbox)]
 
 export interface SyncResult { pushed: number; pulledCards: number; pulledReviews: number }
 
@@ -217,7 +281,7 @@ export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE, outbo
   }
   try {
     await pullAll(db, CURSOR_CARDS, db.cards, (a, n) => remote.pullCards(a, n), c => c.updated_at,
-      async cards => { await db.cards.bulkPut(cards); return cards.length },
+      cards => mergeCards(db, cards),
       pageSize, n => { result.pulledCards += n })
     await pullAll(db, CURSOR_REVIEWS, db.reviews, (a, n) => remote.pullReviews(a, n), r => r.inserted_at,
       reviews => mergeReviews(db, reviews),

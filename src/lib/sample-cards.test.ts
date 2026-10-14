@@ -8,7 +8,7 @@ describe('SAMPLE_CARDS', () => {
     expect(SAMPLE_CARDS.every(c => c.deleted_at === null)).toBe(true)
   })
   it('deck = premier segment du chemin source', () => {
-    for (const c of SAMPLE_CARDS) expect(c.deck).toBe(c.source_path.split('/')[0])
+    for (const c of SAMPLE_CARDS) expect(c.deck).toBe(c.source_path!.split('/')[0])
   })
   it('texte brut, sans HTML', () => {
     for (const c of SAMPLE_CARDS) expect(`${c.front}${c.back}`).not.toMatch(/<[a-z/]/i)

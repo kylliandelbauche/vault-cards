@@ -44,7 +44,8 @@ export function queueOf(items: SessionItem[], grouped: Map<string, Review[]>, no
   const due = scoped.filter(i => !isNew(i.state) && i.state.due <= now)
     .sort((a, b) => a.state.due.getTime() - b.state.due.getTime())
   const fresh = scoped.filter(i => isNew(i.state))
-    .sort((a, b) => a.card.source_path.localeCompare(b.card.source_path) || a.card.id.localeCompare(b.card.id))
+    // Carte manuelle (#54) : pas de source_path, clé vide → avant les cartes du vault (créée exprès pour être apprise).
+    .sort((a, b) => (a.card.source_path ?? '').localeCompare(b.card.source_path ?? '') || a.card.id.localeCompare(b.card.id))
     .slice(0, Math.max(0, newLimit - introducedToday(grouped, now)))
   return [...due, ...fresh]
 }

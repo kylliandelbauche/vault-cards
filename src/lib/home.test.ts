@@ -6,7 +6,7 @@ import { buildQueue } from './session'
 import type { Card, Review } from './types'
 
 const card = (id: string, tags: string[] = ['ia'], extra: Partial<Card> = {}): Card => ({
-  id, deck: 'x', tags, source_path: `x/${id}.md`, front: id, back: id,
+  id, source: 'vault', deck: 'x', tags, source_path: `x/${id}.md`, front: id, back: id,
   updated_at: '2026-10-01T00:00:00Z', deleted_at: null, ...extra,
 })
 const rv = (card_id: string, at: string, rating: 1 | 2 | 3 = 3): Review =>

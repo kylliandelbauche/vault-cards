@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { CardView } from './CardView'
+import { CardView, MANUAL_CARD_LABEL } from './CardView'
 import type { Card } from '../../lib/types'
 
 const card = (tags: string[], source_title?: string | null): Card => ({
-  id: 'a', deck: 'mon-deck', source_path: '3-Resources/veille/ia/prompt-caching-synthese.md', source_title, tags,
+  id: 'a', source: 'vault', deck: 'mon-deck', source_path: '3-Resources/veille/ia/prompt-caching-synthese.md', source_title, tags,
   front: 'Question ?', back: 'Réponse.', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null,
 })
 
@@ -30,6 +30,11 @@ describe('CardView : titre de la source', () => {
 })
 
 describe('CardView : tags', () => {
+  it('carte manuelle (#54, sans note source) : libellé neutre, pas d’erreur', () => {
+    render(<CardView card={{ ...card(['ia'], null), source: 'manual', deck: null, source_path: null }} revealed={false} onReveal={() => {}} />)
+    expect(screen.getByText(MANUAL_CARD_LABEL)).toBeTruthy()
+  })
+
   it('affiche une pastille de texte par tag (aucun emoji), et jamais le deck', () => {
     render(<CardView card={card(['ia', 'securite'])} revealed={false} onReveal={() => {}} />)
     const pills = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
