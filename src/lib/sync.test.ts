@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
-import { pendingCount, supabaseRemote, sync, type Remote } from './sync'
+import { after as afterFilter, parseCursor, pendingCount, supabaseRemote, sync, type Cursor, type Remote } from './sync'
 import { buildQueue } from './session'
 import type { supabase } from './supabase'
 import type { Card, Review } from './types'
@@ -17,6 +17,8 @@ function fakeServer() {
   const stamp = () => new Date((t += 1000)).toISOString()
   const cards = new Map<string, Card>()
   const reviews = new Map<string, ServerReview>()
+  // Même filtre que la vraie requête : (horodatage, id) strictement après le curseur.
+  const isAfter = (at: string, id: string, c: Cursor | null) => c === null || at > c.at || (at === c.at && id > c.id)
   const byStampThenId = <T extends { id: string }>(key: (x: T) => string) => (a: T, b: T) =>
     key(a).localeCompare(key(b)) || a.id.localeCompare(b.id)
 
@@ -25,6 +27,7 @@ function fakeServer() {
     reviews: Map<string, ServerReview>
     failPush: null | 'before' | 'after'
     pullLimit: number
+    onPull?: (page: Card[]) => void
     putCard(c: Partial<Card> & { id: string }, at?: string): Card
     insertReview(r: Omit<ServerReview, 'inserted_at'>): void
     remote: { [K in keyof Remote]: Remote[K] & ReturnType<typeof vi.fn> }
@@ -33,8 +36,10 @@ function fakeServer() {
     reviews,
     /** 'before' : échec réseau sans écriture ; 'after' : la ligne est écrite mais la réponse se perd. */
     failPush: null,
-    /** Nombre maximum de lignes renvoyées par un pull (simule une page coupée). */
+    /** Nombre maximum de lignes renvoyées par un pull (simule une page coupée par max_rows). */
     pullLimit: Infinity,
+    /** Appelé après chaque page de cartes servie (pour modifier des cartes en plein pull). */
+    onPull: undefined,
     putCard(c: Partial<Card> & { id: string }, at = stamp()) {
       const prev = cards.get(c.id)
       const card: Card = { deck: 'd', tags: [], source_path: `d/${c.id}.md`, front: c.id, back: c.id, deleted_at: null, ...prev, ...c, updated_at: at }
@@ -51,12 +56,15 @@ function fakeServer() {
         for (const r of rows) if (!reviews.has(r.id)) reviews.set(r.id, { ...r, inserted_at: at })
         if (server.failPush === 'after') { server.failPush = null; throw new Error('délai dépassé') }
       }),
-      pullCards: vi.fn(async (since: string | null) =>
-        [...cards.values()].filter(c => since === null || c.updated_at >= since)
-          .sort(byStampThenId<Card>(c => c.updated_at)).slice(0, server.pullLimit)),
-      pullReviews: vi.fn(async (since: string | null) =>
-        [...reviews.values()].filter(r => since === null || r.inserted_at >= since)
-          .sort(byStampThenId<ServerReview>(r => r.inserted_at)).slice(0, server.pullLimit)),
+      pullCards: vi.fn(async (after: Cursor | null, limit: number) => {
+        const page = [...cards.values()].filter(c => isAfter(c.updated_at, c.id, after))
+          .sort(byStampThenId<Card>(c => c.updated_at)).slice(0, Math.min(limit, server.pullLimit))
+        server.onPull?.(page)
+        return page
+      }),
+      pullReviews: vi.fn(async (after: Cursor | null, limit: number) =>
+        [...reviews.values()].filter(r => isAfter(r.inserted_at, r.id, after))
+          .sort(byStampThenId<ServerReview>(r => r.inserted_at)).slice(0, Math.min(limit, server.pullLimit))),
     },
   }
   return server
@@ -148,41 +156,93 @@ describe('sync : pull des cartes', () => {
     ])
     await db.reviews.put(review('r1', 'a', 0))
     await sync(db, server.remote)
-    expect(server.remote.pullCards).toHaveBeenCalledWith(null)
+    expect(server.remote.pullCards).toHaveBeenCalledWith(null, 1000)
     expect(await db.cards.get('a')).toMatchObject({ tags: ['ia'], source_title: 'Mon titre' })
     expect(await db.cards.get('b')).toMatchObject({ tags: ['dev', 'securite'], source_title: 'Autre' })
     expect(await db.reviews.get('r1')).toEqual(review('r1', 'a', 1)) // seule la poussée la marque synced, rien d'autre ne change
     expect(server.reviews.has('r1')).toBe(true)
   })
 
-  it('curseur égal : une carte au même updated_at coupée du premier pull arrive au suivant', async () => {
+  it('horodatages égaux sur plusieurs pages : chaque carte arrive une fois, aucune n’est sautée ni relue', async () => {
+    const server = fakeServer()
+    const same = '2020-06-01T00:00:00.000Z'
+    for (const id of ['a', 'b', 'c', 'd', 'e']) server.putCard({ id }, same)
+
+    const res = await sync(db, server.remote, { pageSize: 2 })
+
+    expect(res.pulledCards).toBe(5)
+    expect(server.remote.pullCards).toHaveBeenCalledTimes(3) // 2 + 2 + 1 (page incomplète = fin)
+    expect(server.remote.pullCards.mock.calls.map(c => c[0])).toEqual([null, { at: same, id: 'b' }, { at: same, id: 'd' }])
+    expect((await db.cards.toArray()).map(c => c.id).sort()).toEqual(['a', 'b', 'c', 'd', 'e'])
+    expect((await sync(db, server.remote, { pageSize: 2 })).pulledCards).toBe(0) // curseur strict : rien de relu
+  })
+
+  it('page coupée par le serveur (max_rows) : la suite arrive au sync suivant, à partir du curseur', async () => {
     const server = fakeServer()
     const same = '2020-06-01T00:00:00.000Z'
     server.putCard({ id: 'a' }, same)
     server.putCard({ id: 'b' }, same)
-    server.pullLimit = 1 // page coupée entre les deux
+    server.pullLimit = 1
 
     await sync(db, server.remote)
     expect(await db.cards.count()).toBe(1)
 
     server.pullLimit = Infinity
     await sync(db, server.remote)
-    expect(server.remote.pullCards).toHaveBeenLastCalledWith(same) // >= curseur, pas >
+    expect(server.remote.pullCards).toHaveBeenLastCalledWith({ at: same, id: 'a' }, 1000)
     expect((await db.cards.toArray()).map(c => c.id).sort()).toEqual(['a', 'b'])
   })
 
-  it('le curseur est le max des horodatages serveur reçus, jamais l’horloge de l’appareil', async () => {
+  it('carte modifiée pendant un pull de plusieurs pages : aucune carte sautée', async () => {
+    const server = fakeServer()
+    for (const id of ['a', 'b', 'c']) server.putCard({ id })
+    // Après la 1re page (a, b), « a » est modifiée : avec un décalage positionnel, « c » glisserait en page 1 et serait sautée.
+    server.onPull = page => { if (page[0]?.id === 'a') server.putCard({ id: 'a', front: 'a v2' }) }
+
+    await sync(db, server.remote, { pageSize: 2 })
+
+    expect((await db.cards.toArray()).map(c => c.id).sort()).toEqual(['a', 'b', 'c'])
+    expect((await db.cards.get('a'))!.front).toBe('a v2')
+  })
+
+  it('le curseur est la dernière ligne serveur reçue (horodatage, id), jamais l’horloge de l’appareil', async () => {
     const server = fakeServer()
     server.putCard({ id: 'a' }, '2020-03-01T00:00:00.000Z')
     server.putCard({ id: 'b' }, '2020-05-01T00:00:00.000Z')
     server.putCard({ id: 'c' }, '2020-04-01T00:00:00.000Z')
 
     await sync(db, server.remote)
-    expect(server.remote.pullCards).toHaveBeenLastCalledWith(null)
-    expect((await db.meta.get('cursor:cards'))!.value).toBe('2020-05-01T00:00:00.000Z')
+    expect(server.remote.pullCards).toHaveBeenLastCalledWith(null, 1000)
+    expect(JSON.parse((await db.meta.get('cursor:cards'))!.value)).toEqual({ at: '2020-05-01T00:00:00.000Z', id: 'b' })
 
     await sync(db, server.remote)
-    expect(server.remote.pullCards).toHaveBeenLastCalledWith('2020-05-01T00:00:00.000Z')
+    expect(server.remote.pullCards).toHaveBeenLastCalledWith({ at: '2020-05-01T00:00:00.000Z', id: 'b' }, 1000)
+  })
+
+  it('curseur à l’ancien format (horodatage seul) : pull complet, puis curseur composite', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'a' }, '2020-03-01T00:00:00.000Z')
+    server.putCard({ id: 'b' }, '2020-05-01T00:00:00.000Z')
+    await db.meta.put({ key: 'cursor:cards', value: '2020-04-01T00:00:00.000Z' })
+
+    await sync(db, server.remote)
+
+    expect(server.remote.pullCards).toHaveBeenCalledWith(null, 1000)
+    expect(await db.cards.count()).toBe(2)
+    expect(parseCursor((await db.meta.get('cursor:cards'))!.value)).toEqual({ at: '2020-05-01T00:00:00.000Z', id: 'b' })
+  })
+})
+
+describe('parseCursor', () => {
+  it.each([
+    [undefined, null],
+    ['', null],
+    ['2026-10-13T00:00:00+00:00', null],
+    ['{"at":1}', null],
+    ['null', null],
+    ['{"at":"2026-10-13T00:00:00+00:00","id":"x"}', { at: '2026-10-13T00:00:00+00:00', id: 'x' }],
+  ])('%s → %o', (value, expected) => {
+    expect(parseCursor(value)).toEqual(expected)
   })
 })
 
@@ -198,7 +258,7 @@ describe('sync : pull des reviews', () => {
     expect(await db.reviews.get('autre')).toEqual({ id: 'autre', card_id: 'a', rating: 2, reviewed_at: '2026-10-12T08:00:00.000Z', synced: 1 })
     expect(await pendingCount(db)).toBe(0)
     const inserted = server.reviews.get('autre')!.inserted_at
-    expect((await db.meta.get('cursor:reviews'))!.value).toBe(inserted)
+    expect(parseCursor((await db.meta.get('cursor:reviews'))!.value)).toEqual({ at: inserted, id: 'autre' })
   })
 })
 
@@ -212,9 +272,9 @@ function fakeClient(rows: Record<string, unknown[]> = {}, error: { message: stri
       let page = [...(rows[table] ?? [])]
       const builder = {
         select: (...a: unknown[]) => { entry.ops.push(['select', ...a]); return builder },
-        gte: (...a: unknown[]) => { entry.ops.push(['gte', ...a]); return builder },
+        or: (...a: unknown[]) => { entry.ops.push(['or', ...a]); return builder },
         order: (...a: unknown[]) => { entry.ops.push(['order', ...a]); return builder },
-        range: (from: number, to: number) => { entry.ops.push(['range', from, to]); page = page.slice(from, to + 1); return builder },
+        limit: (n: number) => { entry.ops.push(['limit', n]); page = page.slice(0, n); return builder },
         upsert: (...a: unknown[]) => { entry.ops.push(['upsert', ...a]); return builder },
         then: (ok: (v: unknown) => unknown, ko?: (e: unknown) => unknown) =>
           Promise.resolve(error ? { data: null, error } : { data: page, error: null }).then(ok, ko),
@@ -238,35 +298,39 @@ describe('supabaseRemote', () => {
     await expect(supabaseRemote(client).pushReviews([])).rejects.toThrow('permission denied')
   })
 
-  it('pullCards : >= curseur, tri stable (updated_at puis id), pages de 1000 jusqu’à une page incomplète', async () => {
+  it('pullCards : une page après le curseur (keyset), tri stable (updated_at puis id), limitée', async () => {
     const all = Array.from({ length: 1500 }, (_, i) => ({ id: String(i).padStart(4, '0') }))
     const { client, calls } = fakeClient({ cards: all })
-    const got = await supabaseRemote(client).pullCards('2026-10-13T00:00:00+00:00')
-    expect(got).toHaveLength(1500)
-    expect(calls).toHaveLength(2)
+    const at = '2026-10-13T00:00:00.123456+00:00'
+    const got = await supabaseRemote(client).pullCards({ at, id: 'abc' }, 1000)
+    expect(got).toHaveLength(1000)
+    expect(calls).toHaveLength(1)
     expect(calls[0].ops).toEqual([
       ['select', 'id, deck, source_path, source_title, tags, front, back, updated_at, deleted_at'],
-      ['gte', 'updated_at', '2026-10-13T00:00:00+00:00'],
+      ['or', `updated_at.gt."${at}",and(updated_at.eq."${at}",id.gt."abc")`],
       ['order', 'updated_at'],
       ['order', 'id'],
-      ['range', 0, 999],
+      ['limit', 1000],
     ])
-    expect(calls[1].ops.at(-1)).toEqual(['range', 1000, 1999])
   })
 
   it('pullReviews sans curseur : tout, trié par inserted_at puis id', async () => {
     const { client, calls } = fakeClient({ reviews: [] })
-    await supabaseRemote(client).pullReviews(null)
+    await supabaseRemote(client).pullReviews(null, 1000)
     expect(calls[0].ops).toEqual([
       ['select', 'id, card_id, rating, reviewed_at, inserted_at'],
       ['order', 'inserted_at'],
       ['order', 'id'],
-      ['range', 0, 999],
+      ['limit', 1000],
     ])
+  })
+
+  it('filtre keyset : (col > at) ou (col = at et id > lastId)', () => {
+    expect(afterFilter('inserted_at', { at: 'T', id: 'r1' })).toBe('inserted_at.gt."T",and(inserted_at.eq."T",id.gt."r1")')
   })
 
   it('un pull lève si Supabase renvoie une erreur', async () => {
     const { client } = fakeClient({}, { message: 'JWT expired' })
-    await expect(supabaseRemote(client).pullCards(null)).rejects.toThrow('JWT expired')
+    await expect(supabaseRemote(client).pullCards(null, 1000)).rejects.toThrow('JWT expired')
   })
 })
