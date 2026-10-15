@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
-import { after as afterFilter, cardsOutbox, outboxQueue, parseCursor, pendingCount, reviewsOutbox, supabaseRemote, sync, SyncError, type Cursor, type ManualCardRow, type OutboxQueue, type Remote } from './sync'
+import { after as afterFilter, cardsOutbox, outboxQueue, parseCursor, pendingCount, reviewsOutbox, supabaseRemote, sync, SyncError, type Cursor, type ManualCardRow, type OutboxQueue, type PushResult, type Remote } from './sync'
 import { createManualCard, deleteManualCard, updateManualCard } from './cards'
-import { acceptDraft, rejectDraft } from './drafts'
+import { acceptDraft, rejectDraft, updateDraft } from './drafts'
 import { buildQueue } from './session'
 import type { supabase } from './supabase'
 import type { Card, Review } from './types'
@@ -67,21 +67,24 @@ function fakeServer() {
       }),
       // Même sémantique que supabaseRemote.pushCards : insertion si absente, sinon mise à jour du contenu
       // d'une carte manual (une carte vault n'est jamais modifiable : erreur).
-      pushCards: vi.fn(async (rows: ManualCardRow[]) => {
+      pushCards: vi.fn(async (rows: ManualCardRow[]): Promise<PushResult> => {
         if (server.failCardPush === 'before') throw new Error('réseau coupé (cartes)')
+        const failed: NonNullable<PushResult['failed']> = []
+        const stale: string[] = []
         for (const r of rows) {
           const prev = cards.get(r.id)
           if (r.source === 'inbox') {
-            // Carte de la boîte de réception (#55) : UPDATE seul, jamais d'insertion ; active → draft refusé (trigger).
-            if (prev?.source !== 'inbox') throw new Error(`carte ${r.id} : aucune ligne modifiée`)
-            if (prev.status === 'active' && r.status === 'draft') throw new Error('une carte active ne repasse jamais en brouillon')
-            server.putCard({ id: r.id, front: r.front, back: r.back, tags: r.tags, deleted_at: r.deleted_at, status: r.status })
+            // Carte de la boîte de réception (#55) : UPDATE seul, jamais d'insertion ; status seulement s'il est envoyé ;
+            // l’échec d'une carte n'arrête pas les autres.
+            if (prev?.source !== 'inbox') { failed.push({ id: r.id, error: new Error(`carte ${r.id} : aucune ligne modifiée`) }); continue }
+            server.putCard({ id: r.id, front: r.front, back: r.back, tags: r.tags, deleted_at: r.deleted_at, ...(r.status ? { status: r.status } : {}) })
             continue
           }
           if (prev && prev.source !== 'manual') throw new Error(`carte ${r.id} : 0 ligne modifiée`)
           server.putCard({ ...r, source: 'manual', deck: null, source_path: null, source_title: null })
         }
         if (server.failCardPush === 'after') { server.failCardPush = null; throw new Error('délai dépassé (cartes)') }
+        return { failed, stale }
       }),
       pullCards: vi.fn(async (after: Cursor | null, limit: number) => {
         const page = [...cards.values()].filter(c => isAfter(c.updated_at, c.id, after))
@@ -568,19 +571,46 @@ describe('supabaseRemote', () => {
     await supabaseRemote(empty.client).pushCards([])
     expect(empty.calls).toEqual([])
     const { client } = fakeClient({ cards: [] })
-    await expect(supabaseRemote(client).pushCards([{ id: 'x', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null }]))
-      .rejects.toThrow('carte x : aucune ligne modifiée')
+    const res = await supabaseRemote(client).pushCards([{ id: 'x', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null }])
+    expect(res?.failed?.map(f => [f.id, (f.error as Error).message])).toEqual([['x', 'carte x : aucune ligne modifiée']])
   })
 
-  it('pushCards : carte inbox (#55) → UPDATE seul (status compris, filtre source inbox), jamais d’insertion', async () => {
-    const rows: ManualCardRow[] = [{ id: 'd', source: 'inbox', status: 'active', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null }]
-    const { client, calls } = fakeClient({ cards: [{ id: 'd' }] })
-    await supabaseRemote(client).pushCards(rows)
+  it('pushCards : carte inbox (#55) → UPDATE seul (filtre source inbox), status envoyé seulement s’il vaut active', async () => {
+    const rows: ManualCardRow[] = [
+      { id: 'd', source: 'inbox', status: 'active', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null },
+      { id: 'r', source: 'inbox', front: 'Q2', back: 'R2', tags: ['dev'], deleted_at: '2026-10-15T10:00:00.000Z' },
+    ]
+    const { client, calls } = fakeClient({ cards: ops => [{ id: (ops[1][2] as string) }] })
+    expect(await supabaseRemote(client).pushCards(rows)).toEqual({ failed: [], stale: [] })
     expect(calls).toEqual([
       { table: 'cards', ops: [['update', { front: 'Q', back: 'R', tags: ['ia'], deleted_at: null, status: 'active' }], ['eq', 'id', 'd'], ['eq', 'source', 'inbox'], ['select', 'id']] },
+      { table: 'cards', ops: [['update', { front: 'Q2', back: 'R2', tags: ['dev'], deleted_at: '2026-10-15T10:00:00.000Z' }], ['eq', 'id', 'r'], ['eq', 'source', 'inbox'], ['select', 'id']] },
     ])
-    const none = fakeClient({ cards: [] })
-    await expect(supabaseRemote(none.client).pushCards(rows)).rejects.toThrow('carte d : aucune ligne modifiée')
+  })
+
+  it('pushCards : l’échec d’une carte n’arrête pas les autres ; 23514 (déjà acceptée ailleurs) → stale, pas un échec', async () => {
+    const rows: ManualCardRow[] = [
+      { id: 'absente', source: 'inbox', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null },
+      { id: 'conflit', source: 'inbox', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null },
+      { id: 'ok', source: 'inbox', status: 'active', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null },
+    ]
+    const { client, calls } = fakeClient({ cards: ops => (ops[1][2] === 'ok' ? [{ id: 'ok' }] : []) })
+    const errorFor = { conflit: { message: 'une carte active ne repasse jamais en brouillon', code: '23514' } } as Record<string, { message: string; code: string }>
+    const real = client.from.bind(client) as unknown as (t: string) => unknown
+    const wrapped = { ...client, from: (t: string) => {
+      const b = real(t) as unknown as { eq: (c: string, v: string) => unknown; then: PromiseLike<unknown>['then'] }
+      const eq = b.eq.bind(b)
+      let id = ''
+      b.eq = (c: string, v: string) => { if (c === 'id') id = v; return eq(c, v) }
+      const then = b.then.bind(b)
+      b.then = ((ok: (v: unknown) => unknown, ko: (e: unknown) => unknown) =>
+        errorFor[id] ? Promise.resolve({ data: null, error: errorFor[id] }).then(ok, ko) : then(ok, ko)) as PromiseLike<unknown>['then']
+      return b
+    } } as unknown as typeof supabase
+    const res = await supabaseRemote(wrapped).pushCards(rows)
+    expect(res?.stale).toEqual(['conflit'])
+    expect(res?.failed?.map(f => f.id)).toEqual(['absente'])
+    expect(calls.map(c => c.ops[1])).toEqual([['eq', 'id', 'absente'], ['eq', 'id', 'conflit'], ['eq', 'id', 'ok']])
   })
 
   it('pushCards lève si Supabase renvoie une erreur', async () => {
@@ -708,7 +738,7 @@ describe('sync : cartes manuelles (#54)', () => {
     const server = fakeServer()
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] })
     const push = server.remote.pushCards.getMockImplementation() as Remote['pushCards']
-    server.remote.pushCards.mockImplementationOnce(async rows => {
+    server.remote.pushCards.mockImplementationOnce(async (rows: ManualCardRow[]) => {
       await updateManualCard(db, card.id, { back: 'R2' }) // l'utilisateur édite pendant que l'envoi est en vol
       await push(rows)
     })
@@ -788,7 +818,7 @@ describe('sync : brouillons de la boîte de réception (#55)', () => {
     expect(res.pushed).toBe(3)
     expect(server.remote.pushCards).toHaveBeenLastCalledWith(expect.arrayContaining([
       { id: 'd', source: 'inbox', status: 'active', front: 'Q corrigée', back: 'd', tags: ['ia'], deleted_at: null },
-      { id: 'r', source: 'inbox', status: 'draft', front: 'r', back: 'r', tags: ['ia'], deleted_at: NOW.toISOString() },
+      { id: 'r', source: 'inbox', front: 'r', back: 'r', tags: ['ia'], deleted_at: NOW.toISOString() },
     ]))
     expect(await pendingCount(db)).toBe(0)
     expect(await db.cards.get('d')).toMatchObject({ status: 'active', front: 'Q corrigée' })
@@ -803,5 +833,69 @@ describe('sync : brouillons de la boîte de réception (#55)', () => {
     serverDraft(server, 'd') // nouvelle version serveur, toujours brouillon
     await expect(sync(db, server.remote)).rejects.toThrow(SyncError)
     expect((await db.cards.get('d'))!.status).toBe('active')
+  })
+})
+
+describe('sync : brouillon sur deux appareils (#55)', () => {
+  const NOW = new Date('2026-10-15T10:00:00.000Z')
+  let other: VaultDB
+  beforeEach(() => { other = new VaultDB('test-' + crypto.randomUUID()) })
+  afterEach(async () => { await other.delete() })
+
+  async function acceptedOnA() {
+    const server = fakeServer()
+    server.putCard({ id: 'd', source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null, tags: ['ia'] })
+    await sync(db, server.remote)
+    await sync(other, server.remote) // B voit encore le brouillon
+    await acceptDraft(db, 'd', undefined, { now: () => NOW })
+    await sync(db, server.remote) // A : serveur en active
+    return server
+  }
+
+  it('accepté sur A, retouché sur B : B n’envoie pas status, le serveur reste active avec la retouche ; rien de bloqué', async () => {
+    const server = await acceptedOnA()
+    await updateDraft(other, 'd', { front: 'Retouchée sur B' }, { now: () => NOW })
+    const manual = await createManualCard(other, { front: 'M', back: 'R', tags: ['ia'] })
+    await sync(other, server.remote)
+    expect(await pendingCount(other)).toBe(0)
+    expect(server.cards.get('d')).toMatchObject({ status: 'active', front: 'Retouchée sur B' })
+    expect(server.cards.get(manual.id)).toMatchObject({ source: 'manual' })
+    expect(await other.cards.get('d')).toMatchObject({ status: 'active', front: 'Retouchée sur B' })
+  })
+
+  it('accepté sur A, rejeté sur B : la suppression douce part (dernier mot à B), aucune erreur', async () => {
+    const server = await acceptedOnA()
+    await rejectDraft(other, 'd', { now: () => NOW })
+    await sync(other, server.remote)
+    expect(await pendingCount(other)).toBe(0)
+    expect(server.cards.get('d')).toMatchObject({ status: 'active', deleted_at: NOW.toISOString() })
+  })
+
+  it('conflit 23514 (stale) : carte marquée envoyée, pull complet qui reprend l’état serveur ; les autres cartes partent', async () => {
+    const server = await acceptedOnA()
+    // B garde une version locale « draft » à envoyer (cache d'avant #55 fix, ou autre client) : le serveur la refuse (23514).
+    await other.cards.update('d', { front: 'B', synced: 0 })
+    server.remote.pushCards.mockImplementationOnce(async (rows: ManualCardRow[]) => {
+      for (const r of rows.filter(r => r.id !== 'd')) server.putCard({ ...r, source: 'manual', deck: null, source_path: null, source_title: null })
+      return { stale: ['d'] }
+    })
+    const manual = await createManualCard(other, { front: 'M', back: 'R', tags: ['ia'] })
+    await sync(other, server.remote)
+    expect(await pendingCount(other)).toBe(0)
+    expect(server.cards.has(manual.id)).toBe(true)
+    expect(await other.cards.get('d')).toMatchObject({ status: 'active', front: 'd' }) // version serveur reprise
+  })
+
+  it('échec isolé : une carte refusée reste à envoyer, les autres sont marquées ; le sync signale l’échec', async () => {
+    const server = await acceptedOnA()
+    await updateDraft(other, 'd', { front: 'B' }, { now: () => NOW })
+    const manual = await createManualCard(other, { front: 'M', back: 'R', tags: ['ia'] })
+    server.remote.pushCards.mockImplementationOnce(async (rows: ManualCardRow[]) => {
+      for (const r of rows.filter(r => r.id !== 'd')) server.putCard({ ...r, source: 'manual', deck: null, source_path: null, source_title: null })
+      return { failed: [{ id: 'd', error: new Error('refus durable') }] }
+    })
+    await expect(sync(other, server.remote)).rejects.toThrow('refus durable')
+    expect((await other.cards.get(manual.id))!.synced).not.toBe(0) // partie (puis relue du serveur)
+    expect((await other.cards.get('d'))!.synced).toBe(0)
   })
 })

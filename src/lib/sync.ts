@@ -12,7 +12,14 @@ type ServerReview = ReviewRow & { inserted_at: string }
  * possible, `source = 'manual'` ajouté. `source = 'inbox'` (#55) : UPDATE seul (la carte vient du serveur), `status`
  * compris (accepter un brouillon). deck, source_path, source_title, inbox_id et les horodatages restent au serveur.
  */
-export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'> & { source?: 'manual' | 'inbox'; status?: CardStatus }
+export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'> & { source?: 'manual' | 'inbox'; status?: 'active' }
+
+/**
+ * Résultat d'un envoi ligne par ligne. `failed` : lignes refusées (restent à envoyer, le sync échoue) ; les autres
+ * partent quand même. `stale` : lignes que le serveur a déjà dépassées (23514, brouillon accepté sur un autre appareil) :
+ * considérées comme résolues, l'état serveur est repris au pull.
+ */
+export interface PushResult { failed?: { id: string; error: unknown }[]; stale?: string[] }
 
 /**
  * Position dans un pull : dernière ligne reçue, dans l'ordre (horodatage serveur, id).
@@ -22,7 +29,7 @@ export interface Cursor { at: string; id: string }
 
 export interface Remote {
   /** Crée ou met à jour des cartes manuelles ; idempotent (un envoi rejoué réécrit le même contenu). */
-  pushCards(rows: ManualCardRow[]): Promise<void>
+  pushCards(rows: ManualCardRow[]): Promise<PushResult | void>
   pushReviews(rows: ReviewRow[]): Promise<void>
   /** Au plus `limit` cartes strictement après `after` dans l'ordre (updated_at, id), triées dans cet ordre. */
   pullCards(after: Cursor | null, limit: number): Promise<Card[]>
@@ -53,14 +60,20 @@ const rowsOf = <T>({ data, error }: Page<T>) => {
 
 export const supabaseRemote = (client: typeof supabase): Remote => ({
   async pushCards(all) {
+    const failed: NonNullable<PushResult['failed']> = []
+    const stale: string[] = []
     // Cartes de la boîte de réception (#55) : UPDATE seul, jamais d'insertion (seul l'outil crée des cartes inbox).
+    // `status` n'est envoyé que pour accepter (active) : un rejet (deleted_at) ou une retouche ne touche pas au statut
+    // serveur. Chaque carte est isolée : un refus n'empêche pas l'envoi des autres.
     for (const { id, front, back, tags, deleted_at, status } of all.filter(r => r.source === 'inbox')) {
-      const res = await client.from('cards').update({ front, back, tags, deleted_at, status }).eq('id', id).eq('source', 'inbox').select('id')
-      if (res.error) throw new Error(res.error.message)
-      if (!res.data?.length) throw new Error(`carte ${id} : aucune ligne modifiée`)
+      const res = await client.from('cards').update({ front, back, tags, deleted_at, ...(status === 'active' ? { status } : {}) })
+        .eq('id', id).eq('source', 'inbox').select('id')
+      if (res.error?.code === '23514' && res.error.message.includes('brouillon')) stale.push(id) // déjà acceptée ailleurs
+      else if (res.error) failed.push({ id, error: new Error(`carte ${id} : ${res.error.message}`) })
+      else if (!res.data?.length) failed.push({ id, error: new Error(`carte ${id} : aucune ligne modifiée`) })
     }
     const rows = all.filter(r => r.source !== 'inbox').map(({ id, front, back, tags, deleted_at }) => ({ id, front, back, tags, deleted_at }))
-    if (!rows.length) return
+    if (!rows.length) return { failed, stale }
     // 1. INSERT … ON CONFLICT (id) DO NOTHING en un appel : la réponse ne contient que les lignes vraiment insérées.
     //    Pas d'upsert « merge » : il mettrait aussi à jour id et source, colonnes que authenticated ne peut pas modifier.
     const { data, error } = await client
@@ -73,9 +86,10 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
     //    0 ligne = carte invisible pour la policy (carte vault, ou supprimée côté serveur) : erreur, la carte reste à envoyer.
     for (const { id, front, back, tags, deleted_at } of rows.filter(r => !inserted.has(r.id))) {
       const res = await client.from('cards').update({ front, back, tags, deleted_at }).eq('id', id).eq('source', 'manual').select('id')
-      if (res.error) throw new Error(res.error.message)
-      if (!res.data?.length) throw new Error(`carte ${id} : aucune ligne modifiée`)
+      if (res.error) failed.push({ id, error: new Error(`carte ${id} : ${res.error.message}`) })
+      else if (!res.data?.length) failed.push({ id, error: new Error(`carte ${id} : aucune ligne modifiée`) })
     }
+    return { failed, stale }
   },
 
   async pushReviews(rows) {
@@ -189,8 +203,10 @@ export interface Outbox<Row> {
   /** Nombre de lignes en attente (indicateur de synchro, déconnexion sûre). */
   count(db: VaultDB): Promise<number>
   pending(db: VaultDB): Promise<Row[]>
-  send(remote: Remote, rows: Row[]): Promise<void>
-  markSent(db: VaultDB, rows: Row[]): Promise<void>
+  /** Rejette si rien n'est parti ; sinon peut signaler des lignes refusées (`failed`) ou dépassées (`stale`). */
+  send(remote: Remote, rows: Row[]): Promise<PushResult | void>
+  /** `rows` : lignes parties (refusées exclues) ; `result` : résultat de l'envoi, s'il en a renvoyé un. */
+  markSent(db: VaultDB, rows: Row[], result?: PushResult): Promise<void>
 }
 
 /** File typée réduite à ce dont `sync` a besoin, pour ranger des files de lignes différentes dans une même liste. */
@@ -205,9 +221,17 @@ export const outboxQueue = <Row>(o: Outbox<Row>): OutboxQueue => ({
   async push(db, remote) {
     const rows = await o.pending(db)
     if (!rows.length) return 0
-    await o.send(remote, rows)
-    await o.markSent(db, rows)
-    return rows.length
+    const result = await o.send(remote, rows)
+    if (!result) {
+      await o.markSent(db, rows)
+      return rows.length
+    }
+    // Lignes refusées : restent en attente ; les autres sont marquées, puis le sync signale l'échec.
+    const failed = new Set((result.failed ?? []).map(f => f.id))
+    const sent = rows.filter(r => !failed.has((r as { id?: string }).id ?? ''))
+    await o.markSent(db, sent, result)
+    if (failed.size) throw new Error((result.failed ?? []).map(f => (f.error instanceof Error ? f.error.message : String(f.error))).join(' ; '))
+    return sent.length
   },
 })
 
@@ -225,13 +249,16 @@ export const cardsOutbox: Outbox<Card> = {
   pending: db => db.cards.where('synced').equals(0).toArray(),
   send: (remote, rows) => remote.pushCards(rows.map(({ id, source, status, front, back, tags, deleted_at }) =>
     source === 'inbox'
-      ? { id, source, status: status ?? 'active', front, back, tags, deleted_at }
+      ? { id, source, front, back, tags, deleted_at, ...(status === 'active' ? { status } : {}) }
       : { id, front, back, tags, deleted_at })),
   // Une carte modifiée pendant l'envoi garde `synced: 0` : seule une carte encore identique à ce qui est parti est marquée.
-  markSent: (db, rows) => db.transaction('rw', db.cards, async () => {
+  // Carte dépassée côté serveur (`stale`) : marquée envoyée aussi, et cursor:cards supprimé pour que le pull qui suit
+  // (même sync) rapporte la version serveur, même si elle est antérieure au curseur (pull complet une fois, idempotent).
+  markSent: (db, rows, result) => db.transaction('rw', db.cards, db.meta, async () => {
     const current = await db.cards.bulkGet(rows.map(r => r.id))
     const sent = rows.filter((r, i) => current[i]?.synced === 0 && sameContent(current[i]!, r))
     await db.cards.bulkUpdate(sent.map(r => ({ key: r.id, changes: { synced: 1 as const } })))
+    if (result?.stale?.length) await db.meta.delete(CURSOR_CARDS)
   }),
 }
 
