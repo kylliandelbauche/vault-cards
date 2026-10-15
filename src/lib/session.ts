@@ -18,9 +18,15 @@ export function byCard(reviews: Review[]) {
 /** La carte porte ce tag (doublon ou `tags` absent d'un vieux cache : sans effet). */
 export const hasTag = (card: Card, tag: string) => (card.tags ?? []).includes(tag)
 
-/** Cartes vivantes (non supprimées) avec leur état FSRS, recalculé depuis l'historique. */
+/**
+ * Carte à réviser : non supprimée et pas un brouillon de la boîte de réception (#55). Un brouillon n'entre ni dans les
+ * sessions, ni dans les compteurs de l'accueil, ni dans les tags tant qu'il n'est pas accepté.
+ */
+export const isLive = (card: Card) => !card.deleted_at && card.status !== 'draft'
+
+/** Cartes vivantes (non supprimées, hors brouillons) avec leur état FSRS, recalculé depuis l'historique. */
 export function scheduleItems(cards: Card[], grouped: Map<string, Review[]>): SessionItem[] {
-  return cards.filter(c => !c.deleted_at).map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
+  return cards.filter(isLive).map(card => ({ card, state: stateFromReviews(grouped.get(card.id) ?? []) }))
 }
 
 /**
@@ -35,13 +41,14 @@ function introducedToday(grouped: Map<string, Review[]>, now: Date) {
 }
 
 /**
- * Ordre des nouvelles cartes. Cartes manuelles (#54) d'abord (pas de source_path : créées exprès pour être apprises),
- * dans l'ordre de création (leur id est un UUID aléatoire) ; puis cartes du vault par note, puis id.
+ * Ordre des nouvelles cartes. Cartes manuelles (#54) et acceptées de la boîte de réception (#55) d'abord (pas de
+ * source_path : créées exprès pour être apprises), dans l'ordre de création (leur id est un UUID aléatoire) ; puis
+ * cartes du vault par note, puis id.
  */
 function freshOrder({ card: a }: SessionItem, { card: b }: SessionItem) {
   const byPath = (a.source_path ?? '').localeCompare(b.source_path ?? '')
   if (byPath) return byPath
-  const byCreation = a.source === 'manual' && b.source === 'manual' ? (a.created_at ?? '').localeCompare(b.created_at ?? '') : 0
+  const byCreation = a.source !== 'vault' && b.source !== 'vault' ? (a.created_at ?? '').localeCompare(b.created_at ?? '') : 0
   return byCreation || a.id.localeCompare(b.id)
 }
 
@@ -91,7 +98,7 @@ export function countKinds(items: SessionItem[]) {
 
 export function nextDue(cards: Card[], reviews: Review[], now: Date, tag?: string): Date | null {
   const grouped = byCard(reviews)
-  const dues = cards.filter(c => !c.deleted_at && grouped.has(c.id) && (tag === undefined || hasTag(c, tag)))
+  const dues = cards.filter(c => isLive(c) && grouped.has(c.id) && (tag === undefined || hasTag(c, tag)))
     .map(c => stateFromReviews(grouped.get(c.id)!).due)
     .filter(d => d > now)
   return dues.length ? new Date(Math.min(...dues.map(d => d.getTime()))) : null

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
 import { after as afterFilter, cardsOutbox, outboxQueue, parseCursor, pendingCount, reviewsOutbox, supabaseRemote, sync, SyncError, type Cursor, type ManualCardRow, type OutboxQueue, type Remote } from './sync'
 import { createManualCard, deleteManualCard, updateManualCard } from './cards'
+import { acceptDraft, rejectDraft } from './drafts'
 import { buildQueue } from './session'
 import type { supabase } from './supabase'
 import type { Card, Review } from './types'
@@ -70,6 +71,13 @@ function fakeServer() {
         if (server.failCardPush === 'before') throw new Error('réseau coupé (cartes)')
         for (const r of rows) {
           const prev = cards.get(r.id)
+          if (r.source === 'inbox') {
+            // Carte de la boîte de réception (#55) : UPDATE seul, jamais d'insertion ; active → draft refusé (trigger).
+            if (prev?.source !== 'inbox') throw new Error(`carte ${r.id} : aucune ligne modifiée`)
+            if (prev.status === 'active' && r.status === 'draft') throw new Error('une carte active ne repasse jamais en brouillon')
+            server.putCard({ id: r.id, front: r.front, back: r.back, tags: r.tags, deleted_at: r.deleted_at, status: r.status })
+            continue
+          }
           if (prev && prev.source !== 'manual') throw new Error(`carte ${r.id} : 0 ligne modifiée`)
           server.putCard({ ...r, source: 'manual', deck: null, source_path: null, source_title: null })
         }
@@ -518,7 +526,7 @@ describe('supabaseRemote', () => {
     expect(got).toHaveLength(1000)
     expect(calls).toHaveLength(1)
     expect(calls[0].ops).toEqual([
-      ['select', 'id, source, deck, source_path, source_title, tags, front, back, created_at, updated_at, deleted_at'],
+      ['select', 'id, source, status, inbox_id, deck, source_path, source_title, tags, front, back, created_at, updated_at, deleted_at'],
       ['or', `updated_at.gt."${at}",and(updated_at.eq."${at}",id.gt."abc")`],
       ['order', 'updated_at'],
       ['order', 'id'],
@@ -562,6 +570,17 @@ describe('supabaseRemote', () => {
     const { client } = fakeClient({ cards: [] })
     await expect(supabaseRemote(client).pushCards([{ id: 'x', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null }]))
       .rejects.toThrow('carte x : aucune ligne modifiée')
+  })
+
+  it('pushCards : carte inbox (#55) → UPDATE seul (status compris, filtre source inbox), jamais d’insertion', async () => {
+    const rows: ManualCardRow[] = [{ id: 'd', source: 'inbox', status: 'active', front: 'Q', back: 'R', tags: ['ia'], deleted_at: null }]
+    const { client, calls } = fakeClient({ cards: [{ id: 'd' }] })
+    await supabaseRemote(client).pushCards(rows)
+    expect(calls).toEqual([
+      { table: 'cards', ops: [['update', { front: 'Q', back: 'R', tags: ['ia'], deleted_at: null, status: 'active' }], ['eq', 'id', 'd'], ['eq', 'source', 'inbox'], ['select', 'id']] },
+    ])
+    const none = fakeClient({ cards: [] })
+    await expect(supabaseRemote(none.client).pushCards(rows)).rejects.toThrow('carte d : aucune ligne modifiée')
   })
 
   it('pushCards lève si Supabase renvoie une erreur', async () => {
@@ -732,5 +751,57 @@ describe('sync : cartes manuelles (#54)', () => {
     await sync(db, server.remote) // la dernière écriture envoyée l'emporte
     expect(server.cards.get(card.id)!.front).toBe('locale')
     expect((await db.cards.get(card.id))!.front).toBe('locale')
+  })
+})
+
+describe('sync : brouillons de la boîte de réception (#55)', () => {
+  const NOW = new Date('2026-10-15T10:00:00.000Z')
+  const serverDraft = (server: ReturnType<typeof fakeServer>, id: string) =>
+    server.putCard({ id, source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null, source_title: 'Doc', tags: ['ia'] })
+
+  it('pull : un brouillon arrive (status, inbox_id) mais reste hors session', async () => {
+    const server = fakeServer()
+    serverDraft(server, 'd')
+    await sync(db, server.remote)
+    expect(await db.cards.get('d')).toMatchObject({ source: 'inbox', status: 'draft', inbox_id: 'i1' })
+    expect(buildQueue(await db.cards.toArray(), [], NOW)).toHaveLength(0)
+  })
+
+  it('accepté puis noté : la carte (status active) part avant sa review, puis tout est à jour', async () => {
+    const server = fakeServer()
+    server.enforceFk = true
+    serverDraft(server, 'd')
+    serverDraft(server, 'r')
+    await sync(db, server.remote)
+    const order: string[] = []
+    const pushCards = server.remote.pushCards.getMockImplementation() as Remote['pushCards']
+    server.remote.pushCards.mockImplementationOnce(async rows => { order.push('cartes'); await pushCards(rows) })
+    const pushReviews = server.remote.pushReviews.getMockImplementation() as Remote['pushReviews']
+    server.remote.pushReviews.mockImplementationOnce(async rows => { order.push('reviews'); await pushReviews(rows) })
+
+    await acceptDraft(db, 'd', { front: 'Q corrigée' }, { now: () => NOW })
+    await rejectDraft(db, 'r', { now: () => NOW })
+    await db.reviews.add(review('r1', 'd'))
+    const res = await sync(db, server.remote)
+
+    expect(order).toEqual(['cartes', 'reviews'])
+    expect(res.pushed).toBe(3)
+    expect(server.remote.pushCards).toHaveBeenLastCalledWith(expect.arrayContaining([
+      { id: 'd', source: 'inbox', status: 'active', front: 'Q corrigée', back: 'd', tags: ['ia'], deleted_at: null },
+      { id: 'r', source: 'inbox', status: 'draft', front: 'r', back: 'r', tags: ['ia'], deleted_at: NOW.toISOString() },
+    ]))
+    expect(await pendingCount(db)).toBe(0)
+    expect(await db.cards.get('d')).toMatchObject({ status: 'active', front: 'Q corrigée' })
+  })
+
+  it('brouillon accepté localement : le pull de la version serveur (encore draft) ne l’écrase pas avant l’envoi', async () => {
+    const server = fakeServer()
+    serverDraft(server, 'd')
+    await sync(db, server.remote)
+    await acceptDraft(db, 'd', undefined, { now: () => NOW })
+    server.failCardPush = 'before'
+    serverDraft(server, 'd') // nouvelle version serveur, toujours brouillon
+    await expect(sync(db, server.remote)).rejects.toThrow(SyncError)
+    expect((await db.cards.get('d'))!.status).toBe('active')
   })
 })

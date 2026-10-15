@@ -143,3 +143,14 @@ describe('libellés', () => {
     expect(`12 ${todaySuffix(12)}`).toBe("12 cartes à revoir aujourd'hui")
   })
 })
+
+describe('homeStats : brouillons de la boîte de réception (#55)', () => {
+  it('un brouillon ne compte ni dans les compteurs du jour ni dans les tags', () => {
+    const draft = card('d', ['dev'], { source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null })
+    const s = homeStats([card('a', ['ia']), draft], [], now)
+    expect(s.total).toBe(1)
+    expect(s.today).toBe(1)
+    expect(s.fresh).toBe(1)
+    expect(s.tags.find(t => t.slug === 'dev')!.total).toBe(0)
+  })
+})

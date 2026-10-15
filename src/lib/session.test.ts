@@ -118,3 +118,14 @@ describe('session limitée à un tag (#53)', () => {
     expect(nextDue(cards, rs, now, 'ia')!.getTime()).toBe(nextDue([cards[0]], rs, now)!.getTime())
   })
 })
+
+describe('brouillons de la boîte de réception (#55)', () => {
+  const draft = (id: string) => card(id, { source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null })
+  it('exclus de la session normale, de la révision libre et de la prochaine échéance', () => {
+    const cards = [draft('d'), card('a'), card('acceptee', { source: 'inbox', status: 'active', deck: null, source_path: null })]
+    expect(buildQueue(cards, [], now).map(i => i.card.id)).toEqual(['acceptee', 'a'])
+    expect(freeQueue(cards, [], now).map(i => i.card.id)).not.toContain('d')
+    // Même avec un historique (cas improbable), un brouillon ne donne jamais d'échéance.
+    expect(nextDue([draft('d')], [rv('d', ago(1))], now)).toBeNull()
+  })
+})

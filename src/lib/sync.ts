@@ -1,17 +1,18 @@
 import type { VaultDB } from './db'
 import type { supabase } from './supabase'
-import type { Card, CardSource, Rating, Review } from './types'
+import type { Card, CardSource, CardStatus, Rating, Review } from './types'
 
 /** Colonnes d'une review côté serveur (`synced` et `free` sont locaux). */
 type ReviewRow = Pick<Review, 'id' | 'card_id' | 'rating' | 'reviewed_at'>
 type ServerReview = ReviewRow & { inserted_at: string }
 
 /**
- * Colonnes qu'envoie l'app pour une carte manuelle (#54) : exactement celles que le rôle authenticated peut écrire
- * (migration 20261015000000_manual_cards). `source = 'manual'` est ajouté à l'insertion ; deck, source_path,
- * source_title et les horodatages restent au serveur.
+ * Colonnes qu'envoie l'app pour une carte écrite sur l'appareil : exactement celles que le rôle authenticated peut écrire
+ * (migrations 20261015000000_manual_cards et 20261015010000_inbox). `source` absent ou `manual` (#54) : insertion
+ * possible, `source = 'manual'` ajouté. `source = 'inbox'` (#55) : UPDATE seul (la carte vient du serveur), `status`
+ * compris (accepter un brouillon). deck, source_path, source_title, inbox_id et les horodatages restent au serveur.
  */
-export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'>
+export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'> & { source?: 'manual' | 'inbox'; status?: CardStatus }
 
 /**
  * Position dans un pull : dernière ligne reçue, dans l'ordre (horodatage serveur, id).
@@ -51,7 +52,14 @@ const rowsOf = <T>({ data, error }: Page<T>) => {
 }
 
 export const supabaseRemote = (client: typeof supabase): Remote => ({
-  async pushCards(rows) {
+  async pushCards(all) {
+    // Cartes de la boîte de réception (#55) : UPDATE seul, jamais d'insertion (seul l'outil crée des cartes inbox).
+    for (const { id, front, back, tags, deleted_at, status } of all.filter(r => r.source === 'inbox')) {
+      const res = await client.from('cards').update({ front, back, tags, deleted_at, status }).eq('id', id).eq('source', 'inbox').select('id')
+      if (res.error) throw new Error(res.error.message)
+      if (!res.data?.length) throw new Error(`carte ${id} : aucune ligne modifiée`)
+    }
+    const rows = all.filter(r => r.source !== 'inbox').map(({ id, front, back, tags, deleted_at }) => ({ id, front, back, tags, deleted_at }))
     if (!rows.length) return
     // 1. INSERT … ON CONFLICT (id) DO NOTHING en un appel : la réponse ne contient que les lignes vraiment insérées.
     //    Pas d'upsert « merge » : il mettrait aussi à jour id et source, colonnes que authenticated ne peut pas modifier.
@@ -78,10 +86,11 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
   },
 
   async pullCards(cursor, limit) {
-    let q = client.from('cards').select('id, source, deck, source_path, source_title, tags, front, back, created_at, updated_at, deleted_at')
+    let q = client.from('cards').select('id, source, status, inbox_id, deck, source_path, source_title, tags, front, back, created_at, updated_at, deleted_at')
     if (cursor) q = q.or(after('updated_at', cursor))
     const rows = rowsOf(await q.order('updated_at').order('id').limit(limit))
-    return rows.map(c => ({ ...c, source: c.source as CardSource })) // contrainte SQL : 'vault' ou 'manual'
+    // Contraintes SQL : source 'vault' | 'manual' | 'inbox', status 'active' | 'draft'.
+    return rows.map(c => ({ ...c, source: c.source as CardSource, status: c.status as CardStatus }))
   },
 
   async pullReviews(cursor, limit) {
@@ -202,15 +211,22 @@ export const outboxQueue = <Row>(o: Outbox<Row>): OutboxQueue => ({
   },
 })
 
-const sameContent = (a: ManualCardRow, b: ManualCardRow) =>
-  a.front === b.front && a.back === b.back && a.deleted_at === b.deleted_at
+type Content = Pick<Card, 'front' | 'back' | 'tags' | 'deleted_at' | 'status'>
+const sameContent = (a: Content, b: Content) =>
+  a.front === b.front && a.back === b.back && a.deleted_at === b.deleted_at && a.status === b.status
   && a.tags.length === b.tags.length && a.tags.every((t, i) => t === b.tags[i])
 
-/** Cartes manuelles créées, modifiées ou supprimées (douce) sur cet appareil (`synced: 0`, #54). */
+/**
+ * Cartes écrites sur cet appareil (`synced: 0`) : manuelles créées, modifiées ou supprimées (douce, #54), et cartes de
+ * la boîte de réception retouchées, acceptées ou rejetées (#55).
+ */
 export const cardsOutbox: Outbox<Card> = {
   count: db => db.cards.where('synced').equals(0).count(),
   pending: db => db.cards.where('synced').equals(0).toArray(),
-  send: (remote, rows) => remote.pushCards(rows.map(({ id, front, back, tags, deleted_at }) => ({ id, front, back, tags, deleted_at }))),
+  send: (remote, rows) => remote.pushCards(rows.map(({ id, source, status, front, back, tags, deleted_at }) =>
+    source === 'inbox'
+      ? { id, source, status: status ?? 'active', front, back, tags, deleted_at }
+      : { id, front, back, tags, deleted_at })),
   // Une carte modifiée pendant l'envoi garde `synced: 0` : seule une carte encore identique à ce qui est parti est marquée.
   markSent: (db, rows) => db.transaction('rw', db.cards, async () => {
     const current = await db.cards.bulkGet(rows.map(r => r.id))
