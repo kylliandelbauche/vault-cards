@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { chunk } from './lib.ts'
-import { INBOX_SOURCE, STALE_MS, claimPath, fileProblem, shortError, validateInboxPayload, type InboxCommand } from './inbox.ts'
+import { INBOX_SOURCE, PENDING_EXPIRY_MS, STALE_MS, assertRunDir, claimPath, fileProblem, payloadPath, readPayload, shortError, validateInboxPayload, type InboxCommand } from './inbox.ts'
 
 const BUCKET = 'inbox'
 
@@ -43,9 +43,9 @@ async function markError(db: SupabaseClient, item: Pick<Item, 'id' | 'storage_pa
   return removeFile(db, item.storage_path)
 }
 
-/** Éléments en attente, du plus ancien au plus récent (métadonnées seulement, jamais le contenu). */
+/** Éléments en attente, du plus ancien au plus récent (métadonnées utiles seulement : ni contenu ni nom de fichier saisi). */
 async function list(db: SupabaseClient) {
-  const { data, error } = await db.from('inbox').select('id, kind, filename, mime, size, created_at').eq('status', 'pending').order('created_at')
+  const { data, error } = await db.from('inbox').select('id, kind, mime, size, created_at').eq('status', 'pending').order('created_at')
   if (error) fail('lecture de la boîte de réception', error)
   return data
 }
@@ -54,9 +54,8 @@ async function list(db: SupabaseClient) {
  * Réclame un élément (pending → processing, atomique) puis écrit son contenu dans `dir` (`<id>.<ext>`, sans écraser).
  * Fichier : téléchargé, signature des octets vérifiée ; refusé → élément en erreur et fichier supprimé.
  */
-async function claim(db: SupabaseClient, id: string, dir: string) {
-  const st = await fs.stat(dir).catch(() => null)
-  if (!st?.isDirectory()) throw new Error(`dossier introuvable : ${dir}`)
+async function claim(db: SupabaseClient, id: string, runDir: string) {
+  const dir = await assertRunDir(runDir) // avant toute écriture en base
   const { data, error } = await db.from('inbox').update({ status: 'processing' }).eq('id', id).eq('status', 'pending')
     .select('id, kind, status, text, storage_path, filename, mime, size')
   if (error) fail('réclamation de l’élément', error)
@@ -85,19 +84,24 @@ async function claim(db: SupabaseClient, id: string, dir: string) {
 }
 
 /**
- * Termine un élément `processing` : JSON validé avant toute écriture, cartes insérées en brouillon (source inbox,
- * rattachées à l'élément), élément `done`, puis fichier supprimé du stockage. Refuse un élément qui a déjà des cartes
- * (rejeu) : aucune carte en double.
+ * Termine un élément : lit `<RUN_DIR>/<id>.json` (seul fichier accepté), le valide avant toute écriture, puis, dans un
+ * ordre rejouable : 1. brouillons insérés (source inbox, rattachés à l'élément) en une seule requête, donc tous ou aucun ;
+ * 2. élément `done` ; 3. fichier supprimé. Rejeu après un échec au milieu : si des brouillons existent déjà, l'insertion
+ * est sautée (aucun doublon) ; un élément déjà `done` ne fait que retenter la suppression du fichier.
  */
-async function complete(db: SupabaseClient, id: string, file: string) {
-  const payload = validateInboxPayload(JSON.parse(await fs.readFile(file, 'utf8')))
+async function complete(db: SupabaseClient, id: string, runDir: string) {
+  const dir = await assertRunDir(runDir)
+  const payload = validateInboxPayload(await readPayload(payloadPath(dir, id)))
   const item = await getItem(db, id)
-  if (item.status !== 'processing') throw new Error(`élément ${id} en statut « ${item.status} » : seul un élément réclamé (processing) peut être terminé`)
-  const { data: existing, error: exError } = await inboxOnly(db.from('cards').select('id')).eq('inbox_id', id).limit(1)
+  if (item.status !== 'processing' && item.status !== 'done') {
+    throw new Error(`élément ${id} en statut « ${item.status} » : seul un élément réclamé (processing) peut être terminé`)
+  }
+  const { count, error: exError } = await inboxOnly(db.from('cards').select('id', { count: 'exact', head: true })).eq('inbox_id', id)
   if (exError) fail('lecture des cartes de l’élément', exError)
-  if (existing.length) throw new Error(`élément ${id} : des cartes existent déjà (rejeu refusé) ; vérifier dans l’app puis « inbox fail » si besoin`)
+  const already = count ?? 0
+  if (item.status === 'done') return { id, drafts: already, replay: true, file_removed: await removeFile(db, item.storage_path) }
 
-  if (payload.cards.length) {
+  if (payload.cards.length && already === 0) {
     const rows = payload.cards.map(c => ({ source: INBOX_SOURCE, status: 'draft', inbox_id: id, source_title: payload.source_title, front: c.front, back: c.back, tags: c.tags }))
     const { error } = await db.from('cards').insert(rows)
     if (error) fail('ajout des brouillons', error)
@@ -105,8 +109,8 @@ async function complete(db: SupabaseClient, id: string, file: string) {
   const { data, error } = await db.from('inbox').update({ status: 'done', processed_at: new Date().toISOString() })
     .eq('id', id).eq('status', 'processing').select('id')
   if (error) fail('passage en done', error)
-  if (data.length !== 1) throw new Error(`élément ${id} : statut modifié entre-temps (brouillons insérés, élément pas marqué done)`)
-  return { id, drafts: payload.cards.length, file_removed: await removeFile(db, item.storage_path) }
+  if (data.length !== 1) throw new Error(`élément ${id} : statut modifié entre-temps (brouillons insérés, élément pas marqué done ; relancer complete)`)
+  return { id, drafts: already || payload.cards.length, replay: already > 0, file_removed: await removeFile(db, item.storage_path) }
 }
 
 /** Échec du traitement : élément en erreur (message court affiché dans l'app), fichier supprimé. */
@@ -118,21 +122,39 @@ async function failItem(db: SupabaseClient, id: string, message: string) {
 
 /**
  * Ménage (à lancer en fin d'exécution) : fichiers restés dans le stockage pour un élément terminé (done/error), ou
- * orphelins (aucun élément, envoi abandonné) de plus de 24 h ; éléments bloqués en processing depuis plus de 24 h → erreur.
+ * orphelins (aucun élément, envoi abandonné) de plus de 24 h ; éléments bloqués en processing depuis plus de 24 h → erreur ;
+ * éléments en attente depuis plus de 7 jours → erreur « expiré ».
  */
+const LIST_PAGE = 1000
+
+/** Toutes les entrées d'un dossier du bucket, page par page. */
+async function listAll(db: SupabaseClient, prefix: string) {
+  const out: { name: string; id: string | null; created_at: string | null }[] = []
+  for (let offset = 0; ; offset += LIST_PAGE) {
+    const res = await db.storage.from(BUCKET).list(prefix, { limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } })
+    if (res.error) fail('liste du stockage', res.error)
+    out.push(...res.data)
+    if (res.data.length < LIST_PAGE) return out
+  }
+}
+
 async function purge(db: SupabaseClient) {
-  const cutoff = new Date(Date.now() - STALE_MS).toISOString()
-  const stale = await db.from('inbox').update({ status: 'error', error: 'traitement interrompu', processed_at: new Date().toISOString() })
+  const now = Date.now()
+  const cutoff = new Date(now - STALE_MS).toISOString()
+  const stale = await db.from('inbox').update({ status: 'error', error: 'traitement interrompu', processed_at: new Date(now).toISOString() })
     .eq('status', 'processing').lt('created_at', cutoff).select('id')
   if (stale.error) fail('éléments bloqués', stale.error)
+  // Jamais traités depuis 7 jours : expirés (libèrent la limite de 10) ; leurs fichiers partent ci-dessous (statut error).
+  const expired = await db.from('inbox').update({ status: 'error', error: 'expiré', processed_at: new Date(now).toISOString() })
+    .eq('status', 'pending').lt('created_at', new Date(now - PENDING_EXPIRY_MS).toISOString()).select('id')
+  if (expired.error) fail('éléments expirés', expired.error)
 
   const files: { path: string; created_at: string }[] = []
-  const root = await db.storage.from(BUCKET).list('', { limit: 1000 })
-  if (root.error) fail('liste du stockage', root.error)
-  for (const folder of root.data.filter(e => e.id === null)) {
-    const res = await db.storage.from(BUCKET).list(folder.name, { limit: 1000 })
-    if (res.error) fail('liste du stockage', res.error)
-    for (const f of res.data) if (f.id !== null) files.push({ path: `${folder.name}/${f.name}`, created_at: f.created_at ?? new Date().toISOString() }) // date inconnue : jamais purgé comme orphelin
+  for (const folder of (await listAll(db, '')).filter(e => e.id === null)) {
+    for (const f of await listAll(db, folder.name)) {
+      // date inconnue : jamais purgé comme orphelin
+      if (f.id !== null) files.push({ path: `${folder.name}/${f.name}`, created_at: f.created_at ?? new Date(now).toISOString() })
+    }
   }
   const status = new Map<string, string>()
   for (const paths of chunk(files.map(f => f.path), 50)) {
@@ -150,14 +172,14 @@ async function purge(db: SupabaseClient) {
     if (error) fail('suppression des fichiers', error)
     removed += (data ?? []).length
   }
-  return { files_removed: removed, stale_marked_error: stale.data.length }
+  return { files_removed: removed, stale_marked_error: stale.data.length, pending_expired: expired.data.length }
 }
 
 export function runInbox(db: SupabaseClient, cmd: InboxCommand): Promise<unknown> {
   switch (cmd.action) {
     case 'list': return list(db)
     case 'claim': return claim(db, cmd.id, cmd.dir)
-    case 'complete': return complete(db, cmd.id, cmd.file)
+    case 'complete': return complete(db, cmd.id, cmd.dir)
     case 'fail': return failItem(db, cmd.id, cmd.message)
     case 'purge': return purge(db)
   }

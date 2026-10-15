@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
-import { claimPath, dedupKey, fileProblem, matchesSignature, parseInboxArgs, shortError, validateInboxPayload, INBOX_SOURCE, IMAGE_MAX } from './inbox.ts'
+import { assertRunDir, claimPath, dedupKey, payloadPath, PENDING_EXPIRY_MS, STALE_MS, fileProblem, matchesSignature, parseInboxArgs, shortError, validateInboxPayload, INBOX_SOURCE, IMAGE_MAX } from './inbox.ts'
 
 const bytes = (...parts: (string | number[])[]) =>
   new Uint8Array(parts.flatMap(p => (typeof p === 'string' ? [...Buffer.from(p, 'latin1')] : p)))
@@ -79,7 +80,8 @@ describe('arguments et chemins', () => {
     expect(parseInboxArgs(['list'])).toEqual({ action: 'list' })
     expect(parseInboxArgs(['purge'])).toEqual({ action: 'purge' })
     expect(parseInboxArgs(['claim', ID, '/tmp/run'])).toEqual({ action: 'claim', id: ID, dir: '/tmp/run' })
-    expect(parseInboxArgs(['complete', ID, 'c.json'])).toEqual({ action: 'complete', id: ID, file: 'c.json' })
+    expect(parseInboxArgs(['complete', ID, '/tmp/run'])).toEqual({ action: 'complete', id: ID, dir: '/tmp/run' })
+    expect(() => parseInboxArgs(['complete', ID, 'c.json'])).toThrow('dossier absolu')
     expect(parseInboxArgs(['fail', ID, 'PDF', 'illisible'])).toEqual({ action: 'fail', id: ID, message: 'PDF illisible' })
     expect(() => parseInboxArgs(['claim', 'pas-un-uuid', '/tmp'])).toThrow('id invalide')
     expect(() => parseInboxArgs(['claim', ID, 'relatif'])).toThrow('dossier absolu')
@@ -97,6 +99,33 @@ describe('arguments et chemins', () => {
   it('shortError : une ligne, 300 caractères au plus', () => {
     expect(shortError(' a\n  b ')).toBe('a b')
     expect(Array.from(shortError('x'.repeat(400)))).toHaveLength(300)
+  })
+})
+
+describe('RUN_DIR (claim/complete) : seul dossier lu ou écrit', () => {
+  const ID = '00000000-0000-4000-8000-000000000001'
+  it('payloadPath : <RUN_DIR>/<id>.json, rien d’autre', () => {
+    expect(payloadPath('/tmp/run', ID)).toBe(`/tmp/run/${ID}.json`)
+  })
+
+  it('assertRunDir : dossier existant dans le dossier temporaire du système ; refuse ailleurs, fichier ou lien', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'vc-run-'))
+    try {
+      expect(await assertRunDir(tmp)).toBe(await fs.realpath(tmp))
+      await expect(assertRunDir(import.meta.dirname)).rejects.toThrow('dossier temporaire')
+      await expect(assertRunDir(path.join(tmp, 'absent'))).rejects.toThrow('introuvable')
+      await fs.writeFile(path.join(tmp, 'f'), 'x')
+      await expect(assertRunDir(path.join(tmp, 'f'))).rejects.toThrow('introuvable')
+      await fs.symlink(import.meta.dirname, path.join(tmp, 'lien'))
+      await expect(assertRunDir(path.join(tmp, 'lien'))).rejects.toThrow()
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it('délais : processing bloqué 24 h, pending expiré 7 jours', () => {
+    expect(STALE_MS).toBe(24 * 3600 * 1000)
+    expect(PENDING_EXPIRY_MS).toBe(7 * 24 * 3600 * 1000)
   })
 })
 

@@ -1,5 +1,7 @@
 // Boîte de réception (#55), partie pure (testée) : signatures d'octets, validation du JSON de l'IA, arguments.
 // Les accès base/Storage sont dans inbox-cli.ts. Limites alignées sur la migration 20261015010000_inbox et src/lib/inbox.ts.
+import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { SOURCE_TITLE_MAX } from '../../shared/source-title.ts'
 import { MAX_TAGS, isTagSlug } from '../../shared/tags.ts'
@@ -134,16 +136,16 @@ export function validateInboxPayload(p: unknown): InboxPayload {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export const INBOX_USAGE =
-  'usage : node tools/cards/cli.ts inbox list | claim <id> <dossier> | complete <id> <fichier.json> | fail <id> <message> | purge'
+  'usage : node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge'
 
 export type InboxCommand =
   | { action: 'list' }
   | { action: 'purge' }
   | { action: 'claim'; id: string; dir: string }
-  | { action: 'complete'; id: string; file: string }
+  | { action: 'complete'; id: string; dir: string }
   | { action: 'fail'; id: string; message: string }
 
-/** Arguments après `inbox`. `<dossier>` : chemin absolu (le RUN_DIR de l'exécution) ; id : UUID. */
+/** Arguments après `inbox`. `<RUN_DIR>` : chemin absolu du dossier de l'exécution ; id : UUID. */
 export function parseInboxArgs(argv: string[]): InboxCommand {
   const [action, id, arg, ...extra] = argv
   const needId = () => {
@@ -154,15 +156,10 @@ export function parseInboxArgs(argv: string[]): InboxCommand {
     if (id !== undefined) throw new Error(INBOX_USAGE)
     return { action }
   }
-  if (action === 'claim') {
+  if (action === 'claim' || action === 'complete') {
     const valid = needId()
     if (!arg || !path.isAbsolute(arg) || extra.length) throw new Error(`dossier absolu attendu (RUN_DIR)\n${INBOX_USAGE}`)
     return { action, id: valid, dir: arg }
-  }
-  if (action === 'complete') {
-    const valid = needId()
-    if (!arg || extra.length) throw new Error(INBOX_USAGE)
-    return { action, id: valid, file: arg }
   }
   if (action === 'fail') {
     const valid = needId()
@@ -182,3 +179,35 @@ export function claimPath(dir: string, id: string, kind: 'text' | 'file', mime: 
 
 /** 24 h : au-delà, un objet orphelin est purgé et un élément bloqué en `processing` passe en erreur. */
 export const STALE_MS = 24 * 60 * 60 * 1000
+
+/** 7 jours : au-delà, un élément jamais traité (`pending`) expire (erreur « expiré ») et libère la limite de 10. */
+export const PENDING_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000
+
+/** JSON de `complete` : toujours `<RUN_DIR>/<id>.json`, jamais un chemin libre. */
+export function payloadPath(dir: string, id: string): string {
+  return path.join(dir, `${id}.json`)
+}
+
+/**
+ * RUN_DIR utilisable : dossier existant dont le chemin réel (liens résolus) est dans le dossier temporaire du système
+ * (`mktemp -d`). Renvoie ce chemin réel : claim n'écrit et complete ne lit que dedans.
+ */
+export async function assertRunDir(dir: string): Promise<string> {
+  const st = await fs.stat(dir).catch(() => null)
+  if (!st?.isDirectory()) throw new Error(`dossier introuvable : ${dir}`)
+  const real = await fs.realpath(dir)
+  const tmp = await fs.realpath(os.tmpdir())
+  if (!real.startsWith(tmp + path.sep)) throw new Error(`RUN_DIR hors du dossier temporaire du système (mktemp -d attendu) : ${dir}`)
+  return real
+}
+
+/** Lit le JSON de `complete` : fichier ordinaire (pas de lien), contenu jamais recopié dans un message d'erreur. */
+export async function readPayload(file: string): Promise<unknown> {
+  const st = await fs.lstat(file).catch(() => null)
+  if (!st?.isFile()) throw new Error(`fichier JSON introuvable (ou lien refusé) : ${file}`)
+  try {
+    return JSON.parse(await fs.readFile(file, 'utf8'))
+  } catch {
+    throw new Error(`JSON invalide : ${file}`)
+  }
+}
