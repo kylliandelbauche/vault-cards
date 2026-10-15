@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { addFile, addText, checkFile, checkText, fitWithin, InboxError, INBOX_LIMITS, listInbox, prepareFile, type InboxClient } from './inbox'
+import { addFile, addText, canvasCompressor, checkFile, checkText, cleanFilename, fitWithin, InboxError, INBOX_LIMITS, listInbox, prepareFile, type InboxClient } from './inbox'
 
 const MB = 1024 * 1024
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -78,6 +78,46 @@ describe('contrôles côté client', () => {
     expect(fitWithin(4032, 3024, 2048)).toEqual({ width: 2048, height: 1536 })
     expect(fitWithin(3000, 6000, 2048)).toEqual({ width: 1024, height: 2048 })
     expect(fitWithin(800, 600, 2048)).toEqual({ width: 800, height: 600 })
+  })
+})
+
+describe('cleanFilename', () => {
+  it('retire caractères de contrôle et séparateurs, garde l’extension, tronque à 255 caractères', () => {
+    expect(cleanFilename('  mon\u0000 cours\n/de\\chimie.pdf ')).toBe('mon cours de chimie.pdf')
+    const long = cleanFilename('😀'.repeat(300) + '.pdf')
+    expect(Array.from(long)).toHaveLength(255)
+    expect(long.endsWith('.pdf')).toBe(true)
+    expect(cleanFilename('\u0001\u0002.md')).toBe('fichier.md')
+  })
+
+  it('prepareFile renvoie le nom nettoyé', async () => {
+    expect((await prepareFile(fakeFile('a\tb.pdf', 10))).filename).toBe('a b.pdf')
+  })
+})
+
+describe('canvasCompressor', () => {
+  it('fond blanc peint avant l’image (PNG transparent → JPEG), dimensions réduites, JPEG qualité demandée', async () => {
+    const ops: unknown[][] = []
+    const ctx = {
+      set fillStyle(v: string) { ops.push(['fillStyle', v]) },
+      fillRect: (...a: number[]) => ops.push(['fillRect', ...a]),
+      drawImage: (_b: unknown, ...a: number[]) => ops.push(['drawImage', ...a]),
+    }
+    const canvas = { width: 0, height: 0, getContext: () => ctx, toBlob: (cb: (b: Blob) => void, type: string, q: number) => { ops.push(['toBlob', type, q]); cb(new Blob(['j'], { type })) } }
+    const create = document.createElement.bind(document)
+    const spy = vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => (tag === 'canvas' ? canvas : create(tag))) as typeof document.createElement)
+    const close = vi.fn()
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => ({ width: 4096, height: 2048, close })))
+    try {
+      const out = await canvasCompressor(new Blob(['png']), 2048, 0.8)
+      expect(out.type).toBe('image/jpeg')
+      expect([canvas.width, canvas.height]).toEqual([2048, 1024])
+      expect(ops).toEqual([['fillStyle', '#ffffff'], ['fillRect', 0, 0, 2048, 1024], ['drawImage', 0, 0, 2048, 1024], ['toBlob', 'image/jpeg', 0.8]])
+      expect(close).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+      vi.unstubAllGlobals()
+    }
   })
 })
 

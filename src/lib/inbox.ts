@@ -117,12 +117,32 @@ export const canvasCompressor: ImageCompressor = async (file, maxSide, quality) 
     canvas.height = height
     const ctx = canvas.getContext('2d')
     if (!ctx) throw new Error('canvas indisponible')
+    // JPEG n'a pas de transparence : fond blanc d'abord, sinon les zones transparentes d'un PNG deviennent noires.
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
     ctx.drawImage(bitmap, 0, 0, width, height)
     return await new Promise<Blob>((resolve, reject) =>
       canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encodage JPEG impossible'))), 'image/jpeg', quality))
   } finally {
     bitmap.close()
   }
+}
+
+const FILENAME_MAX = 255
+
+/**
+ * Nom de fichier tel que la RPC l'accepte (sinon refus APRÈS l'envoi, objet orphelin) : caractères de contrôle, `/` et
+ * `\` remplacés par une espace, espaces resserrées, 255 caractères au plus en gardant l'extension ; vide → « fichier ».
+ * Seulement affiché : le fichier stocké est nommé `<uid>/<id>`.
+ */
+export function cleanFilename(name: string): string {
+  const unsafe = (c: string) => c < ' ' || c === '\u007f' || c === '/' || c === '\\'
+  const clean = Array.from(name, c => (unsafe(c) ? ' ' : c)).join('').replace(/\s+/g, ' ').trim()
+  const dot = clean.lastIndexOf('.')
+  const ext = dot >= 0 ? clean.slice(dot) : ''
+  const base = (dot >= 0 ? clean.slice(0, dot) : clean).trim() || 'fichier'
+  const room = FILENAME_MAX - Array.from(ext).length
+  return Array.from(base).slice(0, Math.max(1, room)).join('').trim() + ext
 }
 
 export interface PreparedFile { blob: Blob; filename: string; mime: InboxMime }
@@ -132,7 +152,7 @@ export async function prepareFile(file: File, compress: ImageCompressor = canvas
   const { mime } = checkFile(file)
   if (!isImage(mime) || file.size <= INBOX_LIMITS.COMPRESS_OVER) {
     if (isImage(mime) && file.size > INBOX_LIMITS.IMAGE_MAX) throw new InboxError('too_big', 'Image trop grosse (10 Mo au maximum)')
-    return { blob: file, filename: file.name, mime }
+    return { blob: file, filename: cleanFilename(file.name), mime }
   }
   let blob: Blob
   try {
@@ -142,7 +162,7 @@ export async function prepareFile(file: File, compress: ImageCompressor = canvas
   }
   if (blob.size > INBOX_LIMITS.IMAGE_MAX) throw new InboxError('too_big', 'Image trop grosse, même compressée (10 Mo au maximum)')
   const base = file.name.slice(0, file.name.lastIndexOf('.'))
-  return { blob, filename: `${base}.jpg`, mime: 'image/jpeg' }
+  return { blob, filename: cleanFilename(`${base}.jpg`), mime: 'image/jpeg' }
 }
 
 export interface InboxDeps {
