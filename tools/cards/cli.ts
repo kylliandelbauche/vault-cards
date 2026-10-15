@@ -1,5 +1,6 @@
-// Outil local (Mac) : lit les notes de veille du vault et écrit les cartes dans Supabase avec la clé secrète.
-// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles
+// Outil local (Mac) : lit les synthèses du vault (VAULT_NOTES_DIR, défaut 3-Resources/Second cerveau, `type: synthese`)
+// et écrit les cartes dans Supabase avec la clé secrète.
+// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>
 // Cartes : uniquement source = 'vault' (vaultOnly) ; les cartes créées à la main dans l'app (#54) ne sont jamais lues ni modifiées.
 // Sortie : JSON sur stdout uniquement. Erreurs sur stderr, code 1. Aucune valeur de variable d'environnement n'est jamais affichée.
 import fs from 'node:fs/promises'
@@ -7,8 +8,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  REMOVED_HASH, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
-  type ExistingCard, type NoteRow, type RetagTarget, type TitledCard,
+  DECK, REMOVED_HASH, hashContent, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
+  type ExistingCard, type NoteRow, type RelinkState, type RetagTarget, type TitledCard,
 } from './lib.ts'
 import { extractTitle } from '../../shared/source-title.ts'
 
@@ -39,6 +40,11 @@ function connect(): SupabaseClient {
 
 function vaultRoot(): string {
   return process.env.VAULT_ROOT ?? path.join(os.homedir(), 'Workspace')
+}
+
+/** Dossier des synthèses, relatif au vault (VAULT_NOTES_DIR peut venir de .env.local : appeler après loadEnv). */
+function notesDir(): string {
+  return resolveNotesDir(process.env.VAULT_NOTES_DIR)
 }
 
 function fail(step: string, error: { message: string }): never {
@@ -86,7 +92,7 @@ async function fetchLiveCardPaths(db: SupabaseClient, paths: string[]): Promise<
 
 async function scan() {
   const db = connect() // charge .env.local avant vaultRoot()
-  const files = await listSyntheses(vaultRoot())
+  const files = await listSyntheses(vaultRoot(), notesDir())
   const { data, error } = await db.from('notes').select('source_path, content_hash')
   if (error) fail('lecture des notes', error)
   const { changed, removed } = computeScan(files, data as NoteRow[])
@@ -99,11 +105,12 @@ async function apply(file: string, confirmDelete: number | null) {
   // Contrôles locaux d'abord : rien n'est lu ni écrit en base si le payload est refusé.
   const payload = validatePayload(JSON.parse(await fs.readFile(file, 'utf8')))
   const { source_path, deck, content_hash, source_title } = payload
-  assertDeckMatchesPath(source_path, deck)
-  loadEnv() // même vault que scan : VAULT_ROOT peut venir de .env.local
+  loadEnv() // même vault que scan : VAULT_ROOT et VAULT_NOTES_DIR peuvent venir de .env.local
+  assertDeckMatchesPath(source_path, deck, notesDir())
   if (content_hash === REMOVED_HASH) {
-    const stillExists = await fs.access(resolveInVault(vaultRoot(), source_path)).then(() => true, () => false)
-    assertRemovedNoteGone(source_path, stillExists)
+    // « removed » = plus de synthèse à ce chemin (fichier disparu, ou `type` qui n'est plus synthese) : même règle que scan.
+    const current = await fs.readFile(resolveInVault(vaultRoot(), source_path), 'utf8').catch(() => null)
+    assertRemovedNoteGone(source_path, current !== null && isSynthese(current))
   } else {
     const abs = resolveInVault(vaultRoot(), source_path)
     let current: string
@@ -113,6 +120,7 @@ async function apply(file: string, confirmDelete: number | null) {
       throw new Error(`note introuvable dans le vault : ${source_path} (relancer scan)`)
     }
     assertContentHashFresh(content_hash, current)
+    if (!isSynthese(current)) throw new Error(`pas une synthèse (frontmatter sans « type: synthese ») : ${source_path}`)
   }
   const db = connect()
   const existing = await fetchExisting(db, source_path)
@@ -217,6 +225,62 @@ async function titles(db: SupabaseClient) {
   return { updated, unchanged }
 }
 
+/** Ids des cartes vivantes (vault) d'un source_path : lecture seule, utilisée par relink. */
+async function liveIds(db: SupabaseClient, sourcePath: string): Promise<string[]> {
+  const { data, error } = await vaultOnly(db.from('cards').select('id')).eq('source_path', sourcePath).is('deleted_at', null).order('id')
+  if (error) fail('lecture des cartes', error)
+  return (data as { id: string }[]).map(c => c.id)
+}
+
+/**
+ * Rattache les cartes vivantes (vault) d'un ancien source_path à une synthèse déplacée : seules source_path, deck et
+ * source_title changent (ids, texte, tags et reviews intacts : progression conservée). La ligne `notes` suit, avec le
+ * hash du nouveau fichier. Tout est lu et validé (planRelink) avant la première écriture ; idempotent.
+ */
+async function relink(db: SupabaseClient, file: string) {
+  const entries = validateRelinkPayload(JSON.parse(await fs.readFile(file, 'utf8')), notesDir())
+  const states = new Map<string, RelinkState>()
+  for (const e of entries) {
+    const content = await fs.readFile(resolveInVault(vaultRoot(), e.to), 'utf8').catch(() => null)
+    const synthese = content !== null && isSynthese(content)
+    const { data: rows, error } = await db.from('notes').select('source_path').in('source_path', [e.from, e.to])
+    if (error) fail('lecture des notes', error)
+    const paths = new Set((rows as { source_path: string }[]).map(r => r.source_path))
+    states.set(e.from, {
+      from_ids: await liveIds(db, e.from),
+      to_live: (await liveIds(db, e.to)).length,
+      to_title: synthese ? extractTitle(content, path.basename(e.to)) : null,
+      to_hash: synthese ? hashContent(content) : '',
+      from_row: paths.has(e.from),
+      to_row: paths.has(e.to),
+    })
+  }
+  const plans = planRelink(entries, states)
+  // Pas de transaction, mais rejouable : après une erreur, relancer le même fichier (les entrées faites sont « unchanged »).
+  for (const p of plans) {
+    for (const ids of chunk(p.ids, 100)) {
+      const { data, error } = await vaultOnly(db.from('cards').update({ source_path: p.to, deck: DECK, source_title: p.source_title }))
+        .in('id', ids).eq('source_path', p.from).is('deleted_at', null).select('id')
+      if (error) fail(`rattachement des cartes de ${p.from}`, error)
+      if (data.length !== ids.length) throw new Error(`rattachement de ${p.from} : ${data.length} carte(s) modifiée(s) sur ${ids.length} (relancer relink)`)
+    }
+    const row = { source_path: p.to, content_hash: p.content_hash, processed_at: new Date().toISOString() }
+    if (p.notes === 'rename') {
+      const { data, error } = await db.from('notes').update(row).eq('source_path', p.from).select('source_path')
+      if (error) fail(`renommage de la note ${p.from}`, error)
+      if (data.length !== 1) throw new Error(`renommage de la note ${p.from} : ${data.length} ligne(s) modifiée(s) (relancer relink)`)
+    } else if (p.notes !== 'unchanged') {
+      const { error } = await db.from('notes').upsert(row, { onConflict: 'source_path' })
+      if (error) fail(`enregistrement de la note ${p.to}`, error)
+      if (p.notes === 'replace') {
+        const { error: delError } = await db.from('notes').delete().eq('source_path', p.from)
+        if (delError) fail(`retrait de l'ancienne ligne notes ${p.from}`, delError)
+      }
+    }
+  }
+  return plans.map(p => ({ from: p.from, to: p.to, cards: p.ids.length, source_title: p.source_title, notes: p.notes }))
+}
+
 async function main(argv: string[]): Promise<unknown> {
   const { command, arg, confirmDelete } = parseArgs(argv)
   switch (command) {
@@ -233,6 +297,9 @@ async function main(argv: string[]): Promise<unknown> {
     case 'retag':
       if (!arg) throw new Error(USAGE)
       return retag(connect(), arg)
+    case 'relink':
+      if (!arg) throw new Error(USAGE)
+      return relink(connect(), arg)
     case 'titles':
       if (arg) throw new Error(USAGE)
       return titles(connect())

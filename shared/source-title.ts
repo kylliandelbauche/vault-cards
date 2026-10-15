@@ -1,6 +1,6 @@
 /**
  * Titre de la source d'une carte : source unique, importée par l'app (src/) et par l'outil (tools/cards).
- * `extractTitle` = premier H1 de la note ; `humanizeFileName` = repli quand il n'y a pas de titre
+ * `extractTitle` = premier H1 de la note, humanisé (#76 : emoji de tête retiré, slug `_` → espaces) ; `humanizeFileName` = repli quand il n'y a pas de titre
  * (pas de H1, ou carte créée avant #35 et pas encore remplie par la commande `titles`).
  */
 
@@ -14,13 +14,29 @@ function capLength(text: string): string {
   return points.slice(0, SOURCE_TITLE_MAX - 1).join('').trimEnd() + '…'
 }
 
-/** Nom de fichier lisible : dernier segment du chemin, sans `-synthese.md`, tirets → espaces, majuscule initiale. */
+/** Emojis de tête (séquences ZWJ, sélecteurs de variante, modificateurs de peau, drapeaux), puis espaces. */
+const LEADING_EMOJI = /^(?:(?:\p{Regional_Indicator}{2}|\p{Extended_Pictographic}[\uFE0F\u20E3\p{Emoji_Modifier}]*(?:\u200D\p{Extended_Pictographic}[\uFE0F\p{Emoji_Modifier}]*)*)\s*)+/u
+
+/**
+ * Titre lisible (#76) : sans emoji de tête, majuscule initiale ; un slug sans espace (`vivre_maintenant`)
+ * voit ses `_` remplacés par des espaces. Un titre déjà rédigé garde ses `_`. Jamais vide.
+ */
+export function humanizeTitle(raw: string): string {
+  const trimmed = raw.trim()
+  const noEmoji = trimmed.replace(LEADING_EMOJI, '').trim()
+  const slug = /\s/.test(noEmoji) ? noEmoji : noEmoji.replace(/_+/g, ' ').trim()
+  if (slug === '') return capLength(trimmed)
+  const [first, ...rest] = Array.from(slug)
+  return capLength(first.toUpperCase() + rest.join(''))
+}
+
+/** Nom de fichier lisible : dernier segment du chemin, sans `-synthese.md` ni `.md`, `-`/`_` → espaces, puis humanizeTitle. */
 export function humanizeFileName(fileName: string): string {
   const base = fileName.split('/').pop() ?? fileName
   const stem = base.replace(/-synthese\.md$/, '').replace(/\.md$/, '')
-  const words = stem.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+  const words = stem.replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim()
   if (words === '') return capLength(base)
-  return capLength(words.charAt(0).toUpperCase() + words.slice(1))
+  return humanizeTitle(words)
 }
 
 /** Retire le frontmatter YAML en tête (`---` … `---`). Non refermé : le texte est gardé tel quel. */
@@ -48,7 +64,7 @@ function h1Text(line: string): string {
   return m ? m[1].replace(/(^|[ \t]+)#+[ \t]*$/, '').trim() : ''
 }
 
-/** Premier `# ` H1 (hors BOM, frontmatter et blocs de code), sinon nom de fichier humanisé. Toujours 1 à 200 caractères. */
+/** Premier `# ` H1 (hors BOM, frontmatter et blocs de code) humanisé, sinon nom de fichier humanisé. Toujours 1 à 200 caractères. */
 export function extractTitle(markdown: string, fileName: string): string {
   let fence: { char: string; length: number } | null = null
   for (const line of stripFrontmatter(markdown.replace(/^\uFEFF/, '').split(/\r?\n/))) {
@@ -59,7 +75,7 @@ export function extractTitle(markdown: string, fileName: string): string {
     fence = openingFence(line)
     if (fence) continue
     const title = h1Text(line)
-    if (title) return capLength(title)
+    if (title) return humanizeTitle(title)
   }
   return humanizeFileName(fileName)
 }

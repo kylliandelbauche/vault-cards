@@ -3,46 +3,95 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle, vaultOnly, VAULT_SOURCE } from './lib.ts'
+import { listSyntheses, parseFrontmatter, suggestTags, resolveNotesDir, validateRelinkPayload, planRelink, NOTES_SUBDIR, DECK, type RelinkState, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle, vaultOnly, VAULT_SOURCE } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
+const SUB = 'Second cerveau' // sous-dossier des fixtures (le vrai défaut est NOTES_SUBDIR)
 
-describe('listSyntheses', () => {
-  it('ne garde que les *-synthese.md, avec le deck = 1er sous-dossier', async () => {
-    const notes = await listSyntheses(root, 'veille')
-    expect(notes.map(n => [n.source_path, n.deck]).sort()).toEqual([
-      ['veille/ia/a/a-synthese.md', 'ia'],
-      ['veille/software/b/b-synthese.md', 'software'],
+describe('listSyntheses (#76 : 3-Resources/Second cerveau, à plat, type: synthese)', () => {
+  it('ne garde que les .md de premier niveau dont le frontmatter dit type: synthese ; deck fixe', async () => {
+    const notes = await listSyntheses(root, SUB)
+    // ignorés : index sans frontmatter, type: concept, Transcriptions/, .base, fichier caché
+    expect(notes.map(n => [n.source_path, n.deck])).toEqual([
+      ['Second cerveau/🤖 note_a.md', DECK],
+      ['Second cerveau/b.md', DECK],
     ])
+    expect(DECK).toBe('Second cerveau')
+    expect(NOTES_SUBDIR).toBe('3-Resources/Second cerveau')
   })
 
   it('hash du contenu et chemin absolu lisible', async () => {
-    const notes = await listSyntheses(root, 'veille')
-    const a = notes.find(n => n.deck === 'ia')!
+    const notes = await listSyntheses(root, SUB)
+    const a = notes.find(n => n.source_path.endsWith('note_a.md'))!
     const text = await fs.readFile(a.abs_path, 'utf8')
     expect(a.content_hash).toBe(hashContent(text))
   })
 
-  it('title = H1 de la note (frontmatter ignoré), sinon nom de fichier humanisé', async () => {
-    const notes = await listSyntheses(root, 'veille')
-    expect(notes.find(n => n.deck === 'ia')!.title).toBe('Note A')
-    expect(notes.find(n => n.deck === 'software')!.title).toBe('Note B')
+  it('title = H1 humanisé (frontmatter ignoré)', async () => {
+    const notes = await listSyntheses(root, SUB)
+    expect(notes.map(n => n.title)).toEqual(['Note a', 'Note B'])
   })
 
-  it('accepte un nom de fichier qui commence par un emoji + espace', async () => {
+  it('tags du frontmatter (liste en ligne ou en bloc) et indices de tags de la liste fixe', async () => {
+    const notes = await listSyntheses(root, SUB)
+    const [a, b] = notes
+    expect(a.frontmatter_tags).toEqual(['ia', 'agents', 'cybersecurite'])
+    expect(a.tag_hints).toEqual(['ia', 'securite'])
+    expect(b.frontmatter_tags).toEqual(['developpement', 'habitudes'])
+    expect(b.tag_hints).toEqual(['dev', 'productivite'])
+  })
+
+  it('défaut : 3-Resources/Second cerveau ; chemins NFC, emoji + espace acceptés', async () => {
     const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'vault-cards-'))
     try {
-      const dir = path.join(tmp, '3-Resources/veille/software/x')
-      await fs.mkdir(dir, { recursive: true })
-      await fs.writeFile(path.join(dir, '🛡️ x-synthese.md'), 'contenu')
-      await fs.writeFile(path.join(dir, 'x-transcription.md'), 'brut')
+      const dir = path.join(tmp, NOTES_SUBDIR)
+      await fs.mkdir(path.join(dir, 'Transcriptions'), { recursive: true })
+      await fs.writeFile(path.join(dir, '⏳ vivre_maintenant.md'), '---\ntype: synthese\n---\n# ⏳ vivre_maintenant\n')
+      await fs.writeFile(path.join(dir, 'Transcriptions', '⏳ vivre_maintenant.md'), '---\ntype: synthese\n---\nbrut')
       const notes = await listSyntheses(tmp)
       expect(notes).toHaveLength(1)
-      expect(notes[0].source_path).toBe('3-Resources/veille/software/x/🛡️ x-synthese.md')
-      expect(notes[0].deck).toBe('software')
+      expect(notes[0].source_path).toBe('3-Resources/Second cerveau/⏳ vivre_maintenant.md')
+      expect(notes[0].title).toBe('Vivre maintenant')
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
     }
+  })
+})
+
+describe('parseFrontmatter', () => {
+  it('type et tags (liste en ligne, guillemets retirés)', () => {
+    expect(parseFrontmatter('---\ntitre: "x"\ntype: synthese\ntags: [developpement_personnel, "priorites"]\n---\n# T')).toEqual({ type: 'synthese', tags: ['developpement_personnel', 'priorites'] })
+  })
+  it('tags en bloc YAML', () => {
+    expect(parseFrontmatter("---\ntype: 'synthese'\ntags:\n  - a\n  - b\nautre: 1\n---\n").tags).toEqual(['a', 'b'])
+  })
+  it('sans frontmatter, non refermé, ou type ailleurs que dans le frontmatter : rien', () => {
+    expect(parseFrontmatter('# T\ntype: synthese')).toEqual({ type: null, tags: [] })
+    expect(parseFrontmatter('---\ntype: synthese\n# jamais refermé')).toEqual({ type: null, tags: [] })
+  })
+  it('BOM et fins de ligne Windows tolérés', () => {
+    expect(parseFrontmatter('\uFEFF---\r\ntype: synthese\r\n---\r\n').type).toBe('synthese')
+  })
+})
+
+describe('suggestTags', () => {
+  it('table de correspondance simple, ordre du frontmatter, sans doublon, jamais hors liste', () => {
+    expect(suggestTags(['developpement_personnel', 'priorites', 'habitudes'])).toEqual(['mental', 'productivite'])
+    expect(suggestTags(['cybersecurite', 'saas', 'pentest', 'ia'])).toEqual(['securite', 'argent', 'ia'])
+    expect(suggestTags(['marketing', 'acquisition', 'copywriting'])).toEqual(['marketing'])
+    expect(suggestTags(['loisirs', 'minecraft'])).toEqual(['culture'])
+    expect(suggestTags(['design', 'inconnu'])).toEqual([])
+  })
+})
+
+describe('resolveNotesDir (VAULT_NOTES_DIR)', () => {
+  it('défaut 3-Resources/Second cerveau ; valeur relative acceptée (sans / final)', () => {
+    expect(resolveNotesDir(undefined)).toBe(NOTES_SUBDIR)
+    expect(resolveNotesDir('')).toBe(NOTES_SUBDIR)
+    expect(resolveNotesDir('Notes/Synthèses/')).toBe('Notes/Synthèses')
+  })
+  it('refuse un chemin absolu, .., . ou antislash', () => {
+    for (const bad of ['/etc', '../x', 'a/../b', './a', 'a\\b']) expect(() => resolveNotesDir(bad), bad).toThrow(/VAULT_NOTES_DIR/)
   })
 })
 
@@ -251,7 +300,7 @@ describe('assertContentHashFresh', () => {
     expect(() => assertContentHashFresh(hashContent('note'), 'note')).not.toThrow()
   })
   it('le content_hash émis par scan (listSyntheses) passe la vérification sur le même fichier, et échoue si le fichier change', async () => {
-    const notes = await listSyntheses(root, 'veille')
+    const notes = await listSyntheses(root, SUB)
     expect(notes.length).toBeGreaterThan(0)
     for (const n of notes) {
       const current = await fs.readFile(n.abs_path, 'utf8')
@@ -264,42 +313,102 @@ describe('assertContentHashFresh', () => {
   })
 })
 
-describe('assertDeckMatchesPath', () => {
-  const ok = '3-Resources/veille/software/x/x-synthese.md'
-  it('deck = dossier qui suit 3-Resources/veille/ dans source_path', () => {
-    expect(() => assertDeckMatchesPath(ok, 'software')).not.toThrow()
-    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a-synthese.md', 'ia')).not.toThrow()
-    expect(() => assertDeckMatchesPath('3-Resources/veille/software/x/🛡️ x-synthese.md', 'software')).not.toThrow()
+describe('assertDeckMatchesPath (#76 : 3-Resources/Second cerveau/<nom>.md, deck fixe)', () => {
+  const ok = '3-Resources/Second cerveau/⏳ vivre_maintenant.md'
+  it('format exact produit par scan, deck = « Second cerveau »', () => {
+    expect(() => assertDeckMatchesPath(ok, DECK)).not.toThrow()
+    expect(() => assertDeckMatchesPath('3-Resources/Second cerveau/b.md', 'Second cerveau')).not.toThrow()
   })
   it('deck différent : erreur qui nomme le deck attendu', () => {
-    expect(() => assertDeckMatchesPath(ok, 'ia')).toThrow(/deck « ia ».*« software »/)
+    expect(() => assertDeckMatchesPath(ok, 'ia')).toThrow(/deck « ia ».*« Second cerveau »/)
+    expect(() => assertDeckMatchesPath(ok, 'second cerveau')).toThrow(/deck/)
   })
-  it('deck sensible à la casse et au sous-dossier', () => {
-    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a/a-synthese.md', 'IA')).toThrow(/deck/)
-    expect(() => assertDeckMatchesPath('3-Resources/veille/ia/a/a-synthese.md', 'a')).toThrow(/deck/)
-  })
-  it('même format que scan : préfixe 3-Resources/veille/, un dossier de deck, nom en *-synthese.md', () => {
+  it('refuse l’ancien format et tout ce que scan ne produit pas', () => {
     for (const bad of [
       'a.md',
-      'veille/ia/a-synthese.md', // préfixe 3-Resources/ manquant
-      'x/3-Resources/veille/ia/a-synthese.md', // préfixe pas en tête
-      '3-Resources/veille/a-synthese.md', // pas de dossier de deck
-      '3-Resources/veille/ia/a-transcription.md', // pas une synthèse
-      '3-Resources/veille/ia/a-synthese.md.bak',
-    ]) expect(() => assertDeckMatchesPath(bad, 'ia'), bad).toThrow(/source_path/)
+      '3-Resources/veille/ia/a/a-synthese.md', // ancien vault
+      'Second cerveau/a.md', // préfixe 3-Resources/ manquant
+      'x/3-Resources/Second cerveau/a.md', // préfixe pas en tête
+      '3-Resources/Second cerveau/Transcriptions/a.md', // sous-dossier
+      '3-Resources/Second cerveau/second_cerveau.base',
+      '3-Resources/Second cerveau/a.md.bak',
+      '3-Resources/Second cerveau/.md',
+      '3-Resources/Second cerveau/.cachee.md',
+    ]) expect(() => assertDeckMatchesPath(bad, DECK), bad).toThrow(/source_path/)
   })
   it('refuse .., ., segments vides, chemins absolus et antislash', () => {
     for (const bad of [
-      '3-Resources/veille/ia/../../../etc/x-synthese.md',
-      '3-Resources/veille/ia/./a-synthese.md',
-      '3-Resources/veille/ia//a-synthese.md',
-      '/3-Resources/veille/ia/a-synthese.md',
-      '3-Resources/veille/ia/a-synthese.md/',
-      '3-Resources/veille/ia/..\\a-synthese.md',
-    ]) expect(() => assertDeckMatchesPath(bad, 'ia'), bad).toThrow(/source_path/)
+      '3-Resources/Second cerveau/../../etc/x.md',
+      '3-Resources/Second cerveau/./a.md',
+      '3-Resources/Second cerveau//a.md',
+      '/3-Resources/Second cerveau/a.md',
+      '3-Resources/Second cerveau/a.md/',
+      '3-Resources/Second cerveau/..\\a.md',
+    ]) expect(() => assertDeckMatchesPath(bad, DECK), bad).toThrow(/source_path/)
   })
-  it('sous-dossier de veille configurable (comme listSyntheses)', () => {
-    expect(() => assertDeckMatchesPath('veille/ia/a-synthese.md', 'ia', 'veille')).not.toThrow()
+  it('dossier des notes configurable (comme listSyntheses)', () => {
+    expect(() => assertDeckMatchesPath('Second cerveau/a.md', DECK, 'Second cerveau')).not.toThrow()
+    expect(() => assertDeckMatchesPath(ok, DECK, 'Second cerveau')).toThrow(/source_path/)
+  })
+})
+
+describe('validateRelinkPayload', () => {
+  const to = '3-Resources/Second cerveau/⏳ vivre_maintenant.md'
+  const from = '3-Resources/veille/concept/x/x-synthese.md'
+  it('liste de {from, to} : from = chemin relatif sûr, to = format exact de scan', () => {
+    expect(validateRelinkPayload([{ from, to }])).toEqual([{ from, to }])
+  })
+  it('refuse : pas une liste, liste vide, clé inconnue, champ manquant', () => {
+    expect(() => validateRelinkPayload({ from, to })).toThrow(/liste/)
+    expect(() => validateRelinkPayload([])).toThrow(/vide/)
+    expect(() => validateRelinkPayload([{ from, to, deck: 'x' }])).toThrow(/clé inconnue « deck »/)
+    expect(() => validateRelinkPayload([{ from }])).toThrow(/« to »/)
+  })
+  it('refuse un to hors format et un from qui sort du vault', () => {
+    expect(() => validateRelinkPayload([{ from, to: '3-Resources/veille/ia/a-synthese.md' }])).toThrow(/source_path/)
+    for (const bad of ['../x.md', '/etc/x.md', 'a//b.md', 'a/./b.md', 'a\\b.md']) {
+      expect(() => validateRelinkPayload([{ from: bad, to }]), bad).toThrow(/from/)
+    }
+  })
+  it('refuse from = to, from ou to en double, chaînes (un to réutilisé comme from)', () => {
+    expect(() => validateRelinkPayload([{ from: to, to }])).toThrow(/identiques/)
+    const to2 = '3-Resources/Second cerveau/b.md'
+    expect(() => validateRelinkPayload([{ from, to }, { from, to: to2 }])).toThrow(/en double/)
+    expect(() => validateRelinkPayload([{ from, to }, { from: 'a/b.md', to }])).toThrow(/en double/)
+    expect(() => validateRelinkPayload([{ from, to }, { from: to, to: to2 }])).toThrow(/chaîne/)
+  })
+  it('dossier des notes configurable', () => {
+    expect(() => validateRelinkPayload([{ from, to: 'N/a.md' }], 'N')).not.toThrow()
+  })
+})
+
+describe('planRelink', () => {
+  const e = { from: 'old/a-synthese.md', to: '3-Resources/Second cerveau/⏳ a.md' }
+  const state = (over: Partial<RelinkState> = {}): RelinkState =>
+    ({ from_ids: ['1', '2'], to_live: 0, to_title: 'A', to_hash: 'h', from_row: true, to_row: false, ...over })
+  it('cartes de from rattachées (ids inchangés), ligne notes renommée avec le hash du nouveau fichier', () => {
+    expect(planRelink([e], new Map([[e.from, state()]]))).toEqual([
+      { from: e.from, to: e.to, ids: ['1', '2'], source_title: 'A', content_hash: 'h', notes: 'rename' },
+    ])
+  })
+  it('pas de ligne notes pour from : insérée ; ligne to déjà là : remplacée (from supprimée)', () => {
+    expect(planRelink([e], new Map([[e.from, state({ from_row: false })]]))[0].notes).toBe('insert')
+    expect(planRelink([e], new Map([[e.from, state({ to_row: true })]]))[0].notes).toBe('replace')
+  })
+  it('idempotent : déjà rattaché (plus rien à from, ligne to présente) = unchanged, rien à écrire', () => {
+    const p = planRelink([e], new Map([[e.from, state({ from_ids: [], from_row: false, to_live: 2, to_row: true })]]))
+    expect(p).toEqual([{ from: e.from, to: e.to, ids: [], source_title: 'A', content_hash: 'h', notes: 'unchanged' }])
+  })
+  it('refuse tout (rien n’est écrit) si une seule entrée est invalide, en listant les erreurs', () => {
+    const e2 = { from: 'old/b-synthese.md', to: '3-Resources/Second cerveau/b.md' }
+    const states = new Map([[e.from, state()], [e2.from, state({ to_title: null })]])
+    expect(() => planRelink([e, e2], states)).toThrow(/rien n'a été écrit[\s\S]*b\.md.*introuvable ou pas une synthèse/)
+  })
+  it('refuse : to absent / pas une synthèse, to qui a déjà des cartes, from inconnu (rien à rattacher)', () => {
+    expect(() => planRelink([e], new Map([[e.from, state({ to_title: null })]]))).toThrow(/introuvable ou pas une synthèse/)
+    expect(() => planRelink([e], new Map([[e.from, state({ to_live: 3 })]]))).toThrow(/a déjà 3 carte/)
+    expect(() => planRelink([e], new Map([[e.from, state({ from_ids: [], from_row: false })]]))).toThrow(/rien à rattacher/)
+    expect(() => planRelink([e], new Map())).toThrow(/rien à rattacher|état/)
   })
 })
 
@@ -350,7 +459,7 @@ describe('planRetag', () => {
 
 describe('computeScan', () => {
   const file = (source_path: string, content_hash: string) =>
-    ({ source_path, deck: 'ia', content_hash, title: 'T', abs_path: '/v/' + source_path })
+    ({ source_path, deck: DECK, content_hash, title: 'T', abs_path: '/v/' + source_path, frontmatter_tags: [], tag_hints: [] })
   it('changed = notes nouvelles ou au hash différent ; removed = notes absentes du disque', () => {
     const files = [file('a.md', 'h1'), file('b.md', 'h2'), file('c.md', 'h3')]
     const rows = [
