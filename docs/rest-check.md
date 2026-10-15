@@ -52,3 +52,65 @@ Trace laissée : une carte `[rest-check] <date>` **supprimée en douce** (l'app 
 y compris si le script s'arrête sur une erreur après l'avoir créée (nettoyage en `finally`).
 Elle est invisible dans l'app. Pour la purger : `delete from public.cards where front like '[rest-check]%' and source = 'manual';`
 dans l'éditeur SQL de Supabase (ses éventuelles reviews d'abord ; le script n'en crée pas).
+
+# Boîte de réception et brouillons : preuves (#55)
+
+## 1. Preuve SQL, sans trace
+
+```sh
+supabase db query --linked -f supabase/tests/inbox.sql
+```
+
+Transaction annulée (`rollback` final), rôles `authenticated` et `anon` simulés. Vérifie : dépôt d'un texte par la RPC
+`create_inbox_item` (statut `pending`, rappel idempotent) ; insertion directe dans `inbox` (même `pending`), update et
+delete refusés ; lecture des statuts ; bucket `inbox` : aucun objet visible ni modifiable, dépôt seulement dans
+`<uid>/<uuid>` ; RPC fichier : objet absent refusé, image > 10 Mo refusée, taille et type pris sur l'objet stocké ;
+quota de 10 éléments en attente ; carte `inbox` ou colonne `status` refusées à l'insertion ; brouillon accepté
+(`draft → active`) ; `active → draft` refusé (trigger) ; carte `manual` en brouillon refusée ; rejet (suppression douce) ;
+colonnes `inbox_id`, `source`, `source_title` non modifiables ; carte `vault` intouchable ; `anon` : tout refusé ;
+bucket privé, 30 Mo, 6 types.
+
+## 2. Script REST + Storage avec ton compte (à lancer par toi)
+
+```sh
+node tools/dev/rest-check-inbox.ts
+```
+
+Mêmes garanties que `rest-check.ts` : e-mail puis mot de passe masqué (ni stockés ni affichés), clé publishable seule.
+
+| # | Étape | Attendu |
+|---|---|---|
+| 1 | anon : lire inbox | refusé (42501, HTTP 401) |
+| 2 | anon : create_inbox_item | refusé (42501, HTTP 401) |
+| 3 | anon : déposer un fichier | refusé |
+| 4 | connexion (auth) | session ouverte |
+| 5 | déposer un texte (RPC) | élément `pending` |
+| 6 | envoyer un fichier dans `inbox/<uid>/<id>` | accepté |
+| 7 | créer l'élément fichier (RPC) | `pending`, `text/plain`, taille exacte |
+| 8 | relire le fichier | refusé |
+| 9 | lister le dossier | 0 objet visible |
+| 10 | remplacer le fichier (upsert) | refusé |
+| 11 | supprimer le fichier | 0 objet supprimé |
+| 12 | déposer dans le dossier d'un autre uid | refusé |
+| 13 | insérer dans inbox (status done) | refusé (42501, HTTP 403) |
+| 14 | lister mes éléments | HTTP 200, 2 lignes |
+| 15–17 | *(si un brouillon de test existe)* accepter · repasser en brouillon · suppression douce | 1 ligne · refusé (23514) · 1 ligne |
+
+Les étapes 15–17 ne s'affichent qu'après un passage de `/flashcards` sur un texte `[rest-check]` (il en fait un
+brouillon) : lancer le script, puis `/flashcards`, puis relancer le script. Le brouillon de test accepté est aussitôt
+supprimé en douce : il n'entre jamais dans tes sessions.
+
+**Trace laissée** : à chaque passage, deux éléments `[rest-check]` en attente (l'app n'a pas le droit de supprimer un
+élément) ; ils comptent dans le quota de 10. Les purger :
+- soit `/flashcards` les traite (texte → brouillon de test, fichier → brouillon ou `inbox fail`) : fichiers supprimés du stockage ;
+- soit, sans les traiter : `node tools/cards/cli.ts inbox fail <id> "test rest-check"` pour chaque id affiché en fin de
+  script (passe en erreur et supprime le fichier).
+
+Puis, pour effacer les lignes (éditeur SQL de Supabase) :
+
+```sql
+update public.cards set deleted_at = now()
+where source = 'inbox' and deleted_at is null
+  and inbox_id in (select id from public.inbox where text like '[rest-check]%' or filename like 'rest-check-%');
+delete from public.inbox where status in ('done', 'error') and (text like '[rest-check]%' or filename like 'rest-check-%');
+```
