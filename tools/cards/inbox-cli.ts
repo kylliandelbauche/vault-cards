@@ -132,7 +132,7 @@ async function purge(db: SupabaseClient) {
   for (const folder of root.data.filter(e => e.id === null)) {
     const res = await db.storage.from(BUCKET).list(folder.name, { limit: 1000 })
     if (res.error) fail('liste du stockage', res.error)
-    for (const f of res.data) if (f.id !== null) files.push({ path: `${folder.name}/${f.name}`, created_at: f.created_at })
+    for (const f of res.data) if (f.id !== null) files.push({ path: `${folder.name}/${f.name}`, created_at: f.created_at ?? new Date().toISOString() }) // date inconnue : jamais purgé comme orphelin
   }
   const status = new Map<string, string>()
   for (const paths of chunk(files.map(f => f.path), 50)) {
