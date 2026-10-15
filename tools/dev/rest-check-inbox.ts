@@ -2,7 +2,7 @@
 // Usage : node tools/dev/rest-check-inbox.ts   (dans un terminal interactif)
 // - Demande l'e-mail puis le mot de passe (saisie masquée, jamais stockée ni affichée).
 // - Clé PUBLISHABLE de l'app seulement (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY), jamais la clé secrète.
-// - Dépose un texte et un petit fichier texte marqués « [rest-check] » (restent en attente : l'app ne peut pas supprimer
+// - Dépose un texte, un petit fichier texte et un .md marqués « [rest-check] » (restent en attente : l'app ne peut pas supprimer
 //   d'élément ; voir docs/rest-check.md pour la purge), vérifie que le fichier ne peut être ni relu, ni listé, ni
 //   remplacé, ni supprimé, puis lit les statuts.
 // - Si un brouillon issu d'un texte [rest-check] existe (après un passage de /flashcards), l'accepte, vérifie qu'il ne
@@ -102,6 +102,15 @@ async function main(): Promise<number> {
     !fileItem.error && fileItem.data?.status === 'pending' && fileItem.data.mime === 'text/plain' && fileItem.data.size === body.size,
     fileItem.error ? `erreur ${fileItem.error.message}` : `${fileItem.data?.status} ${fileItem.data?.mime} ${fileItem.data?.size} o`, fileItem.status))
 
+  // 2 bis. Fichier .md comme l'app l'envoie (src/lib/inbox.ts) : corps sans type réemballé en text/markdown.
+  const mdId = crypto.randomUUID()
+  const md = new Blob([new Blob([`# [rest-check] ${stamp}\n- fichier Markdown de test\n`])], { type: 'text/markdown' })
+  const mdUp = await client.storage.from('inbox').upload(`${uid}/${mdId}`, md, { contentType: 'text/markdown', upsert: false })
+  const mdItem = mdUp.error ? null : await client.rpc('create_inbox_item', { p_id: mdId, p_kind: 'file', p_filename: `rest-check-${stamp.slice(0, 10)}.md` })
+  results.push(step('envoyer un .md (type réemballé)', 'pending, text/markdown',
+    !mdUp.error && !mdItem?.error && mdItem?.data?.mime === 'text/markdown',
+    mdUp.error ? `envoi refusé ${mdUp.error.message}` : mdItem?.error ? `erreur ${mdItem.error.message}` : `${mdItem?.data?.status} ${mdItem?.data?.mime}`, mdItem?.status ?? storageStatus(mdUp.error)))
+
   // 3. Le fichier ne peut être ni relu, ni listé, ni remplacé, ni supprimé par l'app.
   const dl = await client.storage.from('inbox').download(objectPath)
   results.push(step('relire le fichier', 'refusé', !!dl.error && !dl.data, dl.error ? `refus ${dl.error.message}` : 'lu', storageStatus(dl.error)))
@@ -118,8 +127,8 @@ async function main(): Promise<number> {
   results.push(expectDenied('insérer dans inbox (status done)', asResponse(await client.from('inbox').insert({ kind: 'text', text: '[rest-check] direct', status: 'done' }).select('id'))))
 
   // 5. Statuts.
-  const listed = await client.from('inbox').select('id, kind, status').in('id', [textId, fileId])
-  results.push(expectRows('lister mes éléments', '200, 2 lignes', asResponse(listed), 2))
+  const listed = await client.from('inbox').select('id, kind, status').in('id', [textId, fileId, mdId])
+  results.push(expectRows('lister mes éléments', '200, 3 lignes', asResponse(listed), 3))
 
   // 6. Brouillon de test (issu d'un texte [rest-check] traité par /flashcards) : accepter, pas de retour en brouillon, puis suppression douce.
   const testItems = await client.from('inbox').select('id').like('text', '[rest-check]%').eq('status', 'done')
@@ -141,7 +150,7 @@ async function main(): Promise<number> {
 
   await client.auth.signOut()
   process.stdout.write('\n' + formatTable(results) + '\n')
-  process.stdout.write(`\nÉléments de test : ${textId} (texte), ${fileId} (fichier) — en attente ; purge : docs/rest-check.md.\n`)
+  process.stdout.write(`\nÉléments de test : ${textId} (texte), ${fileId} (fichier), ${mdId} (.md) — en attente ; purge : docs/rest-check.md.\n`)
   return results.every(r => r.ok) ? 0 : 1
 }
 

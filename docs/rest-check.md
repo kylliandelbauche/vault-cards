@@ -64,7 +64,7 @@ supabase db query --linked -f supabase/tests/inbox.sql
 Transaction annulée (`rollback` final), rôles `authenticated` et `anon` simulés. Vérifie : dépôt d'un texte par la RPC
 `create_inbox_item` (statut `pending`, rappel idempotent) ; insertion directe dans `inbox` (même `pending`), update et
 delete refusés ; lecture des statuts ; bucket `inbox` : aucun objet visible ni modifiable, dépôt seulement dans
-`<uid>/<uuid>` ; RPC fichier : objet absent refusé, image > 10 Mo refusée, taille et type pris sur l'objet stocké ;
+`<uid>/<uuid>` ; RPC fichier : objet absent refusé, image > 10 Mo refusée, taille prise sur l'objet stocké (seule la taille est vérifiée sur le fichier stocké ; le type est contraint par la liste blanche du bucket et l'extension) ;
 quota de 10 éléments en attente ; carte `inbox` ou colonne `status` refusées à l'insertion ; brouillon accepté
 (`draft → active`) ; `active → draft` refusé (trigger) ; carte `manual` en brouillon refusée ; rejet (suppression douce) ;
 colonnes `inbox_id`, `source`, `source_title` non modifiables ; carte `vault` intouchable ; `anon` : tout refusé ;
@@ -87,20 +87,21 @@ Mêmes garanties que `rest-check.ts` : e-mail puis mot de passe masqué (ni stoc
 | 5 | déposer un texte (RPC) | élément `pending` |
 | 6 | envoyer un fichier dans `inbox/<uid>/<id>` | accepté |
 | 7 | créer l'élément fichier (RPC) | `pending`, `text/plain`, taille exacte |
+| 7 bis | envoyer un `.md` (type réemballé, comme l'app) | `pending`, `text/markdown` |
 | 8 | relire le fichier | refusé |
 | 9 | lister le dossier | 0 objet visible |
 | 10 | remplacer le fichier (upsert) | refusé |
 | 11 | supprimer le fichier | 0 objet supprimé |
 | 12 | déposer dans le dossier d'un autre uid | refusé |
 | 13 | insérer dans inbox (status done) | refusé (42501, HTTP 403) |
-| 14 | lister mes éléments | HTTP 200, 2 lignes |
+| 14 | lister mes éléments | HTTP 200, 3 lignes |
 | 15–17 | *(si un brouillon de test existe)* accepter · repasser en brouillon · suppression douce | 1 ligne · refusé (23514) · 1 ligne |
 
 Les étapes 15–17 ne s'affichent qu'après un passage de `/flashcards` sur un texte `[rest-check]` (il en fait un
 brouillon) : lancer le script, puis `/flashcards`, puis relancer le script. Le brouillon de test accepté est aussitôt
 supprimé en douce : il n'entre jamais dans tes sessions.
 
-**Trace laissée** : à chaque passage, deux éléments `[rest-check]` en attente (l'app n'a pas le droit de supprimer un
+**Trace laissée** : à chaque passage, trois éléments `[rest-check]` en attente (l'app n'a pas le droit de supprimer un
 élément) ; ils comptent dans le quota de 10. Les purger :
 - soit `/flashcards` les traite (texte → brouillon de test, fichier → brouillon ou `inbox fail`) : fichiers supprimés du stockage ;
 - soit, sans les traiter : `node tools/cards/cli.ts inbox fail <id> "test rest-check"` pour chaque id affiché en fin de

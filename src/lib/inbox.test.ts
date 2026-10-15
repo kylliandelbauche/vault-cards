@@ -7,6 +7,7 @@ const UID = '22222222-2222-4222-8222-222222222222'
 
 /** Fichier de `size` octets sans allouer la mémoire (seuls name/size/type comptent pour les contrôles). */
 const fakeFile = (name: string, size: number, type = '') => {
+  if (size <= MB) return new File([new Uint8Array(size)], name, { type }) // vrai contenu : survit à new Blob([file])
   const f = new File(['x'], name, { type })
   Object.defineProperty(f, 'size', { value: size })
   return f
@@ -19,12 +20,14 @@ const row = (extra: object = {}) => ({
 
 function fakeClient({ session = true, uploadError = null as null | { message: string }, rpcError = null as null | { message: string; code?: string } } = {}) {
   const calls: unknown[][] = []
+  const types: string[] = []
   const client = {
     auth: { getSession: vi.fn(async () => ({ data: { session: session ? { user: { id: UID } } : null }, error: null })) },
     storage: {
       from: (bucket: string) => ({
         upload: vi.fn(async (path: string, body: Blob, opts: object) => {
           calls.push(['upload', bucket, path, body.size, opts])
+          types.push(body.type)
           return uploadError ? { data: null, error: uploadError } : { data: { path }, error: null }
         }),
       }),
@@ -42,7 +45,7 @@ function fakeClient({ session = true, uploadError = null as null | { message: st
       return q
     },
   }
-  return { client: client as unknown as InboxClient, calls }
+  return { client: client as unknown as InboxClient, calls, types }
 }
 
 const deps = (client: InboxClient, extra = {}) => ({ client, online: () => true, uuid: () => ID, ...extra })
@@ -124,6 +127,15 @@ describe('dépôt dans la boîte de réception', () => {
       ['upload', 'inbox', `${UID}/${ID}`, 1234, { contentType: 'application/pdf', upsert: false }],
       ['rpc', 'create_inbox_item', { p_id: ID, p_kind: 'file', p_filename: 'cours.pdf' }],
     ])
+  })
+
+  it('addFile : le corps envoyé porte le type déduit de l’extension (Storage ignore contentType pour un Blob/File)', async () => {
+    const { client, calls, types } = fakeClient()
+    await addFile(deps(client), fakeFile('fiche.md', 12)) // type vide, comme souvent sur Safari/iOS
+    await addFile(deps(client), fakeFile('notes.markdown', 12, 'text/x-markdown'))
+    await addFile(deps(client), fakeFile('photo.JPG', 12, 'application/octet-stream'))
+    expect(types).toEqual(['text/markdown', 'text/markdown', 'image/jpeg'])
+    expect(calls.filter(c => c[0] === 'upload').map(c => c[3])).toEqual([12, 12, 12])
   })
 
   it('addFile : fichier refusé avant tout appel ; sans session, envoi en échec ou quota plein → erreur, pas d’élément', async () => {

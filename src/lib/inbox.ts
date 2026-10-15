@@ -4,7 +4,8 @@ import type { supabase } from './supabase'
  * Boîte de réception IA (#55), côté app : dépôt d'un texte collé ou d'un fichier, lecture des statuts.
  * Pipeline : contrôle local (extension, taille) → compression d'une image > 2 Mo (2048 px, JPEG 0,8) → envoi direct
  * vers le bucket privé `inbox/<uid>/<id>` (insertion seule : l'app ne peut ni relire ni lister ni supprimer) →
- * RPC `create_inbox_item`, qui reprend taille et type sur l'objet stocké et crée l'élément `pending`.
+ * RPC `create_inbox_item`, qui crée l'élément `pending`. Seule la taille est vérifiée sur le fichier stocké ; le type est
+ * contraint par la liste blanche du bucket et l'extension.
  * /flashcards (Mac) traite ensuite la file et produit des brouillons (drafts.ts). Réseau obligatoire (pas de file
  * hors ligne pour les fichiers) : erreur `offline` claire.
  * Limites alignées sur la migration 20261015010000_inbox et tools/cards/inbox.ts.
@@ -186,7 +187,10 @@ export async function addFile({ client, online = isOnline, uuid = () => crypto.r
   if (!session) throw new InboxError('session', 'Session expirée : se reconnecter')
   const prepared = await prepareFile(file, compress)
   const id = uuid()
-  const up = await client.storage.from('inbox').upload(`${session.user.id}/${id}`, prepared.blob, { contentType: prepared.mime, upsert: false })
+  // Storage ignore `contentType` pour un Blob/File (envoi en FormData) et prend le type du corps, souvent vide pour un .md
+  // sur Safari/iOS : le corps est réemballé avec le type déduit de l'extension (sans copie du contenu).
+  const body = new Blob([prepared.blob], { type: prepared.mime })
+  const up = await client.storage.from('inbox').upload(`${session.user.id}/${id}`, body, { contentType: prepared.mime, upsert: false })
   if (up.error) throw new InboxError('server', `Envoi du fichier refusé : ${up.error.message}`)
   const { data, error } = await client.rpc('create_inbox_item', { p_id: id, p_kind: 'file', p_filename: prepared.filename })
   if (error) throw rpcError(error)

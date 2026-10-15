@@ -108,7 +108,8 @@ begin
     ok := ok || E'\nOK: nom d''objet hors format <uid>/<uuid> refusé (' || sqlstate || ')';
   end;
 
-  -- 7. Fichiers via la RPC : taille et type lus sur l'objet stocké.
+  -- 7. Fichiers via la RPC. Seule la taille est vérifiée sur le fichier stocké ; le type est contraint par la liste blanche
+  --    du bucket et l'extension (ici, métadonnées posées à la main : le vrai format est prouvé par rest-check-inbox.ts).
   begin
     perform public.create_inbox_item('00000000-0000-4000-8000-000000000202', 'file', null, 'photo.png');
     raise exception 'ÉCHEC: image de 12 Mo acceptée';
@@ -125,7 +126,7 @@ begin
   if r.status <> 'pending' or r.mime <> 'text/plain' or r.size <> 1234 or r.storage_path <> '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000201' then
     raise exception 'ÉCHEC: élément fichier incorrect';
   end if;
-  ok := ok || E'\nOK: fichier déposé puis élément créé (pending, mime/size pris sur l''objet stocké)';
+  ok := ok || E'\nOK: fichier déposé puis élément créé (pending, taille prise sur l''objet stocké)';
 
   -- 8. Quota : 10 éléments en attente au plus.
   begin
