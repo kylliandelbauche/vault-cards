@@ -57,6 +57,11 @@ describe('useReviewSession', () => {
     const { result } = renderHook(() => useReviewSession(memoryStore([]), fixedNow))
     await waitFor(() => expect(result.current.status).toBe('empty'))
   })
+  it('seulement des brouillons de la boîte de réception (#55) : status empty, pas « terminé »', async () => {
+    const drafts: Card[] = cards.map(c => ({ ...c, source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null }))
+    const { result } = renderHook(() => useReviewSession(memoryStore(drafts), fixedNow))
+    await waitFor(() => expect(result.current.status).toBe('empty'))
+  })
 
   it('un store recréé à chaque rendu ne relance pas le chargement', async () => {
     let loads = 0

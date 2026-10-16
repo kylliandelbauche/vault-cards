@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { stateFromReviews } from '../../lib/scheduler'
-import { buildQueue, countKinds, freeQueue, nextDue, type SessionItem } from '../../lib/session'
+import { buildQueue, countKinds, freeQueue, isLive, nextDue, type SessionItem } from '../../lib/session'
 import type { Card, Rating, Review } from '../../lib/types'
 
 export interface ReviewStore {
@@ -109,7 +109,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
       if (gen !== generation.current) return
       const t = now()
       const queue = mode === 'all' ? freeQueue(cs, rs, t, target.tag) : buildQueue(cs, rs, t, undefined, target.tag)
-      const hasLiveCards = cs.some(c => !c.deleted_at)
+      const hasLiveCards = cs.some(isLive) // brouillons (#55) et cartes supprimées exclus
       cards.current = cs
       reviews.current = rs
       commit({

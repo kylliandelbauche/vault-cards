@@ -13,7 +13,7 @@ export function addMissingSourceTitle(card: { source_title?: unknown }): void {
 
 /** Upgrade v4 : les cartes mises en cache avant #54 viennent toutes du vault. */
 export function addMissingSource(card: { source?: unknown }): void {
-  if (card.source !== 'vault' && card.source !== 'manual') card.source = 'vault'
+  if (card.source !== 'vault' && card.source !== 'manual' && card.source !== 'inbox') card.source = 'vault'
 }
 
 /** Cache local (IndexedDB) : cartes et reviews (`synced: 0` = à pousser) et curseurs de synchro. */
@@ -51,6 +51,12 @@ export class VaultDB extends Dexie {
         await tx.table('cards').toCollection().modify(addMissingSource)
         await tx.table('meta').delete('cursor:cards')
       })
+    // v5 : boîte de réception (#55). Colonnes `status` et `inbox_id` tirées du serveur → règle ci-dessus (cursor:cards
+    // supprimé : le pull complet les rapporte). Les cartes déjà en cache ne sont pas réécrites : `status` absent = active.
+    // Index `inbox_id` : brouillons d'un élément (les cartes sans élément, null, ne sont pas indexées).
+    this.version(5)
+      .stores({ cards: 'id, updated_at, source_path, *tags, synced, inbox_id' })
+      .upgrade(tx => tx.table('meta').delete('cursor:cards'))
   }
 }
 

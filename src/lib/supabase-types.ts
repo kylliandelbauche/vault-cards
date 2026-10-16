@@ -47,9 +47,11 @@ export type Database = {
           deleted_at: string | null
           front: string
           id: string
+          inbox_id: string | null
           source: string
           source_path: string | null
           source_title: string | null
+          status: string
           tags: string[]
           updated_at: string
         }
@@ -60,9 +62,11 @@ export type Database = {
           deleted_at?: string | null
           front: string
           id?: string
+          inbox_id?: string | null
           source?: string
           source_path?: string | null
           source_title?: string | null
+          status?: string
           tags?: string[]
           updated_at?: string
         }
@@ -73,11 +77,63 @@ export type Database = {
           deleted_at?: string | null
           front?: string
           id?: string
+          inbox_id?: string | null
           source?: string
           source_path?: string | null
           source_title?: string | null
+          status?: string
           tags?: string[]
           updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cards_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "inbox"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inbox: {
+        Row: {
+          created_at: string
+          error: string | null
+          filename: string | null
+          id: string
+          kind: string
+          mime: string | null
+          processed_at: string | null
+          size: number | null
+          status: string
+          storage_path: string | null
+          text: string | null
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          filename?: string | null
+          id?: string
+          kind: string
+          mime?: string | null
+          processed_at?: string | null
+          size?: number | null
+          status?: string
+          storage_path?: string | null
+          text?: string | null
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          filename?: string | null
+          id?: string
+          kind?: string
+          mime?: string | null
+          processed_at?: string | null
+          size?: number | null
+          status?: string
+          storage_path?: string | null
+          text?: string | null
         }
         Relationships: []
       }
@@ -136,7 +192,33 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      create_inbox_item: {
+        Args: {
+          p_filename?: string
+          p_id: string
+          p_kind: string
+          p_text?: string
+        }
+        Returns: {
+          created_at: string
+          error: string | null
+          filename: string | null
+          id: string
+          kind: string
+          mime: string | null
+          processed_at: string | null
+          size: number | null
+          status: string
+          storage_path: string | null
+          text: string | null
+        }
+        SetofOptions: {
+          from: "*"
+          to: "inbox"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
       [_ in never]: never
