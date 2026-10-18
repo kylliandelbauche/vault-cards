@@ -27,7 +27,7 @@ export function SyncBadge({ sync }: { sync: SyncIndicator }) {
 }
 
 /** Bouton icône rond, cible 44 px ; marges négatives verticales pour ne pas agrandir la barre (la page doit tenir sans scroll). */
-function IconButton({ label, onClick, className, children }: { label: string; onClick(): void; className: string; children: ReactNode }) {
+export function IconButton({ label, onClick, className, children }: { label: string; onClick(): void; className: string; children: ReactNode }) {
   return (
     <button
       type="button"
