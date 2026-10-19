@@ -1,9 +1,9 @@
 import { Page } from 'konsta/react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { DiscardDialog, SheetBar } from '../../components/SheetBar'
 import { EDGES } from '../../components/TopBar'
-import { addText, type InboxDeps, type InboxItem } from '../../lib/inbox'
+import { addText, INBOX_LIMITS, type InboxDeps, type InboxItem } from '../../lib/inbox'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { inboxErrorMessage } from './sourceName'
 
@@ -26,7 +26,8 @@ export function SourceTextScreen({ deps, onClose, onSent }: Props) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
-  const count = Array.from(text).length
+  const count = useMemo(() => Array.from(text.trim()).length, [text])
+  const tooLong = count > INBOX_LIMITS.TEXT_MAX
 
   const close = () => (text.trim() === '' ? onClose() : setConfirming(true))
 
@@ -78,7 +79,9 @@ export function SourceTextScreen({ deps, onClose, onSent }: Props) {
                 Coller
               </button>
             )}
-            <span className="ms-auto text-[13px] leading-4 text-label-2 tabular-nums">{count} {count > 1 ? 'caractères' : 'caractère'}</span>
+            <span className={`ms-auto text-[13px] leading-4 tabular-nums ${tooLong ? 'font-semibold text-again' : 'text-label-2'}`}>
+              {count} {count > 1 ? 'caractères' : 'caractère'}{tooLong && ` : ${INBOX_LIMITS.TEXT_MAX.toLocaleString('fr-FR')} au maximum`}
+            </span>
           </div>
         </div>
       </main>
@@ -87,7 +90,7 @@ export function SourceTextScreen({ deps, onClose, onSent }: Props) {
           {error && (
             <p role="alert" className="mx-auto mb-1.5 w-fit rounded-full bg-again-tint px-3 py-0.5 text-center text-[15px] text-again">{error}</p>
           )}
-          <GlassButton tone="new" className={GLASS_PRIMARY} disabled={sending || text.trim() === ''} onClick={() => void submit()}>
+          <GlassButton tone="new" className={GLASS_PRIMARY} disabled={sending || count === 0 || tooLong} onClick={() => void submit()}>
             {sending ? 'Envoi…' : 'Créer les brouillons'}
           </GlassButton>
         </div>

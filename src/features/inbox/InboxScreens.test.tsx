@@ -125,7 +125,7 @@ describe('Boîte de réception : écrans (#81)', () => {
     const { user } = renderApp({ items: [item({ status: 'done' })] })
     await user.click(await screen.findByRole('button', { name: '1 brouillon à valider' }))
     await user.click(await screen.findByRole('button', { name: /^Question A \?/ }))
-    await waitFor(() => expect(title()).toBe('Modifier la carte'))
+    await screen.findByLabelText('QUESTION') // formulaire chargé (pas l’écran d’attente)
     await user.click(screen.getByRole('button', { name: 'Fermer' }))
     await waitFor(() => expect(title()).toBe('1 brouillon'))
 
@@ -212,5 +212,27 @@ describe('Boîte de réception : écrans (#81)', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(title()).toBe('Nouvelle carte')
     expect(await db.cards.count()).toBe(0)
+  })
+
+  it('Source · Texte : au-delà de 100 000 caractères, compteur en alerte et envoi désactivé', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Texte' }))
+    await user.click(screen.getByLabelText('Texte dont tirer des cartes'))
+    await user.paste('a'.repeat(100_001))
+    expect(screen.getByText(/100001 caractères : 100\u202f000 au maximum|100001 caractères : 100.000 au maximum/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Créer les brouillons' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('Modifier la carte : ✓ sans modification ferme sans rien écrire', async () => {
+    await db.cards.put(draft('a', 'Question A ?'))
+    const { user } = renderApp({ items: [item({ status: 'done' })] })
+    await user.click(await screen.findByRole('button', { name: '1 brouillon à valider' }))
+    await user.click(await screen.findByRole('button', { name: /^Question A \?/ }))
+    await screen.findByLabelText('QUESTION')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(title()).toBe('1 brouillon'))
+    const card = await db.cards.get('a')
+    expect(card?.updated_at).toBe('2026-10-18T10:00:00Z')
+    expect(card?.synced).toBeUndefined()
   })
 })

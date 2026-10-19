@@ -6,6 +6,7 @@ import { EDGES, TopBar } from '../../components/TopBar'
 import type { SyncState } from '../review/useAutoSync'
 import type { VaultDB } from '../../lib/db'
 import { cards } from '../../lib/home'
+import { acceptDraft } from '../../lib/drafts'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import type { DraftsTarget } from '../home/useNavigation'
@@ -50,7 +51,8 @@ function statusLine(item: InboxItem | undefined, readError: boolean, pulled: boo
  * douce) ; « Tout valider (n cartes) » dans l'emplacement d'action du bas.
  */
 export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSync, onDone }: Props) {
-  const { drafts, error, reject, acceptAll } = useDrafts(db, target.inboxId, { onWrite: onSync })
+  const { drafts, error, reject } = useDrafts(db, target.inboxId, { onWrite: onSync })
+  const [accepting, setAccepting] = useState(false)
   const inbox = useInbox(deps)
   const [failed, setFailed] = useState(false)
   const item = target.inboxId ? inbox.items?.find(i => i.id === target.inboxId) : undefined
@@ -91,6 +93,23 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
     if (!syncing && pull === 'running') setPull(lastSync === 'ok' ? 'ok' : 'failed')
   }
 
+  // « Tout valider » : seulement les brouillons affichés (un brouillon arrivé entre-temps n'est pas validé sans être vu),
+  // en une transaction ; bouton désactivé pendant l'action, liste vide masquée jusqu'au retour à l'accueil.
+  const validateShown = async () => {
+    if (accepting || !drafts) return
+    const ids = drafts.map(c => c.id)
+    setAccepting(true)
+    try {
+      setFailed(false)
+      await db.transaction('rw', db.cards, async () => { for (const id of ids) await acceptDraft(db, id) })
+      onSync()
+      onDone()
+    } catch {
+      setFailed(true)
+      setAccepting(false)
+    }
+  }
+
   const act = async (run: () => Promise<unknown>) => {
     try { setFailed(false); await run() } catch { setFailed(true) }
   }
@@ -112,7 +131,7 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
             Impossible de lire les brouillons enregistrés sur cet appareil.
           </p>
         )}
-        {empty && (
+        {empty && !accepting && (
           <section className="glass-card my-auto rounded-[28px] p-6 text-center text-black dark:text-white">
             {waiting || item ? (
               <>
@@ -179,7 +198,7 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
                 Action non enregistrée. Réessaie.
               </p>
             )}
-            <GlassButton tone="new" className={GLASS_PRIMARY} onClick={() => void act(async () => { await acceptAll(); onDone() })}>
+            <GlassButton tone="new" className={GLASS_PRIMARY} disabled={accepting} onClick={() => void validateShown()}>
               Tout valider ({cards(n)})
             </GlassButton>
           </div>

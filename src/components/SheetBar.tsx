@@ -50,17 +50,31 @@ export function SheetBar({ title, onClose, onConfirm, confirmLabel = 'Enregistre
  */
 export function DiscardDialog({ onDiscard, onContinue }: { onDiscard(): void; onContinue(): void }) {
   const keep = useRef<HTMLButtonElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const latest = useRef(onContinue)
+  useEffect(() => { latest.current = onContinue })
+  // Monté une seule fois : focus posé sur « Continuer à modifier », Échap, piège de Tab dans la fenêtre, puis focus
+  // rendu à l'élément d'origine (le ✕) à la fermeture.
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     keep.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onContinue() }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { latest.current(); return }
+      if (e.key !== 'Tab' || !box.current) return
+      const items = [...box.current.querySelectorAll<HTMLElement>('button')]
+      const i = items.indexOf(document.activeElement as HTMLElement)
+      e.preventDefault()
+      items[(i + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus()
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onContinue])
+    return () => { window.removeEventListener('keydown', onKey); opener?.focus() }
+  }, [])
   const row = 'flex h-[50px] w-full items-center border-t border-black/10 px-[18px] text-start text-[17px] leading-[22px] hover:bg-black/5 active:bg-black/10 dark:border-white/12 dark:hover:bg-white/8 dark:active:bg-white/12'
   return (
     <div className="fixed inset-0 z-40">
       <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onContinue} />
       <div
+        ref={box}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="discard-message"
