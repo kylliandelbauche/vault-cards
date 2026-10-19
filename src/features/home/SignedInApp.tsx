@@ -9,7 +9,7 @@ import { safeSignOut } from '../review/safeSignOut'
 import { syncIndicator, useAutoSync, usePendingCount } from '../review/useAutoSync'
 import { useReviewSession, type ReviewSession } from '../review/useReviewSession'
 import { DraftsScreen } from '../inbox/DraftsScreen'
-import { EditCardScreen } from '../inbox/EditCardScreen'
+import { EditCardScreen, NewCardScreen } from '../inbox/EditCardScreen'
 import { NewCardsBlock } from '../inbox/NewCardsBlock'
 import { SourceTextScreen } from '../inbox/SourceTextScreen'
 import { sourceName } from '../inbox/sourceName'
@@ -95,6 +95,9 @@ export function SignedInApp({ db, runSync, now, onSignOut, inbox }: Props) {
       />
     )
   }
+  if (screen.name === 'new-card') {
+    return <NewCardScreen db={db} onClose={back} onWrite={syncNow} />
+  }
   if (screen.name === 'edit') {
     return <EditCardScreen db={db} target={screen} onClose={back} onWrite={syncNow} />
   }
@@ -115,6 +118,7 @@ export function SignedInApp({ db, runSync, now, onSignOut, inbox }: Props) {
         <NewCardsBlock
           db={db}
           deps={inbox}
+          onManual={() => open({ name: 'new-card' })}
           onText={() => open({ name: 'source-text' })}
           onSent={item => open(draftsOf(item))}
           onOpenDrafts={() => open({ name: 'drafts' })}

@@ -4,10 +4,9 @@ import { MAX_TAGS, TAGS } from '../../../shared/tags'
 import { GlassButton } from '../../components/GlassButton'
 import { DiscardDialog, SheetBar } from '../../components/SheetBar'
 import { EDGES } from '../../components/TopBar'
-import { CardValidationError, type ManualCardInput } from '../../lib/cards'
+import { CardValidationError, createManualCard, type ManualCardInput } from '../../lib/cards'
 import type { VaultDB } from '../../lib/db'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
-import type { Card } from '../../lib/types'
 import type { DraftsTarget } from '../home/useNavigation'
 import { useDrafts } from './useDrafts'
 
@@ -28,7 +27,9 @@ interface Props {
 export function EditCardScreen({ db, target, onClose, onWrite }: Props) {
   const { drafts, error, update } = useDrafts(db, target.inboxId, { onWrite })
   const card = drafts?.find(c => c.id === target.cardId)
-  if (card) return <EditForm key={card.id} card={card} source={target.source} onClose={onClose} save={patch => update(card.id, patch)} />
+  if (card) {
+    return <EditForm key={card.id} title="Modifier la carte" initial={card} source={target.source} onClose={onClose} save={patch => update(card.id, patch)} />
+  }
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
       <SheetBar title="Modifier la carte" onClose={onClose} />
@@ -41,8 +42,30 @@ export function EditCardScreen({ db, target, onClose, onWrite }: Props) {
   )
 }
 
+/**
+ * « Nouvelle carte » (#81, Paper « 1 vide » / « 2 remplie ») : même fenêtre, vide. ✓ gris tant que la question ou la
+ * réponse est vide, bleu dès que les deux sont remplies ; ✓ → createManualCard (#54, cache local puis synchro) puis
+ * retour à l'accueil.
+ */
+export function NewCardScreen({ db, onClose, onWrite }: { db: VaultDB; onClose(): void; onWrite(): void }) {
+  return (
+    <EditForm
+      title="Nouvelle carte"
+      initial={EMPTY}
+      creating
+      onClose={onClose}
+      save={async input => { await createManualCard(db, input); onWrite() }}
+    />
+  )
+}
+
+const EMPTY: ManualCardInput = { front: '', back: '', tags: [] }
+
 interface FormProps {
-  card: Card
+  title: string
+  initial: ManualCardInput
+  /** Création : ✓ actif seulement quand question et réponse sont remplies ; sinon ✓ sans modification = fermer. */
+  creating?: boolean
   source?: string
   onClose(): void
   save(patch: ManualCardInput): Promise<unknown>
@@ -53,20 +76,22 @@ const LABEL = 'px-1.5 text-[13px] leading-4 font-semibold tracking-[0.06em] text
 const FIELD = 'glass-card block w-full resize-none rounded-[22px] px-[18px] py-4 text-black outline-none focus:outline-2 focus:-outline-offset-2 focus:outline-new dark:text-white'
 const FIELD_LABEL: Record<CardValidationError['field'], string> = { front: 'Question', back: 'Réponse', tags: 'Tags' }
 
-function EditForm({ card, source, onClose, save }: FormProps) {
+function EditForm({ title, initial: card, creating = false, source, onClose, save }: FormProps) {
   const [front, setFront] = useState(card.front)
   const [back, setBack] = useState(card.back)
-  const [tags, setTags] = useState<string[]>(card.tags)
+  const [tags, setTags] = useState<string[]>([...card.tags])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const dirty = front !== card.front || back !== card.back || !sameTags(tags, card.tags)
   const full = tags.length >= MAX_TAGS
+  const filled = front.trim() !== '' && back.trim() !== ''
 
   const toggle = (slug: string) => setTags(t => (t.includes(slug) ? t.filter(s => s !== slug) : t.length >= MAX_TAGS ? t : [...t, slug]))
 
   const submit = async () => {
     if (saving) return
+    if (!creating && !dirty) { onClose(); return } // rien à écrire
     setSaving(true)
     setError(null)
     try {
@@ -81,10 +106,11 @@ function EditForm({ card, source, onClose, save }: FormProps) {
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
       <SheetBar
-        title="Modifier la carte"
+        title={title}
         onClose={() => (dirty ? setConfirming(true) : onClose())}
         onConfirm={() => void submit()}
-        confirmDisabled={saving}
+        confirmLabel={creating ? 'Créer la carte' : 'Enregistrer'}
+        confirmDisabled={saving || (creating && !filled)}
       />
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col gap-3.5 py-2 ${EDGES}`}>
         {error && <p role="alert" className="mx-auto w-fit rounded-full bg-again-tint px-3 py-0.5 text-center text-[15px] text-again">{error}</p>}

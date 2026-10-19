@@ -17,6 +17,7 @@ export type Screen =
   | { name: 'tags' }
   | { name: 'review'; scope: SessionScope }
   | { name: 'source-text' }
+  | { name: 'new-card' }
   | ({ name: 'drafts' } & DraftsTarget)
   | ({ name: 'edit'; cardId: string } & DraftsTarget)
 
