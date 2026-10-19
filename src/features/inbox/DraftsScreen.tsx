@@ -76,12 +76,20 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
   // Source traitée sur le Mac : ses brouillons arrivent par la synchro des cartes.
   const status = item?.status
   const requestPull = useCallback(() => { setPull('requested'); onSync() }, [onSync])
-  useEffect(() => { if (status === 'done') requestPull() }, [status, requestPull])
+  // Ajustements pendant le rendu (pas de setState dans un effet) : passage à `done`, début / fin de synchro.
+  const [prevStatus, setPrevStatus] = useState(status)
+  if (status !== prevStatus) {
+    setPrevStatus(status)
+    if (status === 'done') setPull('requested')
+  }
+  useEffect(() => { if (status === 'done') onSync() }, [status, onSync])
   const { syncing, lastSync } = syncState
-  useEffect(() => {
-    if (syncing) setPull(p => (p === 'requested' ? 'running' : p))
-    else setPull(p => (p === 'running' ? (lastSync === 'ok' ? 'ok' : 'failed') : p))
-  }, [syncing, lastSync])
+  const [prevSyncing, setPrevSyncing] = useState(syncing)
+  if (syncing !== prevSyncing) {
+    setPrevSyncing(syncing)
+    if (syncing && pull === 'requested') setPull('running')
+    if (!syncing && pull === 'running') setPull(lastSync === 'ok' ? 'ok' : 'failed')
+  }
 
   const act = async (run: () => Promise<unknown>) => {
     try { setFailed(false); await run() } catch { setFailed(true) }
