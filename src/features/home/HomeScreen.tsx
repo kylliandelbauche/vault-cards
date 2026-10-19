@@ -1,4 +1,5 @@
 import { Page, Preloader } from 'konsta/react'
+import type { ReactNode } from 'react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { BarTitle, EDGES, SignOutButton, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { formatInterval } from '../../lib/format'
@@ -17,13 +18,15 @@ interface Props {
   /** Ligne « Mes tags › » : page de tous les tags. */
   onOpenTags(): void
   onSignOut?(): void
+  /** Bloc « Nouvelles cartes » (#81), entre le bloc du jour et Mes tags. */
+  newCards?: ReactNode
 }
 
 /**
- * Écran d'accueil (#53, #63). Surfaces floutées : barre du haut, carte « aujourd'hui », carte « Mes tags » (3,
- * aucune imbriquée). Le bouton d'action, les compteurs et les tags sont posés sur les cartes, sans flou propre.
+ * Écran d'accueil (#53, #63). Surfaces floutées : barre du haut, carte « aujourd'hui », carte « Nouvelles cartes »
+ * (#81), carte « Mes tags » (4, aucune imbriquée). Le bouton d'action, les compteurs et les tags sont posés sur les cartes, sans flou propre.
  */
-export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, onSignOut }: Props) {
+export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, onSignOut, newCards }: Props) {
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
       <TopBar>
@@ -41,6 +44,7 @@ export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, 
         {data.status === 'ready' && (
           <>
             <Today stats={data.stats} now={now()} onStudy={() => onStudy()} onReviewAll={onReviewAll} />
+            {newCards}
             <Tags tags={data.stats.tags} onStudy={onStudy} onOpenTags={onOpenTags} />
           </>
         )}

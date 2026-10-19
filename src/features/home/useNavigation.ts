@@ -1,8 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionScope } from '../review/useReviewSession'
 
-/** Écran affiché : l'accueil, la page « Mes tags », ou une session de révision (toutes les cartes ou un tag). */
-export type Screen = { name: 'home' } | { name: 'tags' } | { name: 'review'; scope: SessionScope }
+/** Écran d'une source déposée dans la boîte de réception (#81) : ses brouillons (ou tous si `inboxId` absent). */
+export interface DraftsTarget {
+  inboxId?: string
+  /** Nom affiché de la source (« Depuis « … » »), connu dès l'envoi. */
+  source?: string
+}
+
+/**
+ * Écran affiché : l'accueil, « Mes tags », une session de révision, ou la boîte de réception (#81) : saisie d'un
+ * texte, brouillons d'une source, modification d'un brouillon.
+ */
+export type Screen =
+  | { name: 'home' }
+  | { name: 'tags' }
+  | { name: 'review'; scope: SessionScope }
+  | { name: 'source-text' }
+  | { name: 'new-card' }
+  | ({ name: 'drafts' } & DraftsTarget)
+  | ({ name: 'edit'; cardId: string } & DraftsTarget)
 
 const HOME: Screen = { name: 'home' }
 /** Profondeur de l'entrée d'historique dans la pile d'écrans (0 = accueil), posée dans `history.state`. */
@@ -73,6 +90,13 @@ export function useNavigation() {
   /** Ouvre la page « Mes tags ». */
   const openTags = useCallback(() => push({ name: 'tags' }), [push])
 
+  /** Ouvre un écran de la boîte de réception (Source · Texte, Brouillons, Modifier). */
+  const open = useCallback((next: Screen) => push(next), [push])
+  /** Remplace l'écran courant (ex. Source · Texte → Brouillons après l'envoi) : « précédent » ramène avant lui. */
+  const replace = useCallback((next: Screen) => {
+    commit([...live.current.slice(0, -1), next])
+  }, [commit])
+
   /** Écran précédent (chevron). */
   const back = useCallback(() => {
     if (live.current.length > 1) { commit(live.current.slice(0, -1)); reconcile() }
@@ -85,5 +109,5 @@ export function useNavigation() {
 
   const screen = stack[stack.length - 1]
   const previous = stack.length > 1 ? stack[stack.length - 2] : null
-  return { screen, previous, openReview, openTags, back, goHome }
+  return { screen, previous, openReview, openTags, open, replace, back, goHome }
 }
