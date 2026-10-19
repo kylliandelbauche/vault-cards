@@ -156,11 +156,11 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
         {n > 0 && (
           <ul role="list" aria-label="Brouillons" className="glass-card rounded-[24px] text-black dark:text-white">
             {drafts?.map(c => (
-              <li key={c.id} className="flex items-start gap-1 border-t border-black/8 py-1 ps-1 pe-0.5 first:border-t-0 dark:border-white/10">
+              <li key={c.id} className="flex items-start gap-1 border-t border-black/8 py-1 ps-1 pe-0.5 first:border-t-0 hover:bg-black/4 has-[.draft-open:active]:bg-black/8 dark:border-white/10 dark:hover:bg-white/6 dark:has-[.draft-open:active]:bg-white/10">
                 <button
                   type="button"
                   onClick={() => onEdit(c.id)}
-                  className="min-w-0 flex-1 rounded-[18px] px-3 py-2.5 text-start hover:bg-black/4 active:bg-black/8 dark:hover:bg-white/6 dark:active:bg-white/10"
+                  className="draft-open min-w-0 flex-1 cursor-pointer rounded-[18px] px-3 py-2.5 text-start"
                 >
                   <span className="block text-[16px] leading-[21px] font-semibold">{c.front}</span>
                   <span className="mt-1 line-clamp-2 block text-[14px] leading-[19px] text-label-2">{c.back}</span>
@@ -176,9 +176,9 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
                   type="button"
                   aria-label={`Retirer « ${c.front} »`}
                   onClick={() => void act(() => reject(c.id))}
-                  className="flex size-11 shrink-0 items-center justify-center rounded-full text-label-2"
+                  className="group/x flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full text-label-2"
                 >
-                  <span aria-hidden="true" className="flex size-[30px] items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
+                  <span aria-hidden="true" className="flex size-[30px] items-center justify-center rounded-full bg-black/5 group-hover/x:bg-black/10 dark:bg-white/10 dark:group-hover/x:bg-white/18">
                     <svg viewBox="0 0 24 24" className="size-[13px]" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                       <path d="M7 7l10 10M17 7L7 17" />
                     </svg>
