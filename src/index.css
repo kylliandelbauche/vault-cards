@@ -455,6 +455,7 @@ html.dark {
 .k-button:focus-visible,
 .glass-btn:focus-visible,
 .tag-head:focus-visible,
+.password-toggle:focus-visible,
 a:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--new);
