@@ -1,8 +1,9 @@
 import { Page, Preloader } from 'konsta/react'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getTag } from '../../../shared/tags'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
-import { EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
+import { EDGES, TopBar } from '../../components/TopBar'
+import type { SyncState } from '../review/useAutoSync'
 import type { VaultDB } from '../../lib/db'
 import { cards } from '../../lib/home'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
@@ -16,7 +17,8 @@ interface Props {
   db: VaultDB
   deps: InboxDeps
   target: DraftsTarget
-  sync?: SyncIndicator
+  /** État de la synchro (useAutoSync) : « aucun brouillon » seulement après une synchro réussie. */
+  syncState: SyncState
   onBack(): void
   onEdit(cardId: string): void
   /** Synchro immédiate : après chaque écriture locale, et quand la source vient d'être traitée (tirer ses brouillons). */
@@ -28,13 +30,16 @@ interface Props {
 /** Relecture des statuts tant que la source attend le Mac. */
 const POLL_MS = 15_000
 
-function statusLine(item: InboxItem | undefined, readError: boolean, sync?: SyncIndicator): string {
+/** Tirage des brouillons d'une source traitée : demandé → synchro en cours → réussi / échoué. */
+type Pull = 'idle' | 'requested' | 'running' | 'ok' | 'failed'
+
+function statusLine(item: InboxItem | undefined, readError: boolean, pulled: boolean): string {
   if (!item) return readError ? 'Statut indisponible : pas de connexion ?' : 'Lecture du statut…'
   switch (item.status) {
     case 'pending': return 'En file d’attente.'
     case 'processing': return 'Traitement en cours…'
     case 'error': return `Échec du traitement : ${item.error ?? 'erreur inconnue'}.`
-    case 'done': return sync === 'syncing' ? 'Traitée, récupération des brouillons…' : 'Traitée : aucun brouillon à valider.'
+    case 'done': return pulled ? 'Traitée : aucun brouillon à valider.' : 'Récupération des brouillons…'
   }
 }
 
@@ -44,16 +49,20 @@ function statusLine(item: InboxItem | undefined, readError: boolean, sync?: Sync
  * (useDrafts, cache local) dans une seule carte en verre : toucher une carte → Modifier ; × → retirer (suppression
  * douce) ; « Tout valider (n cartes) » dans l'emplacement d'action du bas.
  */
-export function DraftsScreen({ db, deps, target, sync, onBack, onEdit, onSync, onDone }: Props) {
+export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSync, onDone }: Props) {
   const { drafts, error, reject, acceptAll } = useDrafts(db, target.inboxId, { onWrite: onSync })
   const inbox = useInbox(deps)
   const [failed, setFailed] = useState(false)
   const item = target.inboxId ? inbox.items?.find(i => i.id === target.inboxId) : undefined
   const source = target.source ?? (item ? sourceName(item) : undefined)
   const empty = drafts !== null && drafts.length === 0
+  const [pull, setPull] = useState<Pull>('idle')
+  const pulled = pull === 'ok'
+  // Source traitée mais rien en local : on attend une synchro réussie avant de dire « aucun brouillon ».
+  const fetching = empty && item?.status === 'done' && !pulled
   const waiting = empty && target.inboxId !== undefined && (item === undefined
     ? inbox.items === null
-    : item.status === 'pending' || item.status === 'processing')
+    : item.status === 'pending' || item.status === 'processing' || fetching)
 
   const { refresh } = inbox
   useEffect(() => {
@@ -66,7 +75,13 @@ export function DraftsScreen({ db, deps, target, sync, onBack, onEdit, onSync, o
 
   // Source traitée sur le Mac : ses brouillons arrivent par la synchro des cartes.
   const status = item?.status
-  useEffect(() => { if (status === 'done') onSync() }, [status, onSync])
+  const requestPull = useCallback(() => { setPull('requested'); onSync() }, [onSync])
+  useEffect(() => { if (status === 'done') requestPull() }, [status, requestPull])
+  const { syncing, lastSync } = syncState
+  useEffect(() => {
+    if (syncing) setPull(p => (p === 'requested' ? 'running' : p))
+    else setPull(p => (p === 'running' ? (lastSync === 'ok' ? 'ok' : 'failed') : p))
+  }, [syncing, lastSync])
 
   const act = async (run: () => Promise<unknown>) => {
     try { setFailed(false); await run() } catch { setFailed(true) }
@@ -94,10 +109,19 @@ export function DraftsScreen({ db, deps, target, sync, onBack, onEdit, onSync, o
             {waiting || item ? (
               <>
                 <h2 className="text-[17px] leading-tight font-semibold">
-                  {waiting ? 'En attente de traitement sur ton Mac' : 'Aucun brouillon à valider'}
+                  {fetching ? 'Récupération des brouillons…' : waiting ? 'En attente de traitement sur ton Mac' : 'Aucun brouillon à valider'}
                 </h2>
-                <p role="status" className="mt-1.5 text-[15px] leading-5 text-label-2">{statusLine(item, inbox.error !== null, sync)}</p>
-                {waiting && <p className="mt-3 text-[13px] leading-[18px] text-label-2">Lance /flashcards sur le Mac : les brouillons apparaîtront ici.</p>}
+                {!fetching && <p role="status" className="mt-1.5 text-[15px] leading-5 text-label-2">{statusLine(item, inbox.error !== null, pulled)}</p>}
+                {fetching && (pull === 'failed' || pull === 'idle' || (pull === 'requested' && !syncing)) && (
+                  <button
+                    type="button"
+                    onClick={requestPull}
+                    className="mx-auto mt-3 flex min-h-11 items-center rounded-full bg-black/4 px-5 text-[15px] font-medium hover:bg-black/8 dark:bg-white/7 dark:hover:bg-white/12"
+                  >
+                    Réessayer
+                  </button>
+                )}
+                {waiting && !fetching && <p className="mt-3 text-[13px] leading-[18px] text-label-2">Lance /flashcards sur le Mac : les brouillons apparaîtront ici.</p>}
               </>
             ) : <h2 className="text-[17px] leading-tight font-semibold">Aucun brouillon à valider</h2>}
           </section>

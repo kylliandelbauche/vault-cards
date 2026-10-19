@@ -87,7 +87,7 @@ export function SignedInApp({ db, runSync, now, onSignOut, inbox }: Props) {
         db={db}
         deps={inbox}
         target={screen}
-        sync={sync}
+        syncState={syncState}
         onBack={back}
         onEdit={cardId => open({ name: 'edit', cardId, inboxId: screen.inboxId, source: screen.source })}
         onSync={syncNow}

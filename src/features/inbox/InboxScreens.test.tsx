@@ -36,12 +36,13 @@ function fakeClient(items: InboxItem[], created: InboxItem) {
   return { rpc, upload, client: client as unknown as InboxDeps['client'] }
 }
 
-function renderApp({ items = [item()], created = item(), online = true } = {}) {
+const NOTHING = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
+
+function renderApp({ items = [item()], created = item(), online = true, runSync = vi.fn().mockResolvedValue(NOTHING) } = {}) {
   const fake = fakeClient(items, created)
-  const runSync = vi.fn().mockResolvedValue({ pushed: 0, pulledCards: 0, pulledReviews: 0 })
   const inbox: InboxDeps = { client: fake.client, online: () => online, uuid: () => 'i1' }
   render(<KApp theme="ios"><SignedInApp db={db} runSync={runSync} now={() => new Date('2026-10-19T10:00:00Z')} onSignOut={vi.fn()} inbox={inbox} /></KApp>)
-  return { ...fake, user: userEvent.setup() }
+  return { ...fake, runSync, user: userEvent.setup() }
 }
 
 const title = () => screen.getByRole('heading', { level: 1 }).textContent
@@ -156,5 +157,19 @@ describe('Boîte de réception : écrans (#81)', () => {
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
     expect((await screen.findByRole('alert')).textContent).toMatch(/^Question : /)
     expect(title()).toBe('Modifier la carte')
+  })
+
+  it('source traitée, rien en local : « Récupération des brouillons… » + Réessayer tant qu’aucune synchro n’a réussi', async () => {
+    const runSync = vi.fn().mockRejectedValue(new Error('hors ligne'))
+    const file = item({ kind: 'file', filename: 'cours.pdf', status: 'done' })
+    const { user } = renderApp({ items: [file], created: file, runSync })
+    await screen.findByRole('heading', { name: 'Nouvelles cartes' })
+    await user.upload(screen.getByLabelText('Choisir un fichier'), new File(['%PDF'], 'cours.pdf', { type: 'application/pdf' }))
+    expect(await screen.findByRole('heading', { name: 'Récupération des brouillons…' })).toBeTruthy()
+    const retry = await screen.findByRole('button', { name: 'Réessayer' })
+    expect(screen.queryByText(/aucun brouillon/i)).toBeNull()
+    runSync.mockResolvedValue(NOTHING)
+    await user.click(retry)
+    expect(await screen.findByText('Traitée : aucun brouillon à valider.')).toBeTruthy()
   })
 })
