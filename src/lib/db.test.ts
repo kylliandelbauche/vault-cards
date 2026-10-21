@@ -43,8 +43,8 @@ describe('VaultDB : migration v3 (source_title)', () => {
 
     const db = new VaultDB(name)
     try {
-      expect(await db.cards.get('a')).toEqual({ id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'], source_title: null, source: 'vault' })
-      expect(await db.cards.where('tags').equals('ia').count()).toBe(1)
+      expect(await db.cards.get('a')).toEqual({ id: 'a', deck: 'd', source_path: 'd/a.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['IA & agents'], source_title: null, source: 'vault' })
+      expect(await db.cards.where('tags').equals('IA & agents').count()).toBe(1) // v6 (#79) : slug → nom
       expect(await db.reviews.count()).toBe(1)
     } finally {
       db.close()
@@ -94,14 +94,14 @@ describe('VaultDB : migration v4 (cartes manuelles, #54)', () => {
     v3.version(1).stores({ cards: 'id, updated_at, source_path', reviews: 'id, card_id, synced, reviewed_at', meta: 'key' })
     v3.version(2).stores({ cards: 'id, updated_at, source_path, *tags' })
     v3.version(3).stores({ cards: 'id, updated_at, source_path, *tags' })
-    await v3.table('cards').put({ id: 'a', deck: 'd', source_path: 'd/a.md', source_title: 'T', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'] })
+    await v3.table('cards').put({ id: 'a', deck: 'd', source_path: 'd/a.md', source_title: 'T', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['IA & agents'] })
     await v3.table('reviews').put({ id: 'r1', card_id: 'a', rating: 3, reviewed_at: 't', synced: 0 })
     await v3.table('meta').bulkPut([{ key: 'cursor:cards', value: '{"at":"x","id":"a"}' }, { key: 'cursor:reviews', value: '{"at":"y","id":"r"}' }])
     v3.close()
 
     const db = new VaultDB(name)
     try {
-      expect(await db.cards.get('a')).toEqual({ id: 'a', source: 'vault', deck: 'd', source_path: 'd/a.md', source_title: 'T', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['ia'] })
+      expect(await db.cards.get('a')).toEqual({ id: 'a', source: 'vault', deck: 'd', source_path: 'd/a.md', source_title: 'T', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['IA & agents'] })
       expect(await db.meta.get('cursor:cards')).toBeUndefined()
       expect(await db.meta.get('cursor:reviews')).toEqual({ key: 'cursor:reviews', value: '{"at":"y","id":"r"}' })
       expect((await db.reviews.get('r1'))!.synced).toBe(0)
@@ -139,11 +139,43 @@ describe('VaultDB : migration v5 (boîte de réception, #55)', () => {
 
     const db = new VaultDB(name)
     try {
-      expect(await db.cards.get('a')).toEqual(old)
+      expect(await db.cards.get('a')).toEqual({ ...old, tags: ['IA & agents'] }) // v6 (#79)
       expect(await db.meta.get('cursor:cards')).toBeUndefined()
       expect(await db.meta.get('cursor:reviews')).toEqual({ key: 'cursor:reviews', value: '{"at":"y","id":"r"}' })
       await db.cards.add({ id: 'd', source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null, tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
       expect(await db.cards.where('inbox_id').equals('i1').primaryKeys()).toEqual(['d'])
+    } finally {
+      db.close()
+      await Dexie.delete(name)
+    }
+  })
+})
+
+describe('VaultDB : migration v6 (tags libres, #79)', () => {
+  it('v5 -> v6 : slugs renommés comme sur le serveur (envois en attente compris), noms libres gardés, cursor:cards supprimé, table tags', async () => {
+    const name = 'vault-cards-upgrade-' + crypto.randomUUID()
+    const v5 = new Dexie(name)
+    v5.version(1).stores({ cards: 'id, updated_at, source_path', reviews: 'id, card_id, synced, reviewed_at', meta: 'key' })
+    v5.version(2).stores({ cards: 'id, updated_at, source_path, *tags' })
+    v5.version(3).stores({ cards: 'id, updated_at, source_path, *tags' })
+    v5.version(4).stores({ cards: 'id, updated_at, source_path, *tags, synced' })
+    v5.version(5).stores({ cards: 'id, updated_at, source_path, *tags, synced, inbox_id' })
+    const pending = { id: 'm', source: 'manual', deck: null, source_path: null, front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['securite', 'culture'], synced: 0 }
+    const vault = { id: 'v', source: 'vault', deck: 'd', source_path: 'd/v.md', front: 'Q', back: 'R', updated_at: 't', deleted_at: null, tags: ['dev', 'Déjà libre'] }
+    await v5.table('cards').bulkPut([pending, vault])
+    await v5.table('reviews').put({ id: 'r1', card_id: 'v', rating: 3, reviewed_at: 't', synced: 0 })
+    await v5.table('meta').bulkPut([{ key: 'cursor:cards', value: '{"at":"x","id":"a"}' }, { key: 'cursor:reviews', value: '{"at":"y","id":"r"}' }])
+    v5.close()
+
+    const db = new VaultDB(name)
+    try {
+      expect(await db.cards.get('m')).toEqual({ ...pending, tags: ['Sécurité', 'Culture'] })
+      expect(await db.cards.get('v')).toEqual({ ...vault, tags: ['Dev & outils', 'Déjà libre'] })
+      expect(await db.meta.get('cursor:cards')).toBeUndefined()
+      expect(await db.meta.get('cursor:reviews')).toEqual({ key: 'cursor:reviews', value: '{"at":"y","id":"r"}' })
+      expect(await db.reviews.count()).toBe(1)
+      await db.tags.put({ id: 't1', name: 'Culture', updated_at: 'u' })
+      expect(await db.tags.count()).toBe(1)
     } finally {
       db.close()
       await Dexie.delete(name)

@@ -23,9 +23,9 @@ describe('validateManualCard', () => {
     [{ front: 'x'.repeat(FRONT_MAX + 1), back: 'R', tags: ['ia'] }, 'front'],
     [{ front: 'Q', back: 'x'.repeat(BACK_MAX + 1), tags: ['ia'] }, 'back'],
     [{ front: 'Q', back: 'R', tags: [] }, 'tags'],
-    [{ front: 'Q', back: 'R', tags: ['ia', 'dev', 'culture'] }, 'tags'],
-    [{ front: 'Q', back: 'R', tags: ['inconnu'] }, 'tags'],
-    [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }, 'tags'],
+    [{ front: 'Q', back: 'R', tags: ['a', 'b', 'c', 'd', 'e', 'f'] }, 'tags'],
+    [{ front: 'Q', back: 'R', tags: ['  '] }, 'tags'],
+    [{ front: 'Q', back: 'R', tags: ['x'.repeat(41)] }, 'tags'],
   ])('%o refusée sur le champ %s', (input, field) => {
     let err: unknown
     try { validateManualCard(input) } catch (e) { err = e }
@@ -97,14 +97,26 @@ describe('updateCard', () => {
     expect((await db.cards.get(card.id))!.front).toBe('Q')
   })
 
-  it('refuse une carte vault, inconnue ou supprimée', async () => {
-    await db.cards.add({ id: 'v', source: 'vault', deck: 'd', source_path: 'd/v.md', tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
-    await expect(updateCard(db, 'v', { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
-    await expect(updateCard(db, 'nope', { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
+  it('tags libres (#79) : noms normalisés, doublons de casse retirés, 5 au plus', () => {
+    expect(validateManualCard({ front: 'Q', back: 'R', tags: [' Chimie  organique ', 'chimie ORGANIQUE', 'IA'] }).tags).toEqual(['Chimie organique', 'IA'])
+    expect(validateManualCard({ front: 'Q', back: 'R', tags: ['a', 'b', 'c', 'd', 'e'] }).tags).toHaveLength(5)
+  })
+
+  it('carte du vault (#73) : question, réponse et tags modifiables, 0 tag permis ; progression conservée (même id)', async () => {
+    await db.cards.add({ id: 'v', source: 'vault', deck: 'd', source_path: 'd/v.md', tags: ['IA & agents'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
+    const next = await updateCard(db, 'v', { front: 'X', tags: ['Mémoire', 'IA & agents'] }, opts())
+    expect(next).toMatchObject({ id: 'v', source: 'vault', deck: 'd', front: 'X', tags: ['Mémoire', 'IA & agents'], synced: 0 })
+    expect((await updateCard(db, 'v', { tags: [] }, opts())).tags).toEqual([])
+  })
+
+  it('refuse une carte inconnue, supprimée ou un brouillon', async () => {
+    await expect(updateCard(db, 'nope', { front: 'X' })).rejects.toThrow('carte introuvable')
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] }, opts())
     await deleteManualCard(db, card.id)
-    await expect(updateCard(db, card.id, { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
-    expect((await db.cards.get('v'))!.front).toBe('Q')
+    await expect(updateCard(db, card.id, { front: 'X' })).rejects.toThrow('carte introuvable')
+    await db.cards.add({ id: 'd', source: 'inbox', status: 'draft', inbox_id: 'i', deck: null, source_path: null, tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
+    await expect(updateCard(db, 'd', { front: 'X' })).rejects.toThrow('carte introuvable')
+    await expect(updateCard(db, card.id, { tags: [] })).rejects.toThrow()
   })
 })
 
