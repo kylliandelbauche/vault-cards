@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, fireEvent } from '@testing-library/react'
 import { useReviewKeys } from './useReviewKeys'
 
@@ -29,5 +29,39 @@ describe('useReviewKeys', () => {
     renderHook(() => useReviewKeys(s))
     fireEvent.keyDown(window, { key: '1', metaKey: true })
     expect(s.rate).not.toHaveBeenCalled()
+  })
+
+  describe('fenêtre ouverte (#82) : Entrée / Espace / 1 / 2 / 3 n’agissent pas sur la carte', () => {
+    afterEach(() => { document.body.innerHTML = '' })
+    const openDialog = () => {
+      const dialog = document.createElement('div')
+      dialog.setAttribute('role', 'dialog')
+      const btn = document.createElement('button')
+      btn.textContent = 'Se déconnecter'
+      dialog.append(btn)
+      document.body.append(dialog)
+      return btn
+    }
+
+    it('focus dans la fenêtre : rien n’est révélé ni noté, Entrée reste au bouton (pas de preventDefault)', () => {
+      const hidden = session(false)
+      const shown = session(true)
+      renderHook(() => useReviewKeys(hidden))
+      renderHook(() => useReviewKeys(shown))
+      const btn = openDialog()
+      expect(fireEvent.keyDown(btn, { key: 'Enter' })).toBe(true) // non annulé : le bouton reçoit son clic
+      fireEvent.keyDown(btn, { key: ' ' })
+      for (const key of ['1', '2', '3']) fireEvent.keyDown(btn, { key })
+      expect(hidden.reveal).not.toHaveBeenCalled()
+      expect(shown.rate).not.toHaveBeenCalled()
+    })
+
+    it('fenêtre ouverte mais focus resté sur la page (Safari/iOS) : rien non plus', () => {
+      const s = session(true)
+      renderHook(() => useReviewKeys(s))
+      openDialog()
+      fireEvent.keyDown(window, { key: '1' })
+      expect(s.rate).not.toHaveBeenCalled()
+    })
   })
 })
