@@ -3,7 +3,7 @@ import { cards, type TagCount } from '../../lib/home'
 
 interface Props {
   tag: TagCount
-  onStudy(slug: string): void
+  onStudy(tag: string): void
 }
 
 /**
@@ -22,11 +22,11 @@ export function TagChip({ tag: t, onStudy }: Props) {
     <GlassButton
       tone="neutral"
       aria-disabled={empty || undefined}
-      aria-label={`${t.label}, ${cards(t.total)}${detail}`}
-      onClick={empty ? undefined : () => onStudy(t.slug)}
+      aria-label={`${t.name}, ${cards(t.total)}${detail}`}
+      onClick={empty ? undefined : () => onStudy(t.name)}
       className={`tag-chip ${look} flex h-11 items-center gap-2.5 rounded-full ${due ? 'ps-[18px] pe-[7px]' : 'px-[18px]'} text-[15px] leading-[18px] font-medium whitespace-nowrap`}
     >
-      {t.label}
+      {t.name}
       {due && (
         <span aria-hidden="true" className="due-badge flex h-[30px] min-w-[30px] items-center justify-center rounded-full px-2 text-[14px] leading-4 font-bold tabular-nums">
           {t.today}

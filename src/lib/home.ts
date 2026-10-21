@@ -1,8 +1,9 @@
 import { State } from 'ts-fsrs'
-import { TAGS, type TagDef } from '../../shared/tags'
+import { byTagName } from '../../shared/tags'
 import { isNew, type FsrsCard } from './scheduler'
 import { byCard, hasTag, NEW_PER_DAY, queueOf, scheduleItems, type SessionItem } from './session'
-import type { Card, Review } from './types'
+import { knownTagNames } from './tags'
+import type { Card, Review, Tag } from './types'
 
 /**
  * Seuil « maîtrisée » (cadrage #53) : stabilité FSRS ≥ 21 jours, l'équivalent du « mature » d'Anki
@@ -28,11 +29,11 @@ export interface DayCounts {
   nextDueAt: Date | null
 }
 
-/** Un tag de shared/tags.ts avec son nombre de cartes et sa file du jour (quota de nouvelles global). */
-export interface TagCount extends TagDef, Pick<DayCounts, 'total' | 'today'> {}
+/** Un tag (#79, nom libre) avec son nombre de cartes et sa file du jour (quota de nouvelles global). */
+export interface TagCount extends Pick<DayCounts, 'total' | 'today'> { name: string }
 
 export interface HomeStats extends DayCounts {
-  /** Les tags de shared/tags.ts, dans leur ordre, avec leurs compteurs. */
+  /** Tous les tags connus (registre + cartes locales, vides compris), A–Z, avec leurs compteurs. */
   tags: TagCount[]
 }
 
@@ -57,21 +58,20 @@ function dayCounts(items: SessionItem[], grouped: Map<string, Review[]>, now: Da
 }
 
 /** Compteurs de l'écran d'accueil, calculés depuis l'historique local (aucune donnée nouvelle). */
-export function homeStats(cards: Card[], reviews: Review[], now: Date, newLimit = NEW_PER_DAY): HomeStats {
+export function homeStats(cards: Card[], reviews: Review[], now: Date, newLimit = NEW_PER_DAY, registry: readonly Pick<Tag, 'name'>[] = []): HomeStats {
   const grouped = byCard(reviews)
   const items = scheduleItems(cards, grouped)
   return {
     ...dayCounts(items, grouped, now, newLimit),
-    tags: TAGS.map(({ slug, label }) => {
-      const { total, today } = dayCounts(items, grouped, now, newLimit, slug)
-      return { slug, label, total, today }
+    tags: knownTagNames(cards, registry).map(name => {
+      const { total, today } = dayCounts(items, grouped, now, newLimit, name)
+      return { name, total, today }
     }),
   }
 }
 
-/** Tags triés par nombre de cartes décroissant (vides en dernier) ; à égalité, l'ordre de shared/tags.ts. */
-export const sortTags = (tags: TagCount[]): TagCount[] =>
-  tags.map((t, i) => ({ t, i })).sort((a, b) => b.t.total - a.t.total || a.i - b.i).map(x => x.t)
+/** Tags triés par nombre de cartes décroissant (vides en dernier) ; à égalité, A–Z. */
+export const sortTags = (tags: TagCount[]): TagCount[] => [...tags].sort((a, b) => b.total - a.total || byTagName(a.name, b.name))
 
 /** Raccourcis de l'accueil (#63) : les tags non vides, triés. */
 export const shortcutTags = (tags: TagCount[]): TagCount[] => sortTags(tags).filter(t => t.total > 0)

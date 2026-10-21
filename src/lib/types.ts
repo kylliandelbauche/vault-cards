@@ -15,7 +15,7 @@ export interface Card {
   deck: string | null // null pour une carte manuelle
   source_path: string | null // null pour une carte manuelle
   source_title?: string | null // titre (H1) de la note source ; absent/null = repli sur le nom de fichier
-  tags: string[] // slugs de shared/tags.ts (0 à 2) ; inconnu = ignoré à l'affichage
+  tags: string[] // noms de tags libres (#79), 0 à 5 (au moins 1 pour manual/inbox), le 1er est le principal
   front: string
   back: string
   /** Création (horodatage serveur ; pour une carte manuelle pas encore envoyée, horloge de l'appareil). Absent d'un vieux cache. */
@@ -31,6 +31,14 @@ export interface Card {
    * Absent (cartes tirées du serveur) ou 1 = à jour.
    */
   synced?: 0 | 1
+}
+
+/** Tag du registre serveur (#79, table `tags`), tiré par la synchro. Créé côté serveur, jamais par l'app directement. */
+export interface Tag {
+  id: string
+  name: string
+  created_at?: string
+  updated_at: string
 }
 
 export interface Review {

@@ -1,12 +1,12 @@
 import { Page, Preloader } from 'konsta/react'
 import { useState } from 'react'
-import { MAX_TAGS, TAGS } from '../../../shared/tags'
-import { GlassButton } from '../../components/GlassButton'
+import { MAX_TAGS } from '../../../shared/tags'
 import { DiscardDialog, SheetBar } from '../../components/SheetBar'
 import { EDGES } from '../../components/TopBar'
 import { CardValidationError, createManualCard, type ManualCardInput } from '../../lib/cards'
 import type { VaultDB } from '../../lib/db'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
+import { AddTagsScreen, useTagChoices } from '../cards/AddTagsScreen'
 import type { DraftsTarget } from '../home/useNavigation'
 import { useDrafts } from './useDrafts'
 
@@ -19,8 +19,8 @@ interface Props {
 }
 
 /**
- * « Modifier la carte » (#81, Paper « Carte · Modifier ») pour un brouillon : question, réponse, tags (1 à 2 parmi les
- * 8, en attendant #79). ✓ enregistre la retouche SANS valider (updateDraft) et revient à la liste : la validation reste
+ * « Modifier la carte » (#81, Paper « Carte · Modifier ») pour un brouillon : question, réponse, tags libres (#79 : 1 à 5,
+ * écran « Ajouter des tags » ; un nom nouveau n'est créé qu'à la validation du brouillon). ✓ enregistre la retouche SANS valider (updateDraft) et revient à la liste : la validation reste
  * une décision de la liste (« Tout valider »), un seul geste pour accepter. ✕ sans modification ferme ; avec
  * modifications, fenêtre de confirmation.
  */
@@ -28,7 +28,7 @@ export function EditCardScreen({ db, target, onClose, onWrite }: Props) {
   const { drafts, error, update } = useDrafts(db, target.inboxId, { onWrite })
   const card = drafts?.find(c => c.id === target.cardId)
   if (card) {
-    return <EditForm key={card.id} title="Modifier la carte" initial={card} source={target.source} onClose={onClose} save={patch => update(card.id, patch)} />
+    return <EditForm key={card.id} db={db} title="Modifier la carte" initial={card} source={target.source} onClose={onClose} save={patch => update(card.id, patch)} />
   }
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
@@ -50,6 +50,7 @@ export function EditCardScreen({ db, target, onClose, onWrite }: Props) {
 export function NewCardScreen({ db, onClose, onWrite }: { db: VaultDB; onClose(): void; onWrite(): void }) {
   return (
     <EditForm
+      db={db}
       title="Nouvelle carte"
       initial={EMPTY}
       creating
@@ -62,6 +63,7 @@ export function NewCardScreen({ db, onClose, onWrite }: { db: VaultDB; onClose()
 const EMPTY: ManualCardInput = { front: '', back: '', tags: [] }
 
 interface FormProps {
+  db: VaultDB
   title: string
   initial: ManualCardInput
   /** Création : ✓ actif seulement quand question et réponse sont remplies ; sinon ✓ sans modification = fermer. */
@@ -76,18 +78,18 @@ const LABEL = 'px-1.5 text-[13px] leading-4 font-semibold tracking-[0.06em] text
 const FIELD = 'glass-card block w-full resize-none rounded-[22px] px-[18px] py-4 text-black outline-none focus:outline-2 focus:-outline-offset-2 focus:outline-new dark:text-white'
 const FIELD_LABEL: Record<CardValidationError['field'], string> = { front: 'Question', back: 'Réponse', tags: 'Tags' }
 
-function EditForm({ title, initial: card, creating = false, source, onClose, save }: FormProps) {
+function EditForm({ db, title, initial: card, creating = false, source, onClose, save }: FormProps) {
   const [front, setFront] = useState(card.front)
   const [back, setBack] = useState(card.back)
   const [tags, setTags] = useState<string[]>([...card.tags])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [confirming, setConfirming] = useState(false)
+  const [picking, setPicking] = useState(false)
+  const choices = useTagChoices(db)
   const dirty = front !== card.front || back !== card.back || !sameTags(tags, card.tags)
-  const full = tags.length >= MAX_TAGS
   const filled = front.trim() !== '' && back.trim() !== ''
 
-  const toggle = (slug: string) => setTags(t => (t.includes(slug) ? t.filter(s => s !== slug) : t.length >= MAX_TAGS ? t : [...t, slug]))
 
   const submit = async () => {
     if (saving) return
@@ -101,6 +103,10 @@ function EditForm({ title, initial: card, creating = false, source, onClose, sav
       setError(e instanceof CardValidationError ? `${FIELD_LABEL[e.field]} : ${e.message}.` : 'Modification non enregistrée. Réessaie.')
       setSaving(false)
     }
+  }
+
+  if (picking) {
+    return <AddTagsScreen initial={tags} choices={choices} onCancel={() => setPicking(false)} onDone={next => { setTags(next); setPicking(false) }} />
   }
 
   return (
@@ -124,29 +130,33 @@ function EditForm({ title, initial: card, creating = false, source, onClose, sav
         </div>
         <fieldset className="flex flex-col gap-2">
           <legend className={`${LABEL} mb-2`}>TAGS <span className="font-normal tracking-normal">· 1 à {MAX_TAGS}</span></legend>
-          <div className="flex flex-wrap gap-2">
-            {TAGS.map(t => {
-              const on = tags.includes(t.slug)
-              const locked = !on && full
-              return (
-                <GlassButton
-                  key={t.slug}
-                  tone="neutral"
-                  aria-pressed={on}
-                  aria-disabled={locked || undefined}
-                  onClick={locked ? undefined : () => toggle(t.slug)}
-                  className={`on-glass tag-chip ${locked ? 'tag-chip-empty' : ''} flex min-h-11 items-center gap-1.5 rounded-full px-4 text-[15px] leading-[18px] ${on ? 'font-semibold' : 'font-medium'}`}
-                >
-                  {on && (
-                    <svg aria-hidden="true" viewBox="0 0 24 24" className="-ms-1 size-4" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 12.5l4.5 4.5L19 7.5" />
-                    </svg>
-                  )}
-                  {t.label}
-                </GlassButton>
-              )
-            })}
-          </div>
+          <ul role="list" className="flex flex-wrap gap-2.5">
+            {tags.map(name => (
+              <li key={name}>
+                <span className="tag-pill flex h-10 items-center gap-2 rounded-full ps-4 pe-2.5 text-[15px] leading-[18px] font-medium">
+                  {name}
+                  <button
+                    type="button"
+                    aria-label={`Retirer ${name}`}
+                    onClick={() => setTags(t => t.filter(x => x !== name))}
+                    className="flex size-[22px] cursor-pointer items-center justify-center rounded-full bg-black/10 dark:bg-white/15"
+                  >
+                    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-3" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M7 7l10 10M17 7L7 17" /></svg>
+                  </button>
+                </span>
+              </li>
+            ))}
+            <li>
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                className="flex h-10 cursor-pointer items-center gap-1.5 rounded-full border-[1.5px] border-dashed border-black/25 px-4 text-[15px] leading-[18px] font-medium text-label-2 dark:border-white/30"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                Ajouter un tag
+              </button>
+            </li>
+          </ul>
         </fieldset>
         {source && (
           <div className="flex flex-col gap-1 px-1.5 pt-2">

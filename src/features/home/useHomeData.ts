@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
 import type { VaultDB } from '../../lib/db'
 import { homeStats, type HomeStats } from '../../lib/home'
-import type { Card, Review } from '../../lib/types'
+import type { Card, Review, Tag } from '../../lib/types'
 
 export type HomeData = { status: 'loading' } | { status: 'error' } | { status: 'ready'; stats: HomeStats }
 
@@ -21,7 +21,7 @@ export function msUntilNextLocalDay(now: Date): number {
  */
 export function useHomeData(db: VaultDB, now: () => Date, active: boolean): HomeData {
   const [data, setData] = useState<HomeData>({ status: 'loading' })
-  const raw = useRef<{ cards: Card[]; reviews: Review[] } | null>(null)
+  const raw = useRef<{ cards: Card[]; reviews: Review[]; tags: Tag[] } | null>(null)
   const clock = useRef(now)
   useEffect(() => { clock.current = now })
 
@@ -29,15 +29,15 @@ export function useHomeData(db: VaultDB, now: () => Date, active: boolean): Home
     if (!active) return
     let midnight: ReturnType<typeof setTimeout> | undefined
     const compute = () => {
-      if (raw.current) setData({ status: 'ready', stats: homeStats(raw.current.cards, raw.current.reviews, clock.current()) })
+      if (raw.current) setData({ status: 'ready', stats: homeStats(raw.current.cards, raw.current.reviews, clock.current(), undefined, raw.current.tags) })
     }
     // Une seule minuterie, jusqu'au prochain minuit local, réarmée à chaque passage (aucune boucle).
     const armMidnight = () => {
       clearTimeout(midnight)
       midnight = setTimeout(() => { compute(); armMidnight() }, msUntilNextLocalDay(clock.current()))
     }
-    const sub = liveQuery(() => Promise.all([db.cards.toArray(), db.reviews.toArray()])).subscribe({
-      next: ([cards, reviews]) => { raw.current = { cards, reviews }; compute() },
+    const sub = liveQuery(() => Promise.all([db.cards.toArray(), db.reviews.toArray(), db.tags.toArray()])).subscribe({
+      next: ([cards, reviews, tags]) => { raw.current = { cards, reviews, tags }; compute() },
       error: () => setData({ status: 'error' }),
     })
     const onResume = () => {

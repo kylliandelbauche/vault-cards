@@ -1,5 +1,6 @@
 import { State } from 'ts-fsrs'
 import { stateFromReviews, isNew, type FsrsCard } from './scheduler'
+import { tagKey } from '../../shared/tags'
 import type { Card, Review } from './types'
 
 export interface SessionItem { card: Card; state: FsrsCard }
@@ -15,8 +16,11 @@ export function byCard(reviews: Review[]) {
   return m
 }
 
-/** La carte porte ce tag (doublon ou `tags` absent d'un vieux cache : sans effet). */
-export const hasTag = (card: Card, tag: string) => (card.tags ?? []).includes(tag)
+/** La carte porte ce tag, casse et espaces ignorés (doublon ou `tags` absent d'un vieux cache : sans effet). */
+export const hasTag = (card: Card, tag: string) => {
+  const key = tagKey(tag)
+  return (card.tags ?? []).some(t => tagKey(t) === key)
+}
 
 /**
  * Carte à réviser : non supprimée et pas un brouillon de la boîte de réception (#55). Un brouillon n'entre ni dans les

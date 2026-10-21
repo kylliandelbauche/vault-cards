@@ -1,6 +1,5 @@
 import { Page, Preloader } from 'konsta/react'
 import { useCallback, useEffect, useState } from 'react'
-import { getTag } from '../../../shared/tags'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { EDGES, TopBar } from '../../components/TopBar'
 import type { SyncState } from '../review/useAutoSync'
@@ -166,8 +165,8 @@ export function DraftsScreen({ db, deps, target, syncState, onBack, onEdit, onSy
                   <span className="mt-1 line-clamp-2 block text-[14px] leading-[19px] text-label-2">{c.back}</span>
                   {c.tags.length > 0 && (
                     <span className="mt-2 flex flex-wrap gap-1.5">
-                      {c.tags.map(slug => getTag(slug)).filter(t => t !== undefined).map(t => (
-                        <span key={t.slug} className="tag-pill rounded-full px-2.5 py-1 text-[12px] leading-4 font-medium">{t.label}</span>
+                      {c.tags.map(name => (
+                        <span key={name} className="tag-pill rounded-full px-2.5 py-1 text-[12px] leading-4 font-medium">{name}</span>
                       ))}
                     </span>
                   )}
