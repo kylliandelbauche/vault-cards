@@ -41,6 +41,11 @@ export interface ReviewSession {
   rate(r: Rating): void
   counts: { new: number; learn: number; due: number }
   progress: number // 0..1
+  /**
+   * « Carte n sur N » (#82) : N = taille de la file au démarrage (ou au rechargement), n = rang de la carte affichée.
+   * Une carte ratée revient en fin de file, après toutes les autres : pendant ces reprises, n reste à N (jamais n > N).
+   */
+  position: { n: number; total: number }
   stats: Stats
   nextDueAt: Date | null
   /** Recharge une session normale : cartes dues + nouvelles du jour (du tag de la session, s'il y en a un). */
@@ -59,6 +64,8 @@ interface State {
   revealed: boolean
   saveFailed: boolean
   processed: number
+  /** Taille de la file au chargement (N de « Carte n sur N »). */
+  initial: number
   stats: Stats
   nextDueAt: Date | null
   /** Instant (ms) du dernier changement d'écran : réponse révélée ou carte notée. */
@@ -73,7 +80,7 @@ interface State {
 export const SCREEN_CHANGE_GUARD_MS = 400
 
 const ZERO: Stats = { again: 0, hard: 0, good: 0 }
-const INITIAL: State = { scope: null, mode: 'due', status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
+const INITIAL: State = { scope: null, mode: 'due', status: 'loading', queue: [], revealed: false, saveFailed: false, processed: 0, initial: 0, stats: ZERO, nextDueAt: null, shownAt: -Infinity }
 const failed = (scope: SessionScope): State => ({ ...INITIAL, scope, status: 'error' })
 const STAT_KEY = { 1: 'again', 2: 'hard', 3: 'good' } as const
 const systemNow = () => new Date()
@@ -118,6 +125,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         mode,
         status: queue.length ? 'reviewing' : hasLiveCards ? 'done' : 'empty',
         queue,
+        initial: queue.length,
         nextDueAt: queue.length ? null : nextDue(cs, rs, t, target.tag),
         // Ouverture de la session = changement d'écran : le 2e tap d'un double tap sur « Commencer à étudier »
         // (ou un tag) tomberait sur la carte et révélerait la réponse.
@@ -206,6 +214,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     rate,
     counts: countKinds(state.queue),
     progress: total ? state.processed / total : 0,
+    position: { n: Math.min(state.processed + 1, state.initial), total: state.initial },
     stats: state.stats,
     nextDueAt: state.nextDueAt,
     restart,

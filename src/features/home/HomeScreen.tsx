@@ -1,7 +1,7 @@
 import { Page, Preloader } from 'konsta/react'
 import type { ReactNode } from 'react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
-import { BarTitle, EDGES, SignOutButton, TopBar, type SyncIndicator } from '../../components/TopBar'
+import { BarTitle, EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { formatInterval } from '../../lib/format'
 import { cards, shortcutTags, todaySuffix, type HomeStats, type TagCount } from '../../lib/home'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
@@ -17,21 +17,21 @@ interface Props {
   onReviewAll(): void
   /** Ligne « Mes tags › » : page de tous les tags. */
   onOpenTags(): void
-  onSignOut?(): void
   /** Bloc « Nouvelles cartes » (#81), entre le bloc du jour et Mes tags. */
   newCards?: ReactNode
 }
 
 /**
- * Écran d'accueil (#53, #63). Surfaces floutées : barre du haut, carte « aujourd'hui », carte « Nouvelles cartes »
- * (#81), carte « Mes tags » (4, aucune imbriquée). Le bouton d'action, les compteurs et les tags sont posés sur les cartes, sans flou propre.
+ * Écran d'accueil (#53, #63, #82 « Accueil · v4 »). Barre : « Vault Cards » + synchro à gauche, Recherche et Profil
+ * à droite (la déconnexion est dans Profil). Surfaces floutées : carte « aujourd'hui », carte « Nouvelles cartes »
+ * (#81), carte « Mes tags » (3, aucune imbriquée). Le bouton d'action, les compteurs et les tags sont posés sur les
+ * cartes, sans flou propre.
  */
-export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, onSignOut, newCards }: Props) {
+export function HomeScreen({ data, now, sync, onStudy, onReviewAll, onOpenTags, newCards }: Props) {
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
       <TopBar>
-        <BarTitle title="Vault Cards" sync={sync} />
-        {onSignOut && <SignOutButton onClick={onSignOut} />}
+        <BarTitle title="Vault Cards" sync={sync} large />
       </TopBar>
 
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col gap-3 py-2 ${EDGES}`}>
@@ -69,8 +69,8 @@ const COUNTERS = [
 /**
  * Bloc du jour (maquette 1, #63), toutes les cartes : grand chiffre mis en avant suivi de « cartes à revoir aujourd'hui » (même
  * ligne si la largeur le permet), 3 compteurs en tuiles avec pastille colorée décorative, puis le bouton d'action,
- * dans la même carte en verre. Chiffres et libellés neutres. Le bouton est en verre imité (`on-glass` : teinte,
- * lueur, liseré, reflet, sans backdrop-filter) : pas de flou imbriqué.
+ * dans la même carte en verre. Chiffres et libellés neutres. « Commencer à étudier » est bleu plein (#82 : la seule
+ * action bleue forte de l'écran), sans backdrop-filter (`on-glass`) : pas de flou imbriqué.
  */
 function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
   if (stats.total === 0) {
@@ -111,7 +111,14 @@ function Today({ stats, now, onStudy, onReviewAll }: TodayProps) {
         ))}
       </dl>
       {stats.today > 0
-        ? <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass mt-4`} onClick={onStudy}>Commencer à étudier</GlassButton>
+        ? (
+          <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass btn-filled mt-4 gap-3`} onClick={onStudy}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px] shrink-0" fill="currentColor">
+              <path d="M7 4.5v15a1 1 0 0 0 1.5.87l12-7.5a1 1 0 0 0 0-1.74l-12-7.5A1 1 0 0 0 7 4.5z" />
+            </svg>
+            Commencer à étudier
+          </GlassButton>
+        )
         : <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass mt-4`} onClick={onReviewAll}>Réviser à nouveau</GlassButton>}
     </section>
   )

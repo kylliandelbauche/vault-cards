@@ -1,6 +1,6 @@
 import { Page, Preloader, Progressbar } from 'konsta/react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
-import { BarTitle, EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
+import { BarTitle, EDGES, TopBar } from '../../components/TopBar'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
@@ -8,44 +8,30 @@ import { RatingBar } from './RatingBar'
 import { useReviewKeys } from './useReviewKeys'
 import type { ReviewSession } from './useReviewSession'
 
+/** Titre d'une session lancée par « Commencer à étudier » (toutes les cartes du jour). */
+export const DAY_TITLE = 'Révision du jour'
+
 interface Props {
   session: ReviewSession
   now: () => Date
-  /** État de la synchro, affiché sous le titre. */
-  sync?: SyncIndicator
-  /** Titre de la barre : nom du tag pour une session limitée à un tag. */
+  /** Titre de la barre selon l'entrée (Paper, note « titre selon l'entrée ») : nom du tag, ou « Révision du jour ». */
   title?: string
-  /** Retour à l'écran précédent (chevron de la barre). */
+  /** Retour à l'écran précédent (flèche de la barre). */
   onBack?(): void
-  /** Nom accessible du chevron : l'écran de destination. */
+  /** Nom accessible de la flèche : l'écran de destination. */
   backLabel?: string
   /** « Retour à l'accueil » de l'écran de fin (par défaut : onBack). */
   onHome?(): void
 }
 
-function Counters({ counts }: Pick<ReviewSession, 'counts'>) {
-  const pills = [
-    { n: counts.new, label: 'nouvelles', cls: 'bg-new-tint text-new' },
-    { n: counts.learn, label: 'à revoir', cls: 'bg-again-tint text-again' },
-    { n: counts.due, label: 'dues', cls: 'bg-good-tint text-good' },
-  ]
-  return (
-    // Pastilles à fond propre (≥ 5:1 quel que soit le verre). Libellé en texte masqué : VoiceOver lit
-    // « 12 nouvelles » (un aria-label sur un <span> sans rôle est ignoré).
-    <div className="flex shrink-0 gap-1.5">
-      {pills.map(p => (
-        <span key={p.label} className={`min-w-7 rounded-full px-2 py-0.5 text-center text-[13px] font-semibold tabular-nums ${p.cls}`}>
-          {p.n}
-          <span className="sr-only"> {p.label}</span>
-        </span>
-      ))}
-    </div>
-  )
-}
-
-export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack, backLabel, onHome = onBack }: Props) {
+/**
+ * Révision (#82, Paper « Révision · Question / Réponse ») : barre commune (flèche, titre selon l'entrée,
+ * sous-titre « Carte n sur N », Recherche, Profil), barre de progression fine dessous. Le reste ne change pas.
+ */
+export function ReviewScreen({ session, now, title = DAY_TITLE, onBack, backLabel, onHome = onBack }: Props) {
   useReviewKeys(session)
   const { status, current, revealed } = session
+  const reviewing = status === 'reviewing'
 
   // La page entière est le conteneur de défilement ; les barres en verre sont `sticky` et se
   // superposent au contenu qui passe dessous. Une carte courte tient sans scroll (#27) ; une carte
@@ -55,16 +41,15 @@ export function ReviewScreen({ session, now, sync, title = 'Vault Cards', onBack
       <TopBar
         onBack={onBack}
         backLabel={backLabel}
-        extra={status === 'reviewing' && (
+        extra={reviewing && (
           <Progressbar
-            className="mt-2"
+            className="mt-2.5"
             progress={session.progress}
-            colors={{ trackBgIos: 'bg-black/6 dark:bg-white/15', activeBgIos: 'bg-primary dark:bg-new' }}
+            colors={{ trackBgIos: 'bg-black/8 dark:bg-white/10', activeBgIos: 'bg-primary dark:bg-new' }}
           />
         )}
       >
-        <BarTitle title={title} sync={sync} />
-        {status === 'reviewing' && <Counters counts={session.counts} />}
+        <BarTitle title={title} subtitle={reviewing ? `Carte ${session.position.n} sur ${session.position.total}` : undefined} />
       </TopBar>
 
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col py-2 ${EDGES}`}>

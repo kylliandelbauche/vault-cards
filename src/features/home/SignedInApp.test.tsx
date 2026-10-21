@@ -44,7 +44,8 @@ describe('SignedInApp : navigation (#53)', () => {
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
     expect(await screen.findByRole('button', { name: 'Afficher la réponse' })).toBeTruthy()
-    expect(document.querySelector('header p')?.textContent).toBe('Vault Cards')
+    // #82 : titre selon l'entrée (« Révision du jour ») + « Carte 1 sur 3 » (taille de la file au démarrage).
+    expect([...document.querySelectorAll('header p')].map(p => p.textContent)).toEqual(['Révision du jour', 'Carte 1 sur 3'])
     await rateAll(user)
     expect(await screen.findByText('Session terminée')).toBeTruthy()
     await waitFor(() => expect(runSync.mock.calls.length).toBeGreaterThanOrEqual(2)) // fin de session : notes poussées
@@ -58,7 +59,7 @@ describe('SignedInApp : navigation (#53)', () => {
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Dev & outils, 2 cartes' }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
-    expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
+    expect([...document.querySelectorAll('header p')].map(p => p.textContent)).toEqual(['Dev & outils', 'Carte 1 sur 2'])
     const seen = new Set<string>()
     while (screen.queryByRole('button', { name: 'Afficher la réponse' })) {
       seen.add(document.querySelector('article p.mt-3')!.textContent!)
@@ -158,7 +159,7 @@ describe('SignedInApp : page Mes tags (#53)', () => {
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await user.click(screen.getByRole('button', { name: 'Mes tags, voir les 8 tags' }))
     await waitFor(() => expect(heading()).toBe('Mes tags'))
-    expect(within(screen.getByRole('list')).getAllByRole('button')).toHaveLength(8)
+    expect(screen.getAllByRole('list').flatMap(l => within(l).getAllByRole('button'))).toHaveLength(8)
     await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
     expect(document.querySelector('header p')?.textContent).toBe('Dev & outils')
@@ -177,5 +178,22 @@ describe('SignedInApp : page Mes tags (#53)', () => {
     await rateAll(user)
     await user.click(await screen.findByRole('button', { name: "Retour à l'accueil" }))
     await waitFor(() => expect(heading()).toBe("1 carte à revoir aujourd'hui"))
+  })
+})
+
+describe('SignedInApp : barre commune (#82)', () => {
+  it('Recherche et Profil sur l’accueil, Mes tags et la révision ; « Se déconnecter » dans Profil', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    const actions = () => within(document.querySelector('header')!).getAllByRole('button').map(b => b.getAttribute('aria-label'))
+    expect(actions()).toEqual(['Rechercher', 'Profil'])
+    await user.click(screen.getByRole('button', { name: 'Mes tags, voir les 8 tags' }))
+    await waitFor(() => expect(heading()).toBe('Mes tags'))
+    expect(actions()).toEqual(['Accueil', 'Rechercher', 'Profil'])
+    await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(actions()).toEqual(['Mes tags', 'Rechercher', 'Profil'])
+    await user.click(screen.getByRole('button', { name: 'Profil' }))
+    expect(within(screen.getByRole('dialog', { name: 'Profil' })).getByRole('button', { name: 'Se déconnecter' })).toBeTruthy()
   })
 })
