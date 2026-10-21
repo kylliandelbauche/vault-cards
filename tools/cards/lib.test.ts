@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { listSyntheses, parseFrontmatter, suggestTags, resolveNotesDir, validateRelinkPayload, planRelink, NOTES_SUBDIR, DECK, type RelinkState, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle, vaultOnly, VAULT_SOURCE } from './lib.ts'
+import { listSyntheses, parseFrontmatter, suggestTags, resolveNotesDir, validateRelinkPayload, planRelink, NOTES_SUBDIR, DECK, type RelinkState, hashContent, diffCards, validatePayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, resolveInVault, countLiveCards, parseArgs, computeScan, validateRetagPayload, planRetag, planTitles, cardsNeedingTitle, vaultOnly, VAULT_SOURCE, canonicalTags, tagCounts } from './lib.ts'
 
 const root = path.join(import.meta.dirname, 'fixtures')
 const SUB = 'Second cerveau' // sous-dossier des fixtures (le vrai défaut est NOTES_SUBDIR)
@@ -32,13 +32,13 @@ describe('listSyntheses (#76 : 3-Resources/Second cerveau, à plat, type: synthe
     expect(notes.map(n => n.title)).toEqual(['Note a', 'Note B'])
   })
 
-  it('tags du frontmatter (liste en ligne ou en bloc) et indices de tags de la liste fixe', async () => {
+  it('tags du frontmatter (liste en ligne ou en bloc) et indices : noms des tags de l’app', async () => {
     const notes = await listSyntheses(root, SUB)
     const [a, b] = notes
     expect(a.frontmatter_tags).toEqual(['ia', 'agents', 'cybersecurite'])
-    expect(a.tag_hints).toEqual(['ia', 'securite'])
+    expect(a.tag_hints).toEqual(['IA & agents', 'Sécurité'])
     expect(b.frontmatter_tags).toEqual(['developpement', 'habitudes'])
-    expect(b.tag_hints).toEqual(['dev', 'productivite'])
+    expect(b.tag_hints).toEqual(['Dev & outils', 'Productivité'])
   })
 
   it('défaut : 3-Resources/Second cerveau ; chemins NFC, emoji + espace acceptés', async () => {
@@ -76,10 +76,10 @@ describe('parseFrontmatter', () => {
 
 describe('suggestTags', () => {
   it('table de correspondance simple, ordre du frontmatter, sans doublon, jamais hors liste', () => {
-    expect(suggestTags(['developpement_personnel', 'priorites', 'habitudes'])).toEqual(['mental', 'productivite'])
-    expect(suggestTags(['cybersecurite', 'saas', 'pentest', 'ia'])).toEqual(['securite', 'argent', 'ia'])
-    expect(suggestTags(['marketing', 'acquisition', 'copywriting'])).toEqual(['marketing'])
-    expect(suggestTags(['loisirs', 'minecraft'])).toEqual(['culture'])
+    expect(suggestTags(['developpement_personnel', 'priorites', 'habitudes'])).toEqual(['Mental & psycho', 'Productivité'])
+    expect(suggestTags(['cybersecurite', 'saas', 'pentest', 'ia'])).toEqual(['Sécurité', 'Argent & business', 'IA & agents'])
+    expect(suggestTags(['marketing', 'acquisition', 'copywriting'])).toEqual(['Marketing & vente'])
+    expect(suggestTags(['loisirs', 'minecraft'])).toEqual(['Culture'])
     expect(suggestTags(['design', 'inconnu'])).toEqual([])
   })
 })
@@ -166,18 +166,25 @@ describe('validatePayload', () => {
     expect(() => validatePayload({ ...base, cards: 'x' })).toThrow(/cards/)
     expect(() => validatePayload({ ...base, cards: [{ id: 3, front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/id/)
   })
-  it('tags : slug inconnu refusé', () => {
-    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['cuisine'] }] })).toThrow(/tag inconnu/)
+  it('tags libres (#79) : nom nouveau accepté, trimé, espaces internes réduits', () => {
+    const p = validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['  Cuisine   italienne ', 'IA & agents'] }] })
+    expect(p.cards[0].tags).toEqual(['Cuisine italienne', 'IA & agents'])
   })
   it('tags : 0 tag refusé (absent ou liste vide)', () => {
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R' }] })).toThrow(/tags/)
     expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: [] }] })).toThrow(/tags/)
   })
-  it('tags : 3 tags refusés', () => {
-    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'dev', 'culture'] }] })).toThrow(/tags/)
+  it('tags : 5 acceptés, 6 refusés', () => {
+    expect(validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['a', 'b', 'c', 'd', 'e'] }] }).cards[0].tags).toHaveLength(5)
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['a', 'b', 'c', 'd', 'e', 'f'] }] })).toThrow(/1 à 5 tags/)
   })
-  it('tags : doublon refusé', () => {
-    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] })).toThrow(/double/)
+  it('tags : nom vide ou de plus de 40 caractères refusé', () => {
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['  '] }] })).toThrow(/vide/)
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['x'.repeat(41)] }] })).toThrow(/trop long/)
+    expect(() => validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: [3] }] })).toThrow(/invalide/)
+  })
+  it('tags : doublons de casse dédoublonnés (le premier gardé)', () => {
+    expect(validatePayload({ ...base, cards: [{ front: 'Q', back: 'R', tags: ['IA & agents', 'ia & AGENTS'] }] }).cards[0].tags).toEqual(['IA & agents'])
   })
   it('payload removed avec des cartes : refusé (il en insérerait tout en marquant la note supprimée)', () => {
     expect(() => validatePayload({ ...removedBase, cards: [{ front: 'Q', back: 'R', tags: ['ia'] }] })).toThrow(/removed.*cards/)
@@ -433,9 +440,9 @@ describe('validateRetagPayload', () => {
     expect(() => validateRetagPayload({ id: 'u1', tags: ['ia'] })).toThrow(/liste/)
     expect(() => validateRetagPayload([{ tags: ['ia'] }])).toThrow(/id/)
     expect(() => validateRetagPayload([{ id: 'u1', tags: ['ia'] }, { id: 'u1', tags: ['dev'] }])).toThrow(/id en double/)
-    expect(() => validateRetagPayload([{ id: 'u1', tags: ['cuisine'] }])).toThrow(/tag inconnu/)
+    expect(() => validateRetagPayload([{ id: 'u1', tags: ['x'.repeat(41)] }])).toThrow(/trop long/)
     expect(() => validateRetagPayload([{ id: 'u1', tags: [] }])).toThrow(/tags/)
-    expect(() => validateRetagPayload([{ id: 'u1', tags: ['ia', 'dev', 'culture'] }])).toThrow(/tags/)
+    expect(() => validateRetagPayload([{ id: 'u1', tags: ['a', 'b', 'c', 'd', 'e', 'f'] }])).toThrow(/tags/)
   })
 })
 
@@ -543,5 +550,15 @@ describe('cartes manuelles (#54) : jamais touchées par l’outil', () => {
     expect(filtered.length + inserts.length).toBe(uses.length)
     expect(inserts.length).toBe(1)
     expect(cli).toMatch(/source: VAULT_SOURCE/)
+  })
+})
+
+describe('canonicalTags / tagCounts (#79)', () => {
+  it('reprend l’orthographe des tags existants, garde les nouveaux noms', () => {
+    expect(canonicalTags([{ id: '1', tags: ['ia & agents', 'Nouveau'] }], ['IA & agents'])).toEqual([{ id: '1', tags: ['IA & agents', 'Nouveau'] }])
+  })
+  it('compte les cartes par tag (casse ignorée), A–Z, tags vides compris', () => {
+    expect(tagCounts(['Sécurité', 'IA & agents', 'cerveau'], [{ tags: ['IA & agents'] }, { tags: ['ia & agents', 'Sécurité'] }]))
+      .toEqual([{ name: 'cerveau', cards: 0 }, { name: 'IA & agents', cards: 2 }, { name: 'Sécurité', cards: 1 }])
   })
 })

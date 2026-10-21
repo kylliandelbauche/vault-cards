@@ -1,36 +1,75 @@
 /**
- * Tags thématiques : source unique, importée par l'app (src/) et par l'outil (tools/cards).
- * Ajouter un tag = l'ajouter ici + nouvelle migration qui élargit la contrainte `cards_tags_check`
- * (le test tools/cards/tags.test.ts vérifie l'alignement).
- * Ni icône (#53) ni couleur (#63) : un tag est reconnu à son libellé seul, en verre neutre.
+ * Tags libres (#79) : règles de nom partagées par l'app (src/) et l'outil (tools/cards), alignées sur la migration
+ * 20261021000000_free_tags (trigger cards_tags_sync et contrainte cards_tags_check). Un tag est un NOM porté par la
+ * carte (`cards.tags`) ; la table `tags` en est le registre (créé côté serveur pour les cartes actives).
+ * Ni icône (#53) ni couleur (#63) : un tag est reconnu à son nom seul, en verre neutre.
  */
-export interface TagDef {
-  slug: string
-  label: string
+
+/** Tags par carte au plus (contrainte SQL cards_tags_check). */
+export const MAX_TAGS = 5
+/** Longueur d'un nom de tag, en caractères (points de code), comme char_length en SQL. */
+export const TAG_NAME_MAX = 40
+
+/** Forme stockée d'un nom : NFC, espaces de bord retirés, espaces internes réduits à un seul (comme le trigger). */
+export function normalizeTagName(name: string): string {
+  return name.normalize('NFC').trim().replace(/\s+/g, ' ')
 }
 
-export const TAGS = [
-  { slug: 'ia', label: 'IA & agents' },
-  { slug: 'dev', label: 'Dev & outils' },
-  { slug: 'securite', label: 'Sécurité' },
-  { slug: 'marketing', label: 'Marketing & vente' },
-  { slug: 'argent', label: 'Argent & business' },
-  { slug: 'mental', label: 'Mental & psycho' },
-  { slug: 'productivite', label: 'Productivité' },
-  { slug: 'culture', label: 'Culture' },
-] as const satisfies readonly TagDef[]
+/** Clé d'unicité : un même tag quelle que soit la casse ou l'espacement (index unique lower(name)). */
+export const tagKey = (name: string) => normalizeTagName(name).toLowerCase()
 
-export type TagSlug = (typeof TAGS)[number]['slug']
+/** Même tag (casse et espaces ignorés). */
+export const sameTag = (a: string, b: string) => tagKey(a) === tagKey(b)
 
-export const TAG_SLUGS: readonly string[] = TAGS.map((t) => t.slug)
+const chars = (s: string) => Array.from(s).length
+// Caractères de contrôle : jamais dans un nom affiché (et NUL est refusé par Postgres).
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001f\u007f]/
 
-export const MAX_TAGS = 2
-
-export function isTagSlug(value: unknown): value is TagSlug {
-  return typeof value === 'string' && TAG_SLUGS.includes(value)
+/** Message d'erreur si le nom (déjà normalisé) est refusé, sinon null. */
+export function tagNameError(name: string): string | null {
+  if (name === '') return 'nom de tag vide'
+  if (CONTROL.test(name)) return `nom de tag invalide « ${name} »`
+  if (chars(name) > TAG_NAME_MAX) return `nom de tag trop long « ${name} » (${chars(name)} > ${TAG_NAME_MAX} caractères)`
+  return null
 }
 
-/** Définition d'un tag, ou `undefined` si le slug est inconnu (jamais d'exception). */
-export function getTag(slug: string): TagDef | undefined {
-  return TAGS.find((t) => t.slug === slug)
+/**
+ * Liste de noms prête à écrire : chaque nom normalisé et validé (lève sinon), doublons de casse retirés (le premier
+ * gardé), puis ramené à l'orthographe d'un tag connu de même clé (`known`). Ne vérifie pas le nombre de tags.
+ */
+export function cleanTagNames(names: readonly unknown[], known: Iterable<string> = []): string[] {
+  const canon = new Map<string, string>()
+  for (const k of known) if (!canon.has(tagKey(k))) canon.set(tagKey(k), normalizeTagName(k))
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of names) {
+    if (typeof raw !== 'string') throw new Error(`nom de tag invalide « ${String(raw)} »`)
+    const name = normalizeTagName(raw)
+    const error = tagNameError(name)
+    if (error) throw new Error(error)
+    const key = name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(canon.get(key) ?? name)
+  }
+  return out
+}
+
+/** Tri A–Z français, sans tenir compte de la casse ni des accents (« cerveau » entre « Argent » et « Culture »). */
+export const byTagName = (a: string, b: string) => a.localeCompare(b, 'fr', { sensitivity: 'base' }) || a.localeCompare(b)
+
+/**
+ * Anciens slugs (#26) → nom du tag qui les remplace (migration 20261021000000_free_tags). Sert seulement à mettre à
+ * niveau un cache local d'avant #79 (Dexie v6) ; le test tools/cards/tags.test.ts vérifie l'alignement avec la migration.
+ */
+export const LEGACY_TAG_NAMES: Readonly<Record<string, string>> = {
+  ia: 'IA & agents',
+  dev: 'Dev & outils',
+  securite: 'Sécurité',
+  marketing: 'Marketing & vente',
+  argent: 'Argent & business',
+  mental: 'Mental & psycho',
+  productivite: 'Productivité',
+  culture: 'Culture',
 }

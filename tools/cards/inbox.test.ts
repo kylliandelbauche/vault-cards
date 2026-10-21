@@ -45,6 +45,10 @@ describe('signature des octets', () => {
 describe('validateInboxPayload', () => {
   const ok = { source_title: ' Cours de chimie ', cards: [{ front: ' Q1 ? ', back: 'R1', tags: ['culture'] }, { front: 'Q2', back: 'R2', tags: ['ia', 'dev'] }] }
 
+  it('tags libres (#79) : nouveau nom gardé (créé seulement à la validation), doublon de casse retiré', () => {
+    expect(validateInboxPayload({ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: [' Chimie  organique', 'chimie ORGANIQUE', 'Culture'] }] }).cards[0].tags)
+      .toEqual(['Chimie organique', 'Culture'])
+  })
   it('normalise (trim) et garde l’ordre des tags ; liste vide permise', () => {
     expect(validateInboxPayload(ok)).toEqual({ source_title: 'Cours de chimie', cards: [{ front: 'Q1 ?', back: 'R1', tags: ['culture'] }, { front: 'Q2', back: 'R2', tags: ['ia', 'dev'] }] })
     expect(validateInboxPayload({ source_title: 'T', cards: [] }).cards).toEqual([])
@@ -60,9 +64,9 @@ describe('validateInboxPayload', () => {
     [{ source_title: 'T', cards: [{ front: '', back: 'R', tags: ['ia'] }] }, '« front » doit être un texte non vide'],
     [{ source_title: 'T', cards: [{ front: 'x'.repeat(501), back: 'R', tags: ['ia'] }] }, 'trop long'],
     [{ source_title: 'T', cards: [{ front: 'Q', back: 'x'.repeat(1501), tags: ['ia'] }] }, 'trop long'],
-    [{ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: [] }] }, '1 à 2 tags'],
-    [{ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: ['inconnu'] }] }, 'tag inconnu'],
-    [{ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: ['ia', 'ia'] }] }, 'tag en double'],
+    [{ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: [] }] }, '1 à 5 tags'],
+    [{ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: ['a', 'b', 'c', 'd', 'e', 'f'] }] }, '1 à 5 tags'],
+    [{ source_title: 'T', cards: [{ front: 'Q', back: 'R', tags: ['x'.repeat(41)] }] }, 'trop long'],
     [{ source_title: 'T', cards: [{ front: 'Qu’est-ce que X ?', back: 'R', tags: ['ia'] }, { front: 'qu’est ce que x', back: 'R2', tags: ['ia'] }] }, 'doublon de la carte 1'],
     [{ source_title: 'T', cards: Array.from({ length: 51 }, (_, i) => ({ front: `Q${i}`, back: 'R', tags: ['ia'] })) }, '50 au maximum'],
   ])('%o refusé (%s)', (payload, message) => {
