@@ -36,7 +36,7 @@ describe('CardView : tags', () => {
   })
 
   it('affiche une pastille de texte par tag (aucun emoji), et jamais le deck', () => {
-    render(<CardView card={card(['ia', 'securite'])} revealed={false} onReveal={() => {}} />)
+    render(<CardView card={card(['IA & agents', 'Sécurité'])} revealed={false} onReveal={() => {}} />)
     const pills = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
     expect(pills.map(p => p.textContent)).toEqual(['IA & agents', 'Sécurité'])
     expect(document.body.textContent).not.toMatch(/\p{Extended_Pictographic}/u)
@@ -46,14 +46,14 @@ describe('CardView : tags', () => {
     expect(screen.queryByText(/mon-deck/)).toBeNull()
   })
 
-  it('ignore un tag inconnu sans planter', () => {
-    render(<CardView card={card(['cuisine', 'dev'])} revealed={false} onReveal={() => {}} />)
+  it('tags libres (#79) : le nom tel quel, y compris un tag nouveau', () => {
+    render(<CardView card={card(['Cuisine', 'Dev & outils'])} revealed={false} onReveal={() => {}} />)
     const pills = within(screen.getByRole('list', { name: 'Tags' })).getAllByRole('listitem')
-    expect(pills.map(p => p.textContent)).toEqual(['Dev & outils'])
+    expect(pills.map(p => p.textContent)).toEqual(['Cuisine', 'Dev & outils'])
   })
 
-  it('dédoublonne un tag répété (la contrainte SQL ne refuse pas les doublons)', () => {
-    render(<CardView card={card(['ia', 'ia'])} revealed={false} onReveal={() => {}} />)
+  it('dédoublonne un tag répété (casse ignorée)', () => {
+    render(<CardView card={card(['IA & agents', 'ia & AGENTS'])} revealed={false} onReveal={() => {}} />)
     const list = screen.getByRole('list', { name: 'Tags' })
     expect(list.getAttribute('role')).toBe('list')
     expect(within(list).getAllByRole('listitem').map(p => p.textContent)).toEqual(['IA & agents'])
@@ -66,8 +66,8 @@ describe('CardView : tags', () => {
     expect(screen.getByText('Question ?')).toBeTruthy()
   })
 
-  it('aucun tag connu (ou tags absents d’un vieux cache) : pas de liste', () => {
-    render(<CardView card={card(['cuisine'])} revealed={false} onReveal={() => {}} />)
+  it('aucun tag (ou tags absents d’un vieux cache) : pas de liste', () => {
+    render(<CardView card={card([])} revealed={false} onReveal={() => {}} />)
     expect(screen.queryByRole('list', { name: 'Tags' })).toBeNull()
     const legacy = { ...card([]), tags: undefined } as unknown as Card
     render(<CardView card={legacy} revealed={false} onReveal={() => {}} />)

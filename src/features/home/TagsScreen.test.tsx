@@ -74,7 +74,7 @@ describe('TagsScreen v3 (#82)', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /^Dev & outils/ }))
     await user.click(screen.getByRole('button', { name: /^Culture/ }))
-    expect(onStudy.mock.calls).toEqual([['dev'], ['culture']])
+    expect(onStudy.mock.calls).toEqual([['Dev & outils'], ['Culture']])
     await user.click(screen.getByRole('button', { name: 'Sécurité, 0 carte' }))
     expect(onStudy).toHaveBeenCalledTimes(2)
   })

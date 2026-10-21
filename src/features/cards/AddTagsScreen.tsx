@@ -1,26 +1,12 @@
 import { Page } from 'konsta/react'
-import { useEffect, useMemo, useState } from 'react'
-import { liveQuery } from 'dexie'
+import { useMemo, useState } from 'react'
 import { MAX_TAGS, byTagName, normalizeTagName, tagKey, tagNameError } from '../../../shared/tags'
 import { DiscardDialog, SheetBar } from '../../components/SheetBar'
 import { EDGES } from '../../components/TopBar'
-import type { VaultDB } from '../../lib/db'
 import { cards } from '../../lib/home'
-import { tagChoices, type TagChoice } from '../../lib/tags'
+import type { TagChoice } from '../../lib/tags'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
-
-/** Tags connus de l'appareil avec leur nombre de cartes, en direct (registre tiré du serveur + cartes locales). */
-export function useTagChoices(db: VaultDB): TagChoice[] | null {
-  const [choices, setChoices] = useState<TagChoice[] | null>(null)
-  useEffect(() => {
-    const sub = liveQuery(() => Promise.all([db.cards.toArray(), db.tags.toArray()])).subscribe({
-      next: ([all, registry]) => setChoices(tagChoices(all, registry)),
-      error: () => setChoices([]),
-    })
-    return () => sub.unsubscribe()
-  }, [db])
-  return choices
-}
+import { indexLetter } from './useTagChoices'
 
 interface Props {
   /** Tags de la carte à l'ouverture. */
@@ -29,12 +15,6 @@ interface Props {
   choices: readonly TagChoice[] | null
   onCancel(): void
   onDone(tags: string[]): void
-}
-
-/** Lettre d'index d'un nom : première lettre sans accent, « # » si ce n'est pas une lettre. */
-export function indexLetter(name: string): string {
-  const c = name.normalize('NFD').replace(/\p{M}/gu, '').charAt(0).toUpperCase()
-  return /[A-Z]/.test(c) ? c : '#'
 }
 
 const LETTERS = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '#']

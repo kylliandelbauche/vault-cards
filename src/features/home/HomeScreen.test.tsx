@@ -113,7 +113,7 @@ describe('HomeScreen', () => {
   it('tap sur un tag : session du tag ; le bloc du jour reste celui de toutes les cartes', async () => {
     const { onStudy } = renderHome()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
-    expect(onStudy).toHaveBeenCalledWith('dev')
+    expect(onStudy).toHaveBeenCalledWith('Dev & outils')
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("12 cartes à revoir aujourd'hui")
     expect(screen.getAllByRole('definition').map(d => d.textContent)).toEqual(['4', '8', '30'])
   })
