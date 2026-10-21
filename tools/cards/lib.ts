@@ -191,7 +191,7 @@ export function requireTagList(v: unknown, where: string): string[] {
   try {
     tags = cleanTagNames(v)
   } catch (e) {
-    throw new Error(`${where} : ${(e as Error).message}`)
+    throw new Error(`${where} : ${(e as Error).message}`, { cause: e })
   }
   if (tags.length < 1 || tags.length > MAX_TAGS) throw new Error(`${where} : « tags » doit être une liste de 1 à ${MAX_TAGS} tags`)
   return tags
