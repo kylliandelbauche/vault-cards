@@ -1,5 +1,4 @@
 import { describe, it, expect } from 'vitest'
-import { TAGS } from '../../shared/tags'
 import { cards as cardsLabel, homeStats, isMastered, MASTERED_STABILITY_DAYS, shortcutTags, sortTags, todaySuffix, type TagCount } from './home'
 import { stateFromReviews } from './scheduler'
 import { buildQueue } from './session'
@@ -52,7 +51,7 @@ describe('homeStats : compteurs', () => {
     const s = homeStats(cs, free, now)
     expect(s.fresh).toBe(20)
     expect(s.today).toBe(buildQueue(cs, free, now).length)
-    expect(s.tags.find(t => t.slug === 'ia')!.today).toBe(buildQueue(cs, free, now, undefined, 'ia').length)
+    expect(s.tags.find(t => t.name === 'ia')!.today).toBe(buildQueue(cs, free, now, undefined, 'ia').length)
   })
 
   it('cartes du jour = dues + nouvelles = taille exacte de la file « Commencer à étudier »', () => {
@@ -85,24 +84,23 @@ describe('homeStats : compteurs', () => {
   })
 })
 
-const tag = (slug: string, total: number): TagCount =>
-  ({ ...TAGS.find(t => t.slug === slug)!, total, today: 0 })
+const tag = (name: string, total: number): TagCount => ({ name, total, today: 0 })
 
 describe('homeStats : tags', () => {
-  it('les 8 tags dans l’ordre de shared/tags.ts ; une carte à 2 tags compte dans les deux ; tags vides à 0', () => {
+  it('tags libres (#79) : registre + noms des cartes vivantes, A–Z, vides compris ; une carte à 2 tags compte dans les deux', () => {
     const s = homeStats(
-      [card('a', ['ia', 'dev']), card('b', ['ia']), card('c', ['ia', 'ia']), card('d', ['dev'], { deleted_at: '2026-10-02T00:00:00Z' })],
-      [], now,
+      [card('a', ['ia', 'dev']), card('b', ['IA']), card('c', ['ia', 'ia']), card('d', ['zz'], { deleted_at: '2026-10-02T00:00:00Z' })],
+      [], now, undefined, [{ name: 'culture' }, { name: 'ia' }],
     )
-    expect(s.tags.map(t => t.slug)).toEqual(TAGS.map(t => t.slug))
-    const count = Object.fromEntries(s.tags.map(t => [t.slug, t.total]))
-    expect(count).toMatchObject({ ia: 3, dev: 1, securite: 0, culture: 0 })
+    expect(s.tags.map(t => t.name)).toEqual(['culture', 'dev', 'ia'])
+    const count = Object.fromEntries(s.tags.map(t => [t.name, t.total]))
+    expect(count).toEqual({ ia: 3, dev: 1, culture: 0 })
   })
 
   it('par tag : file du jour du tag (dues + nouvelles, quota global)', () => {
     const cs = [card('a', ['ia']), card('b', ['ia', 'dev']), card('c', ['dev'])]
-    const s = homeStats(cs, [rv('c', ago(1))], now) // 'c' vue à l'instant : pas due
-    const today = Object.fromEntries(s.tags.map(t => [t.slug, t.today]))
+    const s = homeStats(cs, [rv('c', ago(1))], now, undefined, [{ name: 'culture' }]) // 'c' vue à l'instant : pas due
+    const today = Object.fromEntries(s.tags.map(t => [t.name, t.today]))
     expect(today).toMatchObject({ ia: 2, dev: 1, culture: 0 })
   })
 
@@ -110,22 +108,22 @@ describe('homeStats : tags', () => {
     const cs = [card('d', ['dev', 'ia']), card('n1', ['ia']), card('later', ['culture'])]
     const rs = [rv('d', '2026-09-01T10:00:00Z'), rv('later', ago(1))]
     const s = homeStats(cs, rs, now)
-    for (const t of s.tags) expect(t.today).toBe(buildQueue(cs, rs, now, undefined, t.slug).length)
+    for (const t of s.tags) expect(t.today).toBe(buildQueue(cs, rs, now, undefined, t.name).length)
   })
 
   it('par tag : le quota de nouvelles reste global (nouvelles vues aujourd’hui hors du tag décomptées)', () => {
     const cs = [...Array.from({ length: 25 }, (_, i) => card(`n${i}`, ['ia'])), card('x', ['dev'])]
     const s = homeStats(cs, [rv('x', ago(30))], now)
-    expect(s.tags.find(t => t.slug === 'ia')!.today).toBe(19)
+    expect(s.tags.find(t => t.name === 'ia')!.today).toBe(19)
   })
 
-  it('tri : nombre de cartes décroissant, vides en dernier, ordre de shared/tags.ts à égalité', () => {
+  it('tri : nombre de cartes décroissant, vides en dernier, A–Z à égalité', () => {
     const sorted = sortTags([tag('ia', 2), tag('dev', 5), tag('securite', 0), tag('marketing', 2), tag('argent', 0)])
-    expect(sorted.map(t => t.slug)).toEqual(['dev', 'ia', 'marketing', 'securite', 'argent'])
+    expect(sorted.map(t => t.name)).toEqual(['dev', 'ia', 'marketing', 'argent', 'securite'])
   })
 
   it('raccourcis de l’accueil : tags non vides seulement, triés', () => {
-    expect(shortcutTags([tag('ia', 2), tag('dev', 5), tag('securite', 0)]).map(t => t.slug)).toEqual(['dev', 'ia'])
+    expect(shortcutTags([tag('ia', 2), tag('dev', 5), tag('securite', 0)]).map(t => t.name)).toEqual(['dev', 'ia'])
   })
 
   it('cache ancien sans `tags` : ignoré sans erreur', () => {
@@ -147,10 +145,10 @@ describe('libellés', () => {
 describe('homeStats : brouillons de la boîte de réception (#55)', () => {
   it('un brouillon ne compte ni dans les compteurs du jour ni dans les tags', () => {
     const draft = card('d', ['dev'], { source: 'inbox', status: 'draft', inbox_id: 'i1', deck: null, source_path: null })
-    const s = homeStats([card('a', ['ia']), draft], [], now)
+    const s = homeStats([card('a', ['ia']), draft], [], now, undefined, [{ name: 'dev' }])
     expect(s.total).toBe(1)
     expect(s.today).toBe(1)
     expect(s.fresh).toBe(1)
-    expect(s.tags.find(t => t.slug === 'dev')!.total).toBe(0)
+    expect(s.tags.find(t => t.name === 'dev')!.total).toBe(0)
   })
 })

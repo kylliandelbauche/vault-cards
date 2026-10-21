@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { liveQuery } from 'dexie'
-import { createManualCard, deleteManualCard, updateManualCard, type ManualCardInput } from '../../lib/cards'
+import { createManualCard, deleteManualCard, updateCard, type ManualCardInput } from '../../lib/cards'
 import type { VaultDB } from '../../lib/db'
 import type { Card } from '../../lib/types'
 
@@ -53,7 +53,7 @@ export function useManualCards(db: VaultDB, options: ManualCardsOptions = {}): M
       cards,
       error,
       create: async input => written(await createManualCard(db, input, { now })),
-      update: async (id, patch) => written(await updateManualCard(db, id, patch, { now })),
+      update: async (id, patch) => written(await updateCard(db, id, patch, { now })),
       remove: async id => written(await deleteManualCard(db, id, { now })),
     }
   }, [db, cards, error])

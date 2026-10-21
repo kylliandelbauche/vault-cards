@@ -1,6 +1,6 @@
 import type { Card as CardData } from '../../lib/types'
 import { humanizeFileName } from '../../../shared/source-title'
-import { getTag, type TagDef } from '../../../shared/tags'
+import { tagKey } from '../../../shared/tags'
 
 /** Ligne de titre d'une carte créée à la main (#54), qui n'a pas de note source. Libellé provisoire, à remplacer par la maquette. */
 export const MANUAL_CARD_LABEL = 'Carte perso'
@@ -24,7 +24,7 @@ export function CardView({ card, revealed, onReveal }: Props) {
       onClick={onReveal}
     >
       <p className="truncate text-xs text-muted">{title}</p>
-      <TagPills slugs={card.tags} />
+      <TagPills names={card.tags} />
       <p className="mt-3 whitespace-pre-wrap text-[22px] leading-snug font-semibold">{card.front}</p>
       {revealed && (
         <>
@@ -36,15 +36,15 @@ export function CardView({ card, revealed, onReveal }: Props) {
   )
 }
 
-/** Pastilles de texte en verre neutre (libellé seul : ni icône ni couleur, #63). Tag inconnu (liste locale plus ancienne que la base) : ignoré. Doublon : affiché une fois. */
-function TagPills({ slugs }: { slugs: readonly string[] | null | undefined }) {
-  const tags = [...new Set(slugs ?? [])].map(getTag).filter((t): t is TagDef => t !== undefined)
+/** Pastilles de texte en verre neutre (nom seul : ni icône ni couleur, #63). Doublon (casse ignorée) : affiché une fois. */
+function TagPills({ names }: { names: readonly string[] | null | undefined }) {
+  const tags = (names ?? []).filter((n, i, all) => n.trim() !== '' && all.findIndex(m => tagKey(m) === tagKey(n)) === i)
   if (tags.length === 0) return null
   return (
     // role="list" : sans puces (preflight Tailwind), Safari/VoiceOver retire sinon la sémantique de liste.
     <ul role="list" className="mt-2 flex flex-wrap gap-1.5" aria-label="Tags">
       {tags.map(t => (
-        <li key={t.slug} className="tag-pill rounded-full px-2 py-0.5 text-xs leading-5 font-medium">{t.label}</li>
+        <li key={t} className="tag-pill rounded-full px-2 py-0.5 text-xs leading-5 font-medium">{t}</li>
       ))}
     </ul>
   )

@@ -2,7 +2,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
-import { TAGS } from '../../../shared/tags'
+import { LEGACY_TAG_NAMES } from '../../../shared/tags'
+
+/** Les 8 tags d'origine (#79 : noms libres), par leur ancien slug. */
+const TAGS = Object.entries(LEGACY_TAG_NAMES).map(([slug, name]) => ({ slug, name }))
 import { tagsSubtitle, type HomeStats } from '../../lib/home'
 import { TagsScreen } from './TagsScreen'
 
@@ -71,7 +74,7 @@ describe('TagsScreen v3 (#82)', () => {
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: /^Dev & outils/ }))
     await user.click(screen.getByRole('button', { name: /^Culture/ }))
-    expect(onStudy.mock.calls).toEqual([['dev'], ['culture']])
+    expect(onStudy.mock.calls).toEqual([['Dev & outils'], ['Culture']])
     await user.click(screen.getByRole('button', { name: 'Sécurité, 0 carte' }))
     expect(onStudy).toHaveBeenCalledTimes(2)
   })

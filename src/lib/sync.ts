@@ -1,6 +1,6 @@
 import type { VaultDB } from './db'
 import type { supabase } from './supabase'
-import type { Card, CardSource, CardStatus, Rating, Review } from './types'
+import type { Card, CardSource, CardStatus, Rating, Review, Tag } from './types'
 
 /** Colonnes d'une review côté serveur (`synced` et `free` sont locaux). */
 type ReviewRow = Pick<Review, 'id' | 'card_id' | 'rating' | 'reviewed_at'>
@@ -10,9 +10,11 @@ type ServerReview = ReviewRow & { inserted_at: string }
  * Colonnes qu'envoie l'app pour une carte écrite sur l'appareil : exactement celles que le rôle authenticated peut écrire
  * (migrations 20261015000000_manual_cards et 20261015010000_inbox). `source` absent ou `manual` (#54) : insertion
  * possible, `source = 'manual'` ajouté. `source = 'inbox'` (#55) : UPDATE seul (la carte vient du serveur), `status`
- * compris (accepter un brouillon). deck, source_path, source_title, inbox_id et les horodatages restent au serveur.
+ * compris (accepter un brouillon). `source = 'vault'` (#79, décision #73) : UPDATE seul de front, back, tags, deleted_at.
+ * deck, source_path, source_title, inbox_id et les horodatages restent au serveur. Les tags sont des noms : un nom
+ * nouveau devient un tag côté serveur (trigger cards_tags_sync), sans file d'envoi à part.
  */
-export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'> & { source?: 'manual' | 'inbox'; status?: 'active' }
+export type ManualCardRow = Pick<Card, 'id' | 'front' | 'back' | 'tags' | 'deleted_at'> & { source?: 'manual' | 'inbox' | 'vault'; status?: 'active' }
 
 /**
  * Résultat d'un envoi ligne par ligne. `failed` : lignes refusées (restent à envoyer, le sync échoue) ; les autres
@@ -35,6 +37,8 @@ export interface Remote {
   pullCards(after: Cursor | null, limit: number): Promise<Card[]>
   /** Au plus `limit` reviews strictement après `after` dans l'ordre (inserted_at, id), triées dans cet ordre. */
   pullReviews(after: Cursor | null, limit: number): Promise<ServerReview[]>
+  /** Au plus `limit` tags (#79) strictement après `after` dans l'ordre (updated_at, id), triés dans cet ordre. */
+  pullTags(after: Cursor | null, limit: number): Promise<Tag[]>
 }
 
 /**
@@ -72,7 +76,13 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
       else if (res.error) failed.push({ id, error: new Error(`carte ${id} : ${res.error.message}`) })
       else if (!res.data?.length) failed.push({ id, error: new Error(`carte ${id} : aucune ligne modifiée`) })
     }
-    const rows = all.filter(r => r.source !== 'inbox').map(({ id, front, back, tags, deleted_at }) => ({ id, front, back, tags, deleted_at }))
+    // Cartes du vault (#79, décision #73) : UPDATE seul de front, back, tags, deleted_at (jamais d'insertion ni de statut).
+    for (const { id, front, back, tags, deleted_at } of all.filter(r => r.source === 'vault')) {
+      const res = await client.from('cards').update({ front, back, tags, deleted_at }).eq('id', id).eq('source', 'vault').select('id')
+      if (res.error) failed.push({ id, error: new Error(`carte ${id} : ${res.error.message}`) })
+      else if (!res.data?.length) failed.push({ id, error: new Error(`carte ${id} : aucune ligne modifiée`) })
+    }
+    const rows = all.filter(r => r.source !== 'inbox' && r.source !== 'vault').map(({ id, front, back, tags, deleted_at }) => ({ id, front, back, tags, deleted_at }))
     if (!rows.length) return { failed, stale }
     // 1. INSERT … ON CONFLICT (id) DO NOTHING en un appel : la réponse ne contient que les lignes vraiment insérées.
     //    Pas d'upsert « merge » : il mettrait aussi à jour id et source, colonnes que authenticated ne peut pas modifier.
@@ -107,6 +117,12 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
     return rows.map(c => ({ ...c, source: c.source as CardSource, status: c.status as CardStatus }))
   },
 
+  async pullTags(cursor, limit) {
+    let q = client.from('tags').select('id, name, created_at, updated_at')
+    if (cursor) q = q.or(after('updated_at', cursor))
+    return rowsOf(await q.order('updated_at').order('id').limit(limit))
+  },
+
   async pullReviews(cursor, limit) {
     let q = client.from('reviews').select('id, card_id, rating, reviewed_at, inserted_at')
     if (cursor) q = q.or(after('inserted_at', cursor))
@@ -117,6 +133,7 @@ export const supabaseRemote = (client: typeof supabase): Remote => ({
 
 const CURSOR_CARDS = 'cursor:cards'
 const CURSOR_REVIEWS = 'cursor:reviews'
+const CURSOR_TAGS = 'cursor:tags'
 
 /**
  * Curseur composite stocké en JSON dans `meta`. Ancien format (horodatage seul, avant #22) ou valeur
@@ -144,7 +161,7 @@ export function parseCursor(value: string | undefined): Cursor | null {
 async function pullAll<T extends { id: string }>(
   db: VaultDB,
   key: string,
-  table: VaultDB['cards'] | VaultDB['reviews'],
+  table: VaultDB['cards'] | VaultDB['reviews'] | VaultDB['tags'],
   fetch: (after: Cursor | null, limit: number) => Promise<T[]>,
   stamp: (row: T) => string,
   onRows: (rows: T[]) => Promise<number>,
@@ -191,6 +208,18 @@ async function mergeCards(db: VaultDB, rows: Card[]) {
   const local = await db.cards.bulkGet(rows.map(c => c.id))
   const fresh = rows.filter((_, i) => local[i]?.synced !== 0)
   await db.cards.bulkPut(fresh)
+  return fresh.length
+}
+
+/**
+ * Tags tirés du serveur (#79) : le registre est écrit tel quel (bulkPut, idempotent). Deux appareils qui ont créé
+ * hors ligne le même nom n'ont qu'une ligne serveur (unicité insensible à la casse) : une seule ligne locale.
+ * Renvoie le nombre de tags nouveaux ou modifiés.
+ */
+async function mergeTags(db: VaultDB, rows: Tag[]) {
+  const local = await db.tags.bulkGet(rows.map(t => t.id))
+  const fresh = rows.filter((t, i) => local[i]?.name !== t.name || local[i]?.updated_at !== t.updated_at)
+  await db.tags.bulkPut(rows)
   return fresh.length
 }
 
@@ -250,7 +279,9 @@ export const cardsOutbox: Outbox<Card> = {
   send: (remote, rows) => remote.pushCards(rows.map(({ id, source, status, front, back, tags, deleted_at }) =>
     source === 'inbox'
       ? { id, source, front, back, tags, deleted_at, ...(status === 'active' ? { status } : {}) }
-      : { id, front, back, tags, deleted_at })),
+      : source === 'vault'
+        ? { id, source, front, back, tags, deleted_at }
+        : { id, front, back, tags, deleted_at })),
   // Une carte modifiée pendant l'envoi garde `synced: 0` : seule une carte encore identique à ce qui est parti est marquée.
   // Carte dépassée côté serveur (`stale`) : marquée envoyée aussi, et cursor:cards supprimé pour que le pull qui suit
   // (même sync) rapporte la version serveur, même si elle est antérieure au curseur (pull complet une fois, idempotent).
@@ -285,7 +316,7 @@ export const reviewsOutbox: Outbox<Review> = {
  */
 export const OUTBOX: readonly OutboxQueue[] = [outboxQueue(cardsOutbox), outboxQueue(reviewsOutbox)]
 
-export interface SyncResult { pushed: number; pulledCards: number; pulledReviews: number }
+export interface SyncResult { pushed: number; pulledCards: number; pulledReviews: number; pulledTags: number }
 
 /**
  * Sync incomplet : le push ou le pull a échoué. `result` dit ce qui a quand même été fait
@@ -316,7 +347,7 @@ export interface SyncOptions {
  * Rejette avec SyncError si l'un des deux a échoué, après avoir tenté les deux.
  */
 export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE, outbox = OUTBOX }: SyncOptions = {}): Promise<SyncResult> {
-  const result: SyncResult = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
+  const result: SyncResult = { pushed: 0, pulledCards: 0, pulledReviews: 0, pulledTags: 0 }
   const errors: unknown[] = []
   for (const queue of outbox) {
     try {
@@ -332,6 +363,9 @@ export async function sync(db: VaultDB, remote: Remote, { pageSize = PAGE, outbo
     await pullAll(db, CURSOR_REVIEWS, db.reviews, (a, n) => remote.pullReviews(a, n), r => r.inserted_at,
       reviews => mergeReviews(db, reviews),
       pageSize, n => { result.pulledReviews += n })
+    await pullAll(db, CURSOR_TAGS, db.tags, (a, n) => remote.pullTags(a, n), t => t.updated_at,
+      tags => mergeTags(db, tags),
+      pageSize, n => { result.pulledTags += n })
   } catch (e) {
     errors.push(e)
   }

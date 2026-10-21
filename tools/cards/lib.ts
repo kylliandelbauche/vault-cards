@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { SOURCE_TITLE_MAX, extractTitle } from '../../shared/source-title.ts'
-import { MAX_TAGS, isTagSlug, type TagSlug } from '../../shared/tags.ts'
+import { LEGACY_TAG_NAMES, MAX_TAGS, byTagName, cleanTagNames } from '../../shared/tags.ts'
 
-/** `frontmatter_tags` : tags libres de la note ; `tag_hints` : leur correspondance dans la liste fixe (indices, pas une décision). */
+/** `frontmatter_tags` : tags libres de la note ; `tag_hints` : tags existants qui leur correspondent à coup sûr (indices, pas une décision). */
 export interface NoteFile {
   source_path: string; deck: string; content_hash: string; title: string; abs_path: string
-  frontmatter_tags: string[]; tag_hints: TagSlug[]
+  frontmatter_tags: string[]; tag_hints: string[]
 }
 export interface IncomingCard { id?: string; front: string; back: string; tags: string[] }
 /** `source_title` : présent pour une note modifiée, absent pour une note `removed`. */
@@ -87,8 +87,11 @@ export function isSynthese(markdown: string): boolean {
   return parseFrontmatter(markdown).type === SYNTHESE_TYPE
 }
 
-/** Tags libres du vault → liste fixe (shared/tags.ts), quand la correspondance est évidente. Le reste : jugement du modèle. */
-const TAG_HINTS: Record<string, TagSlug> = {
+/**
+ * Tags du frontmatter → tag de l'app (les 8 tags d'origine, par leur ancien slug, cf. LEGACY_TAG_NAMES), quand la
+ * correspondance est évidente. Le reste : jugement du modèle, qui réutilise d'abord la liste `tags` (#79).
+ */
+const TAG_HINTS: Record<string, keyof typeof LEGACY_TAG_NAMES> = {
   ia: 'ia', agents: 'ia', agent: 'ia', claude_code: 'ia', modeles_ia: 'ia', llm: 'ia', prompt: 'ia', prompting: 'ia',
   developpement: 'dev', dev: 'dev', python: 'dev', javascript: 'dev', typescript: 'dev', backend: 'dev', frontend: 'dev',
   bases_de_donnees: 'dev', architecture: 'dev', tests: 'dev', outils: 'dev', mise_en_production: 'dev',
@@ -100,12 +103,13 @@ const TAG_HINTS: Record<string, TagSlug> = {
   culture: 'culture', loisirs: 'culture', histoire: 'culture',
 }
 
-/** Indices de tags (ordre du frontmatter, sans doublon), toujours dans la liste fixe. */
-export function suggestTags(frontmatterTags: readonly string[]): TagSlug[] {
-  const out: TagSlug[] = []
+/** Indices de tags (ordre du frontmatter, sans doublon) : noms de tags de l'app. */
+export function suggestTags(frontmatterTags: readonly string[]): string[] {
+  const out: string[] = []
   for (const t of frontmatterTags) {
     const slug = TAG_HINTS[t.trim().toLowerCase()]
-    if (slug && !out.includes(slug)) out.push(slug)
+    const name = slug && LEGACY_TAG_NAMES[slug]
+    if (name && !out.includes(name)) out.push(name)
   }
   return out
 }
@@ -177,17 +181,42 @@ function requireText(obj: Record<string, unknown>, key: string, where: string): 
   return v.trim()
 }
 
-/** 1 à MAX_TAGS slugs connus, sans doublon (shared/tags.ts). */
+/**
+ * Tags libres (#79) : liste de 1 à MAX_TAGS noms, chacun trimé (espaces internes réduits), 1 à 40 caractères ;
+ * doublons de casse retirés (le premier gardé). Plus de liste fixe : un nom inconnu sera un nouveau tag.
+ */
+export function requireTagList(v: unknown, where: string): string[] {
+  if (!Array.isArray(v)) throw new Error(`${where} : « tags » doit être une liste de 1 à ${MAX_TAGS} tags`)
+  let tags: string[]
+  try {
+    tags = cleanTagNames(v)
+  } catch (e) {
+    throw new Error(`${where} : ${(e as Error).message}`, { cause: e })
+  }
+  if (tags.length < 1 || tags.length > MAX_TAGS) throw new Error(`${where} : « tags » doit être une liste de 1 à ${MAX_TAGS} tags`)
+  return tags
+}
+
 function requireTags(obj: Record<string, unknown>, where: string): string[] {
-  const v = obj.tags
-  if (!Array.isArray(v) || v.length < 1 || v.length > MAX_TAGS) {
-    throw new Error(`${where} : « tags » doit être une liste de 1 à ${MAX_TAGS} tags`)
+  return requireTagList(obj.tags, where)
+}
+
+/**
+ * Ramène les tags de chaque carte à l'orthographe des tags existants (« ia & agents » → « IA & agents ») : le diff
+ * ne voit pas de faux changement, et l'écriture est déjà celle que poserait le trigger serveur.
+ */
+export function canonicalTags<T extends { tags: string[] }>(cards: readonly T[], known: readonly string[]): T[] {
+  return cards.map(c => ({ ...c, tags: cleanTagNames(c.tags, known) }))
+}
+
+/** Liste des tags pour l'IA : chaque tag existant avec son nombre de cartes vivantes du vault, A–Z. */
+export function tagCounts(names: readonly string[], cards: readonly { tags: string[] }[]): { name: string; cards: number }[] {
+  const counts = new Map(names.map(n => [n.toLowerCase(), 0]))
+  for (const c of cards) for (const t of c.tags) {
+    const k = t.toLowerCase()
+    if (counts.has(k)) counts.set(k, counts.get(k)! + 1)
   }
-  for (const t of v) {
-    if (!isTagSlug(t)) throw new Error(`${where} : tag inconnu « ${String(t)} »`)
-  }
-  if (new Set(v).size !== v.length) throw new Error(`${where} : tag en double`)
-  return [...v] as string[]
+  return [...names].sort(byTagName).map(name => ({ name, cards: counts.get(name.toLowerCase()) ?? 0 }))
 }
 
 /** Une faute de frappe (`ID` au lieu de `id`) ferait traiter la carte comme nouvelle et perdre sa progression. */
@@ -262,7 +291,7 @@ export function assertDeleteConfirmed(source_path: string, toDelete: { id: strin
 }
 
 export const USAGE =
-  'usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>'
+  'usage : node tools/cards/cli.ts scan | tags | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>'
 
 export interface ParsedArgs { command: string | undefined; arg: string | undefined; confirmDelete: number | null }
 

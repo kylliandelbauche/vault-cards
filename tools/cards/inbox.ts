@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { SOURCE_TITLE_MAX } from '../../shared/source-title.ts'
-import { MAX_TAGS, isTagSlug } from '../../shared/tags.ts'
+import { requireTagList } from './lib.ts'
 
 /** Origine des cartes créées par les commandes `inbox` : toujours en brouillon, jamais `vault` ni `manual`. */
 export const INBOX_SOURCE = 'inbox'
@@ -104,7 +104,7 @@ export function dedupKey(front: string): string {
 
 /**
  * JSON produit par l'IA pour un élément : `{source_title, cards: [{front, back, tags}]}`. Mêmes règles que `apply`
- * (texte non vide, longueurs, 1–2 tags de la liste sans doublon, clés inconnues refusées) ; pas d'`id` (cartes
+ * (texte non vide, longueurs, 1–5 tags libres dédoublonnés, clés inconnues refusées) ; pas d'`id` (cartes
  * toujours nouvelles), 50 cartes au plus, deux questions identiques (doublon) refusées. Liste vide permise : rien à retenir.
  */
 export function validateInboxPayload(p: unknown): InboxPayload {
@@ -120,15 +120,13 @@ export function validateInboxPayload(p: unknown): InboxPayload {
     rejectUnknownKeys(raw, ['front', 'back', 'tags'], where)
     const front = text(raw, 'front', FRONT_MAX, where)
     const back = text(raw, 'back', BACK_MAX, where)
-    const tags = raw.tags
-    if (!Array.isArray(tags) || tags.length < 1 || tags.length > MAX_TAGS) throw new Error(`${where} : « tags » doit être une liste de 1 à ${MAX_TAGS} tags`)
-    for (const t of tags) if (!isTagSlug(t)) throw new Error(`${where} : tag inconnu « ${String(t)} »`)
-    if (new Set(tags).size !== tags.length) throw new Error(`${where} : tag en double`)
+    // Tags libres (#79) : noms existants ou nouveaux ; un nouveau nom n'est créé qu'à la validation du brouillon.
+    const tags = requireTagList(raw.tags, where)
     const key = dedupKey(front)
     const twin = seen.get(key)
     if (twin !== undefined) throw new Error(`${where} : doublon de la carte ${twin} (même question)`)
     seen.set(key, i + 1)
-    return { front, back, tags: [...tags] as string[] }
+    return { front, back, tags }
   })
   return { source_title, cards }
 }

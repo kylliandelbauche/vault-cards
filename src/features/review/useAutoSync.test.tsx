@@ -4,9 +4,9 @@ import { VaultDB } from '../../lib/db'
 import { SyncError } from '../../lib/sync'
 import { RESUME_SYNC_MIN_INTERVAL_MS, SKIPPED_RETRY_MS, syncIndicator, useAutoSync, usePendingCount, type AutoSyncSession } from './useAutoSync'
 
-type Result = { pushed: number; pulledCards: number; pulledReviews: number }
-const NOTHING: Result = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
-const CARDS: Result = { pushed: 0, pulledCards: 3, pulledReviews: 0 }
+type Result = { pushed: number; pulledCards: number; pulledReviews: number; pulledTags: number }
+const NOTHING: Result = { pushed: 0, pulledCards: 0, pulledReviews: 0, pulledTags: 0 }
+const CARDS: Result = { pushed: 0, pulledCards: 3, pulledReviews: 0, pulledTags: 0 }
 
 const ZERO = { again: 0, hard: 0, good: 0 }
 const sessionIn = (status: AutoSyncSession['status'], stats = ZERO, restart = vi.fn()): AutoSyncSession =>

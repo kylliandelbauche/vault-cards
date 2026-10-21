@@ -148,14 +148,14 @@ function Tags({ tags, onStudy, onOpenTags }: { tags: TagCount[]; onStudy(tag: st
       {/* Pleine largeur de la carte (les chips glissent jusqu'au bord) ; marges internes = alignement du titre. */}
       <ul role="list" aria-label="Réviser un tag" className="chip-row flex gap-2 scroll-px-4 px-4 py-1">
         {shortcutTags(tags).map(t => (
-          <li key={t.slug} className="shrink-0">
+          <li key={t.name} className="shrink-0">
             <GlassButton
               tone="neutral"
-              aria-label={`${t.label}, ${cards(t.total)}`}
-              onClick={() => onStudy(t.slug)}
+              aria-label={`${t.name}, ${cards(t.total)}`}
+              onClick={() => onStudy(t.name)}
               className="on-glass tag-chip flex min-h-11 items-center rounded-full px-4 text-[15px] leading-tight font-medium whitespace-nowrap"
             >
-              {t.label}
+              {t.name}
             </GlassButton>
           </li>
         ))}

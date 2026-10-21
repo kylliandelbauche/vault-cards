@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { getTag } from '../../../shared/tags'
 import { BarActionsProvider } from '../../components/TopBar'
 import type { VaultDB } from '../../lib/db'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
@@ -71,12 +70,11 @@ function SignedInScreens({ db, runSync, now, inbox }: Props) {
   }, [screen, session.status, pending, syncNow])
 
   if (screen.name === 'review') {
-    const tag = screen.scope.tag ? getTag(screen.scope.tag) : undefined
     return (
       <ReviewScreen
         session={session}
         now={now}
-        title={tag?.label ?? DAY_TITLE}
+        title={screen.scope.tag ?? DAY_TITLE}
         onBack={back}
         backLabel={previous?.name === 'tags' ? 'Mes tags' : 'Accueil'}
         onHome={goHome}

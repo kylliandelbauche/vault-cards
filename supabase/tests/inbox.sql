@@ -10,14 +10,14 @@ select set_config('vc.log', '', true);
 
 -- Données de test (rôle propriétaire, RLS non appliquée). Ids fixes hors de toute plage réelle.
 insert into public.cards (id, source, deck, source_path, front, back, tags)
-values ('00000000-0000-4000-8000-0000000005a1', 'vault', 'test', '3-Resources/test/x.md', '[sql-check] vault', 'R', '{ia}');
+values ('00000000-0000-4000-8000-0000000005a1', 'vault', 'test', '3-Resources/test/x.md', '[sql-check] vault', 'R', '{IA & agents}');
 insert into public.cards (id, source, front, back, tags)
-values ('00000000-0000-4000-8000-0000000005b1', 'manual', '[sql-check] manuelle', 'R', '{dev}');
+values ('00000000-0000-4000-8000-0000000005b1', 'manual', '[sql-check] manuelle', 'R', '{Dev & outils}');
 insert into public.inbox (id, kind, text) values ('00000000-0000-4000-8000-000000000101', 'text', '[sql-check] source');
 insert into public.cards (id, source, status, inbox_id, source_title, front, back, tags) values
-  ('00000000-0000-4000-8000-0000000005d1', 'inbox', 'draft', '00000000-0000-4000-8000-000000000101', 'Doc test', '[sql-check] brouillon 1', 'R', '{ia}'),
-  ('00000000-0000-4000-8000-0000000005d2', 'inbox', 'draft', '00000000-0000-4000-8000-000000000101', 'Doc test', '[sql-check] brouillon 2', 'R', '{ia}'),
-  ('00000000-0000-4000-8000-0000000005e1', 'inbox', 'active', '00000000-0000-4000-8000-000000000101', 'Doc test', '[sql-check] acceptée', 'R', '{ia}');
+  ('00000000-0000-4000-8000-0000000005d1', 'inbox', 'draft', '00000000-0000-4000-8000-000000000101', 'Doc test', '[sql-check] brouillon 1', 'R', '{IA & agents}'),
+  ('00000000-0000-4000-8000-0000000005d2', 'inbox', 'draft', '00000000-0000-4000-8000-000000000101', 'Doc test', '[sql-check] brouillon 2', 'R', '{IA & agents}'),
+  ('00000000-0000-4000-8000-0000000005e1', 'inbox', 'active', '00000000-0000-4000-8000-000000000101', 'Doc test', '[sql-check] acceptée', 'R', '{IA & agents}');
 -- Remplissage : 8 éléments en attente au total (le quota est de 10), quel que soit l'état de la vraie file.
 insert into public.inbox (kind, text)
 select 'text', '[sql-check] remplissage'
@@ -139,21 +139,21 @@ begin
   -- 9. Cartes : l'app n'insère jamais de carte inbox ni de brouillon.
   begin
     insert into public.cards (id, source, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000005f1', 'inbox', '[sql-check] interdite', 'R', '{ia}');
+    values ('00000000-0000-4000-8000-0000000005f1', 'inbox', '[sql-check] interdite', 'R', '{IA & agents}');
     raise exception 'ÉCHEC: insert d''une carte inbox accepté';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: insert d''une carte source=inbox par l''app refusé (' || sqlstate || ')';
   end;
   begin
     insert into public.cards (id, source, front, back, tags, status)
-    values ('00000000-0000-4000-8000-0000000005f2', 'manual', '[sql-check] interdite', 'R', '{ia}', 'draft');
+    values ('00000000-0000-4000-8000-0000000005f2', 'manual', '[sql-check] interdite', 'R', '{IA & agents}', 'draft');
     raise exception 'ÉCHEC: insert avec status accepté';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: insert de la colonne status refusé (' || sqlstate || ')';
   end;
 
   -- 10. Accepter un brouillon (draft → active), avec édition.
-  update public.cards set status = 'active', front = '[sql-check] brouillon 1 corrigé', tags = '{ia,dev}'
+  update public.cards set status = 'active', front = '[sql-check] brouillon 1 corrigé', tags = '{IA & agents,Dev & outils}'
   where id = '00000000-0000-4000-8000-0000000005d1';
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'ÉCHEC: acceptation du brouillon : % ligne(s)', n; end if;
@@ -211,11 +211,13 @@ begin
     ok := ok || E'\nOK: carte inbox sans tag refusée (' || sqlstate || ')';
   end;
 
-  -- 14. Carte vault : invisible pour l'update, y compris status.
-  update public.cards set status = 'active', front = '[sql-check] piratée' where id = '00000000-0000-4000-8000-0000000005a1';
-  get diagnostics n = row_count;
-  if n <> 0 then raise exception 'ÉCHEC: update d''une carte vault : % ligne(s)', n; end if;
-  ok := ok || E'\nOK: update d''une carte vault sans effet (0 ligne, RLS)';
+  -- 14. Carte vault : modifiable depuis #79 (décision #73), mais jamais en brouillon (status).
+  begin
+    update public.cards set status = 'draft' where id = '00000000-0000-4000-8000-0000000005a1';
+    raise exception 'ÉCHEC: carte vault en brouillon acceptée';
+  exception when check_violation then
+    ok := ok || E'\nOK: carte vault en brouillon refusée (' || sqlstate || ')';
+  end;
 
   perform set_config('vc.log', current_setting('vc.log') || ok, true);
 end $$;

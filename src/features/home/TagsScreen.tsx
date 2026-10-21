@@ -42,13 +42,13 @@ export function TagsScreen({ data, onStudy, onBack }: Props) {
   )
 }
 
-function TagGroup({ id, title, tags, onStudy }: { id: string; title: string; tags: TagCount[]; onStudy(slug: string): void }) {
+function TagGroup({ id, title, tags, onStudy }: { id: string; title: string; tags: TagCount[]; onStudy(tag: string): void }) {
   if (tags.length === 0) return null
   return (
     <section aria-labelledby={id} className="flex flex-col gap-3">
       <h2 id={id} className="px-1 text-[13px] leading-4 font-semibold tracking-[0.06em] text-label-2 uppercase">{title}</h2>
       <ul role="list" className="flex flex-wrap gap-2.5">
-        {tags.map(t => <li key={t.slug}><TagChip tag={t} onStudy={onStudy} /></li>)}
+        {tags.map(t => <li key={t.name}><TagChip tag={t} onStudy={onStudy} /></li>)}
       </ul>
     </section>
   )

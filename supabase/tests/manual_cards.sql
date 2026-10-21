@@ -11,10 +11,10 @@ select set_config('vc.log', '', true);
 
 -- Données de test (rôle propriétaire : RLS non appliquée). Ids fixes, hors de toute plage réelle (UUID v4 aléatoires).
 insert into public.cards (id, source, deck, source_path, front, back, tags)
-values ('00000000-0000-4000-8000-0000000000a1', 'vault', 'test', '3-Resources/veille/test/x-synthese.md', '[sql-check] vault', 'R', '{ia}');
+values ('00000000-0000-4000-8000-0000000000a1', 'vault', 'test', '3-Resources/veille/test/x-synthese.md', '[sql-check] vault', 'R', '{IA & agents}');
 -- Carte manuelle « ancienne » : updated_at forcé dans le passé pour prouver que le trigger le rafraîchit.
 insert into public.cards (id, source, front, back, tags, updated_at)
-values ('00000000-0000-4000-8000-0000000000b2', 'manual', '[sql-check] ancienne', 'R', '{dev}', '2000-01-01T00:00:00Z');
+values ('00000000-0000-4000-8000-0000000000b2', 'manual', '[sql-check] ancienne', 'R', '{Dev & outils}', '2000-01-01T00:00:00Z');
 
 -- Rôle de l'app connectée, tel que PostgREST le pose.
 set local role authenticated;
@@ -29,7 +29,7 @@ begin
 
   -- 1. Insertion d'une carte manuelle (id client, colonnes autorisées).
   insert into public.cards (id, source, front, back, tags)
-  values ('00000000-0000-4000-8000-0000000000c3', 'manual', '[sql-check] question', 'réponse', '{ia,dev}');
+  values ('00000000-0000-4000-8000-0000000000c3', 'manual', '[sql-check] question', 'réponse', '{IA & agents,Dev & outils}');
   select count(*) into n from public.cards
   where id = '00000000-0000-4000-8000-0000000000c3' and source = 'manual' and deck is null and source_path is null;
   if n <> 1 then raise exception 'ÉCHEC: carte manuelle non insérée'; end if;
@@ -39,7 +39,7 @@ begin
   -- pas de doublon et ne lève pas d'erreur ; RETURNING ne renvoie que les lignes réellement insérées.
   with ins as (
     insert into public.cards (id, source, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000c3', 'manual', '[sql-check] rejouée', 'réponse', '{ia}')
+    values ('00000000-0000-4000-8000-0000000000c3', 'manual', '[sql-check] rejouée', 'réponse', '{IA & agents}')
     on conflict (id) do nothing
     returning id
   ) select count(*) into n from ins;
@@ -51,7 +51,7 @@ begin
   -- 2. Insertion d'une carte vault : refusée par la policy RLS (with check source = ''manual'').
   begin
     insert into public.cards (id, source, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000d4', 'vault', '[sql-check] interdite', 'R', '{ia}');
+    values ('00000000-0000-4000-8000-0000000000d4', 'vault', '[sql-check] interdite', 'R', '{IA & agents}');
     raise exception 'ÉCHEC: insert vault accepté';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: insert source=vault refusé (' || sqlstate || ' ' || sqlerrm || ')';
@@ -60,7 +60,7 @@ begin
   -- 3. Insertion sans source explicite (défaut vault) : refusée aussi.
   begin
     insert into public.cards (id, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000d5', '[sql-check] interdite', 'R', '{ia}');
+    values ('00000000-0000-4000-8000-0000000000d5', '[sql-check] interdite', 'R', '{IA & agents}');
     raise exception 'ÉCHEC: insert sans source accepté';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: insert sans source (défaut vault) refusé (' || sqlstate || ')';
@@ -69,20 +69,20 @@ begin
   -- 4. Colonnes réservées à l'outil (deck, source_path, source_title, updated_at) : aucun droit d'insertion.
   begin
     insert into public.cards (id, source, deck, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000d6', 'manual', 'x', '[sql-check] interdite', 'R', '{ia}');
+    values ('00000000-0000-4000-8000-0000000000d6', 'manual', 'x', '[sql-check] interdite', 'R', '{IA & agents}');
     raise exception 'ÉCHEC: insert avec deck accepté';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: insert de la colonne deck refusé (' || sqlstate || ' ' || sqlerrm || ')';
   end;
   begin
     insert into public.cards (id, source, front, back, tags, updated_at)
-    values ('00000000-0000-4000-8000-0000000000d7', 'manual', '[sql-check] interdite', 'R', '{ia}', now());
+    values ('00000000-0000-4000-8000-0000000000d7', 'manual', '[sql-check] interdite', 'R', '{IA & agents}', now());
     raise exception 'ÉCHEC: insert avec updated_at accepté';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: insert de la colonne updated_at refusé (' || sqlstate || ')';
   end;
 
-  -- 5. Contraintes : 1 à 2 tags de la liste, longueurs.
+  -- 5. Contraintes : 1 à 5 tags, longueurs.
   begin
     insert into public.cards (id, source, front, back, tags)
     values ('00000000-0000-4000-8000-0000000000d8', 'manual', '[sql-check] sans tag', 'R', '{}');
@@ -90,28 +90,29 @@ begin
   exception when check_violation then
     ok := ok || E'\nOK: carte manual sans tag refusée (' || sqlstate || ')';
   end;
+  -- Tags libres (#79) : plus de liste fixe, mais 5 tags au plus.
   begin
     insert into public.cards (id, source, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000d9', 'manual', '[sql-check] tag inconnu', 'R', '{inconnu}');
-    raise exception 'ÉCHEC: tag inconnu accepté';
+    values ('00000000-0000-4000-8000-0000000000d9', 'manual', '[sql-check] 6 tags', 'R', '{a1,a2,a3,a4,a5,a6}');
+    raise exception 'ÉCHEC: 6 tags acceptés';
   exception when check_violation then
-    ok := ok || E'\nOK: tag hors liste refusé (' || sqlstate || ')';
+    ok := ok || E'\nOK: plus de 5 tags refusé (' || sqlstate || ')';
   end;
   begin
     insert into public.cards (id, source, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000da', 'manual', repeat('x', 501), 'R', '{ia}');
+    values ('00000000-0000-4000-8000-0000000000da', 'manual', repeat('x', 501), 'R', '{IA & agents}');
     raise exception 'ÉCHEC: question de 501 caractères acceptée';
   exception when check_violation then
     ok := ok || E'\nOK: question > 500 caractères refusée (' || sqlstate || ')';
   end;
 
   -- 6. Édition d'une carte manuelle : front, back, tags ; le trigger rafraîchit updated_at.
-  update public.cards set front = '[sql-check] modifiée', back = 'nouvelle', tags = '{culture}'
+  update public.cards set front = '[sql-check] modifiée', back = 'nouvelle', tags = '{Culture}'
   where id = '00000000-0000-4000-8000-0000000000b2';
   get diagnostics n = row_count;
   if n <> 1 then raise exception 'ÉCHEC: édition de la carte manual : % ligne(s)', n; end if;
   select count(*) into n from public.cards
-  where id = '00000000-0000-4000-8000-0000000000b2' and front = '[sql-check] modifiée' and tags = '{culture}' and updated_at = now();
+  where id = '00000000-0000-4000-8000-0000000000b2' and front = '[sql-check] modifiée' and tags = '{Culture}' and updated_at = now();
   if n <> 1 then raise exception 'ÉCHEC: édition non appliquée ou updated_at non rafraîchi'; end if;
   ok := ok || E'\nOK: update front/back/tags d''une carte manual (1 ligne, updated_at rafraîchi par le trigger)';
 
@@ -121,14 +122,15 @@ begin
   if n <> 1 then raise exception 'ÉCHEC: suppression douce : % ligne(s)', n; end if;
   ok := ok || E'\nOK: suppression douce (deleted_at) d''une carte manual';
 
-  -- 8. Carte vault : invisible pour l'update (RLS using source = ''manual'') → 0 ligne, contenu intact.
-  update public.cards set front = '[sql-check] piratée', deleted_at = now() where id = '00000000-0000-4000-8000-0000000000a1';
+  -- 8. Carte vault : modifiable depuis #79 (décision #73) sur front, back, tags, deleted_at seulement (colonnes
+  --    interdites : supabase/tests/tags.sql). Le contenu est réellement modifié.
+  update public.cards set front = '[sql-check] vault retouchée' where id = '00000000-0000-4000-8000-0000000000a1';
   get diagnostics n = row_count;
-  if n <> 0 then raise exception 'ÉCHEC: update d''une carte vault : % ligne(s)', n; end if;
+  if n <> 1 then raise exception 'ÉCHEC: update d''une carte vault : % ligne(s)', n; end if;
   select count(*) into n from public.cards
-  where id = '00000000-0000-4000-8000-0000000000a1' and front = '[sql-check] vault' and deleted_at is null;
-  if n <> 1 then raise exception 'ÉCHEC: carte vault modifiée'; end if;
-  ok := ok || E'\nOK: update d''une carte vault sans effet (0 ligne, RLS), carte intacte';
+  where id = '00000000-0000-4000-8000-0000000000a1' and front = '[sql-check] vault retouchée' and source = 'vault';
+  if n <> 1 then raise exception 'ÉCHEC: carte vault non modifiée'; end if;
+  ok := ok || E'\nOK: update front d''une carte vault (1 ligne, #73), source inchangée';
 
   -- 9. Colonnes interdites en update : source, id, deck, source_path, source_title, updated_at.
   begin
@@ -190,7 +192,7 @@ begin
   end;
   begin
     insert into public.cards (id, source, front, back, tags)
-    values ('00000000-0000-4000-8000-0000000000e1', 'manual', '[sql-check] anon', 'R', '{ia}');
+    values ('00000000-0000-4000-8000-0000000000e1', 'manual', '[sql-check] anon', 'R', '{IA & agents}');
     raise exception 'ÉCHEC: anon insère une carte';
   exception when insufficient_privilege then
     ok := ok || E'\nOK: anon insert cards refusé (' || sqlstate || ')';

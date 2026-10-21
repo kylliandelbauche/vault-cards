@@ -1,5 +1,6 @@
 import Dexie, { type Table } from 'dexie'
-import type { Card, Review } from './types'
+import { LEGACY_TAG_NAMES } from '../../shared/tags'
+import type { Card, Review, Tag } from './types'
 
 /** Upgrade v2 : les cartes mises en cache avant les tags reçoivent `tags: []`. */
 export function addMissingTags(card: { tags?: unknown }): void {
@@ -16,11 +17,22 @@ export function addMissingSource(card: { source?: unknown }): void {
   if (card.source !== 'vault' && card.source !== 'manual' && card.source !== 'inbox') card.source = 'vault'
 }
 
+/**
+ * Upgrade v6 (#79) : les anciens slugs de tags (#26) deviennent les noms des tags qui les remplacent, comme la
+ * migration serveur. Indispensable pour une carte manuelle pas encore envoyée : elle partirait sinon avec « ia » et
+ * créerait un tag « ia » à côté de « IA & agents ». Un nom inconnu (déjà libre) est gardé tel quel.
+ */
+export function renameLegacyTags(card: { tags?: unknown }): void {
+  if (!Array.isArray(card.tags)) return
+  card.tags = card.tags.map(t => (typeof t === 'string' && Object.hasOwn(LEGACY_TAG_NAMES, t) ? LEGACY_TAG_NAMES[t] : t))
+}
+
 /** Cache local (IndexedDB) : cartes et reviews (`synced: 0` = à pousser) et curseurs de synchro. */
 export class VaultDB extends Dexie {
   cards!: Table<Card, string>
   reviews!: Table<Review, string>
   meta!: Table<{ key: string; value: string }, string>
+  tags!: Table<Tag, string>
   constructor(name = 'vault-cards') {
     super(name)
     this.version(1).stores({
@@ -57,6 +69,15 @@ export class VaultDB extends Dexie {
     this.version(5)
       .stores({ cards: 'id, updated_at, source_path, *tags, synced, inbox_id' })
       .upgrade(tx => tx.table('meta').delete('cursor:cards'))
+    // v6 : tags libres (#79). Table `tags` (registre serveur, tiré avec son curseur cursor:tags). Les tags des cartes
+    // changent côté serveur (slugs → noms) → règle ci-dessus : cursor:cards supprimé (pull complet une fois) ; les
+    // cartes en cache sont renommées tout de suite (affichage hors ligne juste, envois en attente corrects).
+    this.version(6)
+      .stores({ tags: 'id, updated_at' })
+      .upgrade(async tx => {
+        await tx.table('cards').toCollection().modify(renameLegacyTags)
+        await tx.table('meta').delete('cursor:cards')
+      })
   }
 }
 

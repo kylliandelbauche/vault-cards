@@ -4,7 +4,7 @@
 // dans le dossier de l'exécution (RUN_DIR) pour que l'agent le lise, et traité comme de la donnée.
 import fs from 'node:fs/promises'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { chunk } from './lib.ts'
+import { canonicalTags, chunk } from './lib.ts'
 import { INBOX_SOURCE, PENDING_EXPIRY_MS, STALE_MS, assertRunDir, claimPath, fileProblem, payloadPath, readPayload, shortError, validateInboxPayload, type InboxCommand } from './inbox.ts'
 
 const BUCKET = 'inbox'
@@ -19,6 +19,20 @@ function fail(step: string, error: { message: string }): never {
 }
 
 interface Item { id: string; kind: 'text' | 'file'; status: string; text: string | null; storage_path: string | null; filename: string | null; mime: string | null; size: number | null }
+
+/**
+ * Noms des tags existants (#79), table `tags` en lecture seule. Aucune écriture : un tag est créé par le trigger serveur
+ * quand une carte active le porte (carte du vault à apply, brouillon à sa validation dans l'app).
+ */
+export async function fetchTagNames(db: SupabaseClient): Promise<string[]> {
+  const names: string[] = []
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db.from('tags').select('name').order('name').range(from, from + 999)
+    if (error) fail('lecture des tags', error)
+    names.push(...(data as { name: string }[]).map(t => t.name))
+    if (data.length < 1000) return names
+  }
+}
 
 async function getItem(db: SupabaseClient, id: string): Promise<Item> {
   const { data, error } = await db.from('inbox').select('id, kind, status, text, storage_path, filename, mime, size').eq('id', id)
@@ -92,6 +106,8 @@ async function claim(db: SupabaseClient, id: string, runDir: string) {
 async function complete(db: SupabaseClient, id: string, runDir: string) {
   const dir = await assertRunDir(runDir)
   const payload = validateInboxPayload(await readPayload(payloadPath(dir, id)))
+  // Orthographe des tags existants reprise ; les nouveaux noms restent de simples noms sur le brouillon (pas de création).
+  payload.cards = canonicalTags(payload.cards, await fetchTagNames(db))
   const item = await getItem(db, id)
   if (item.status !== 'processing' && item.status !== 'done') {
     throw new Error(`élément ${id} en statut « ${item.status} » : seul un élément réclamé (processing) peut être terminé`)

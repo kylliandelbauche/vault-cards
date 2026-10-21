@@ -2,7 +2,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
-import { TAGS } from '../../../shared/tags'
+import { LEGACY_TAG_NAMES } from '../../../shared/tags'
+
+/** Les 8 tags d'origine (#79 : noms libres), par leur ancien slug. */
+const TAGS = Object.entries(LEGACY_TAG_NAMES).map(([slug, name]) => ({ slug, name }))
 import type { HomeStats, TagCount } from '../../lib/home'
 import { BarActionsProvider } from '../../components/TopBar'
 import { HomeScreen } from './HomeScreen'
@@ -110,7 +113,7 @@ describe('HomeScreen', () => {
   it('tap sur un tag : session du tag ; le bloc du jour reste celui de toutes les cartes', async () => {
     const { onStudy } = renderHome()
     await userEvent.setup().click(screen.getByRole('button', { name: 'Dev & outils, 3 cartes' }))
-    expect(onStudy).toHaveBeenCalledWith('dev')
+    expect(onStudy).toHaveBeenCalledWith('Dev & outils')
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("12 cartes à revoir aujourd'hui")
     expect(screen.getAllByRole('definition').map(d => d.textContent)).toEqual(['4', '8', '30'])
   })

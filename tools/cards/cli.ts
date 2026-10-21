@@ -1,6 +1,6 @@
 // Outil local (Mac) : lit les synthèses du vault (VAULT_NOTES_DIR, défaut 3-Resources/Second cerveau, `type: synthese`)
 // et écrit les cartes dans Supabase avec la clé secrète.
-// Usage : node tools/cards/cli.ts scan | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>
+// Usage : node tools/cards/cli.ts scan | tags | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>
 //         node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge   (#55, inbox-cli.ts)
 // Cartes : uniquement source = 'vault' (vaultOnly) ; les cartes créées à la main dans l'app (#54) ne sont jamais lues ni modifiées.
 // Les commandes `inbox` ne voient que les cartes source = 'inbox' (inboxOnly, inbox-cli.ts), créées en brouillon.
@@ -10,12 +10,12 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  DECK, REMOVED_HASH, hashContent, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
+  DECK, REMOVED_HASH, canonicalTags, hashContent, tagCounts, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
   type ExistingCard, type NoteRow, type RelinkState, type RetagTarget, type TitledCard,
 } from './lib.ts'
 import { extractTitle } from '../../shared/source-title.ts'
 import { parseInboxArgs } from './inbox.ts'
-import { runInbox } from './inbox-cli.ts'
+import { fetchTagNames, runInbox } from './inbox-cli.ts'
 
 const ENV_FILE = path.join(import.meta.dirname, '..', '..', '.env.local')
 const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_SECRET_KEY'] as const
@@ -102,7 +102,21 @@ async function scan() {
   const { changed, removed } = computeScan(files, data as NoteRow[])
   // `removed` : chemin + nombre de cartes vivantes, pour que Kyllian sache ce qu'une suppression coûterait.
   const live = await fetchLiveCardPaths(db, removed)
-  return { changed, removed: countLiveCards(removed, live) }
+  // Tags existants (#79) : l'IA les réutilise au maximum (détail avec compteurs : commande `tags`).
+  return { changed, removed: countLiveCards(removed, live), tags: await fetchTagNames(db) }
+}
+
+/** Tags existants (#79), A–Z, avec leur nombre de cartes vivantes du vault. Lecture seule. */
+async function tags(db: SupabaseClient) {
+  const names = await fetchTagNames(db)
+  const cards: { tags: string[] }[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await vaultOnly(db.from('cards').select('tags')).is('deleted_at', null).order('id').range(from, from + PAGE_SIZE - 1)
+    if (error) fail('lecture des cartes', error)
+    cards.push(...(data as { tags: string[] }[]))
+    if (data.length < PAGE_SIZE) break
+  }
+  return tagCounts(names, cards)
 }
 
 async function apply(file: string, confirmDelete: number | null) {
@@ -127,8 +141,10 @@ async function apply(file: string, confirmDelete: number | null) {
     if (!isSynthese(current)) throw new Error(`pas une synthèse (frontmatter sans « type: synthese ») : ${source_path}`)
   }
   const db = connect()
+  // Orthographe des tags existants reprise ; un nom nouveau sera créé par le trigger serveur à l'écriture (#79).
+  const incoming = canonicalTags(payload.cards, await fetchTagNames(db))
   const existing = await fetchExisting(db, source_path)
-  const { toInsert, toUpdate, toDelete } = diffCards(existing, payload.cards)
+  const { toInsert, toUpdate, toDelete } = diffCards(existing, incoming)
   // Avant toute écriture : toute suppression (note removed OU carte retirée d'une note modifiée) exige --confirm-delete=<n exact>.
   const deleted = existing.filter(c => toDelete.includes(c.id))
   assertDeleteConfirmed(source_path, deleted, confirmDelete)
@@ -173,7 +189,7 @@ async function apply(file: string, confirmDelete: number | null) {
 
 /** Ne modifie QUE la colonne tags, par id, des cartes vivantes. Jamais le texte ni l'id (progression intacte). */
 async function retag(db: SupabaseClient, file: string) {
-  const entries = validateRetagPayload(JSON.parse(await fs.readFile(file, 'utf8')))
+  const entries = canonicalTags(validateRetagPayload(JSON.parse(await fs.readFile(file, 'utf8'))), await fetchTagNames(db))
   // Lecture sans filtre deleted_at : planRetag (testé) refuse lui-même les cartes supprimées.
   const existing: RetagTarget[] = []
   const ids = entries.map(e => e.id)
@@ -294,6 +310,9 @@ async function main(argv: string[]): Promise<unknown> {
   switch (command) {
     case 'scan':
       return scan()
+    case 'tags':
+      if (arg) throw new Error(USAGE)
+      return tags(connect())
     case 'existing':
       if (!arg) throw new Error(USAGE)
       return fetchExisting(connect(), arg)

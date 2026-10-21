@@ -2,12 +2,14 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
+import { LEGACY_TAG_NAMES } from '../../../shared/tags'
 import { VaultDB } from '../../lib/db'
 import type { Card } from '../../lib/types'
 import { SignedInApp } from './SignedInApp'
 
+// Tags donnés par leur ancien slug (lisibilité), stockés sous leur nom (#79).
 const card = (id: string, tags: string[]): Card => ({
-  id, source: 'vault', deck: 'x', tags, source_path: `x/${id}.md`, front: `Question ${id} ?`, back: `Réponse ${id}.`,
+  id, source: 'vault', deck: 'x', tags: tags.map(t => LEGACY_TAG_NAMES[t] ?? t), source_path: `x/${id}.md`, front: `Question ${id} ?`, back: `Réponse ${id}.`,
   updated_at: '2026-10-01T00:00:00Z', deleted_at: null,
 })
 // Horloge qui avance d'une seconde à chaque lecture : chaque tap tombe après la garde anti double tap.
@@ -21,6 +23,8 @@ beforeEach(async () => {
   window.history.replaceState(null, '')
   db = new VaultDB(`shell-${crypto.randomUUID()}`)
   await db.cards.bulkPut([card('a', ['ia']), card('b', ['ia', 'dev']), card('c', ['dev'])])
+  // Registre des tags tiré du serveur : les 8 tags d'origine (vides compris).
+  await db.tags.bulkPut(Object.values(LEGACY_TAG_NAMES).map((name, i) => ({ id: `t${i}`, name, updated_at: 'u' })))
 })
 afterEach(async () => { cleanup(); db.close(); await db.delete() })
 
@@ -76,7 +80,7 @@ describe('SignedInApp : navigation (#53)', () => {
     renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     const row = screen.getByRole('list', { name: 'Réviser un tag' })
-    expect(within(row).getAllByRole('button').map(b => b.textContent)).toEqual(['IA & agents', 'Dev & outils'])
+    expect(within(row).getAllByRole('button').map(b => b.textContent)).toEqual(['Dev & outils', 'IA & agents']) // même nombre de cartes : A–Z
   })
 
   it('retour au milieu d’une session : accueil à jour et notes déjà données poussées tout de suite', async () => {

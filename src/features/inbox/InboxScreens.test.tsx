@@ -2,12 +2,13 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
+import { LEGACY_TAG_NAMES } from '../../../shared/tags'
 import { VaultDB } from '../../lib/db'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
 import type { Card } from '../../lib/types'
 import { SignedInApp } from '../home/SignedInApp'
 
-const draft = (id: string, front: string, tags = ['ia']): Card => ({
+const draft = (id: string, front: string, tags = ['IA & agents']): Card => ({
   id, source: 'inbox', deck: null, source_path: null, tags, front, back: `Réponse ${id}.`, inbox_id: 'i1',
   status: 'draft', created_at: `2026-10-18T10:00:0${id.length}Z`, updated_at: '2026-10-18T10:00:00Z', deleted_at: null,
 })
@@ -20,6 +21,8 @@ let db: VaultDB
 beforeEach(() => {
   window.history.replaceState(null, '')
   db = new VaultDB(`inbox-ui-${crypto.randomUUID()}`)
+  // Registre des tags tiré du serveur (#79) : les 8 tags d'origine.
+  void db.tags.bulkPut(Object.values(LEGACY_TAG_NAMES).map((name, i) => ({ id: `t${i}`, name, updated_at: 'u' })))
 })
 afterEach(async () => { cleanup(); db.close(); await db.delete() })
 
@@ -106,7 +109,7 @@ describe('Boîte de réception : écrans (#81)', () => {
   })
 
   it('brouillons : accès depuis l’accueil, × retire, « Tout valider » active et revient à l’accueil', async () => {
-    await db.cards.bulkPut([draft('a', 'Question A ?'), draft('bb', 'Question B ?', ['dev'])])
+    await db.cards.bulkPut([draft('a', 'Question A ?'), draft('bb', 'Question B ?', ['Dev & outils'])])
     const { user } = renderApp({ items: [item({ status: 'done' })] })
     await user.click(await screen.findByRole('button', { name: '2 brouillons à valider' }))
     await waitFor(() => expect(title()).toBe('2 brouillons'))
@@ -138,14 +141,23 @@ describe('Boîte de réception : écrans (#81)', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull()
     expect((screen.getByLabelText('QUESTION') as HTMLTextAreaElement).value).toBe('Nouvelle question ?')
 
-    // Tags : 1 à 2 ; un 3e est bloqué.
-    await user.click(screen.getByRole('button', { name: 'Dev & outils' }))
-    expect(screen.getByRole('button', { name: 'Culture' }).getAttribute('aria-disabled')).toBe('true')
+    // Tags libres (#79) : « Ajouter un tag » → écran « Ajouter des tags » ; un tag existant ajouté, un nouveau créé.
+    await user.click(screen.getByRole('button', { name: 'Ajouter un tag' }))
+    expect(title()).toBe('Ajouter des tags')
+    await user.click(await screen.findByRole('button', { name: /^Dev & outils/ }))
+    await user.type(screen.getByRole('searchbox', { name: 'Rechercher ou créer un tag' }), 'Mémoire')
+    await user.click(screen.getByRole('button', { name: 'Créer « Mémoire »' }))
+    await user.click(screen.getByRole('button', { name: 'Valider les tags' }))
+    expect(title()).toBe('Modifier la carte')
+    expect(screen.getByRole('button', { name: 'Retirer Mémoire' })).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Retirer IA & agents' }))
     await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
     expect(await screen.findByRole('button', { name: /^Nouvelle question \?/ })).toBeTruthy()
     const saved = await db.cards.get('a')
     expect(saved?.status).toBe('draft')
-    expect(saved?.tags).toEqual(['ia', 'dev'])
+    expect(saved?.tags).toEqual(['Mémoire', 'Dev & outils'])
+    // Brouillon : le nouveau nom reste sur la carte, aucun tag créé (seulement à la validation, côté serveur).
+    expect((await db.tags.toArray()).map(t => t.name)).not.toContain('Mémoire')
   })
 
   it('Modifier la carte : ✓ refuse une question vide (message clair, reste sur l’écran)', async () => {
@@ -193,11 +205,14 @@ describe('Boîte de réception : écrans (#81)', () => {
     expect(create.disabled).toBe(true)
     await user.type(screen.getByLabelText('RÉPONSE'), 'Un algorithme de répétition espacée.')
     expect(create.disabled).toBe(false)
-    await user.click(screen.getByRole('button', { name: 'Mental & psycho' }))
-    await user.click(create)
+    await user.click(screen.getByRole('button', { name: 'Ajouter un tag' }))
+    await user.click(await screen.findByRole('button', { name: /^Mental & psycho/ }))
+    await user.click(screen.getByRole('button', { name: 'Valider les tags' }))
+    expect((screen.getByLabelText('QUESTION') as HTMLTextAreaElement).value).toBe('Qu’est-ce que FSRS ?') // saisie conservée
+    await user.click(screen.getByRole('button', { name: 'Créer la carte' }))
     expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
     const manual = await db.cards.filter(c => c.source === 'manual').toArray()
-    expect(manual.map(c => [c.front, c.back, c.tags])).toEqual([['Qu’est-ce que FSRS ?', 'Un algorithme de répétition espacée.', ['mental']]])
+    expect(manual.map(c => [c.front, c.back, c.tags])).toEqual([['Qu’est-ce que FSRS ?', 'Un algorithme de répétition espacée.', ['Mental & psycho']]])
   })
 
   it('Nouvelle carte : ✕ sans saisie ferme ; avec saisie, confirmation (Échap = continuer)', async () => {
