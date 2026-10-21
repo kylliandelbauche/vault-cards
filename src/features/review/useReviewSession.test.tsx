@@ -45,6 +45,19 @@ describe('useReviewSession', () => {
     act(() => result.current.reveal()); await act(async () => result.current.rate(3))
     expect(result.current.current!.card.id).toBe(first)
   })
+  it('« Carte n sur N » (#82) : N = file au démarrage ; une carte ratée revient en fin de file sans dépasser N', async () => {
+    const store = memoryStore(cards)
+    const { result } = renderHook(() => useReviewSession(store, fixedNow))
+    await waitFor(() => expect(result.current.status).toBe('reviewing'))
+    expect(result.current.position).toEqual({ n: 1, total: 2 })
+    act(() => result.current.reveal()); await act(async () => result.current.rate(1)) // ratée : revient à la fin
+    expect(result.current.position).toEqual({ n: 2, total: 2 })
+    act(() => result.current.reveal()); await act(async () => result.current.rate(3))
+    expect(result.current.status).toBe('reviewing') // la carte ratée
+    expect(result.current.position).toEqual({ n: 2, total: 2 })
+    act(() => result.current.reveal()); await act(async () => result.current.rate(1)) // ratée encore
+    expect(result.current.position).toEqual({ n: 2, total: 2 })
+  })
   it('fin de session : status done + stats', async () => {
     const store = memoryStore(cards)
     const { result } = renderHook(() => useReviewSession(store, fixedNow))

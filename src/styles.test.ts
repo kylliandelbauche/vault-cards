@@ -185,3 +185,35 @@ describe('index.css : pastilles de tags de l’accueil (#53)', () => {
     expect(block('.chip-row::-webkit-scrollbar {')).toMatch(/display:\s*none/)
   })
 })
+
+describe('index.css : #82 (bleu plein, Mes tags v3, barre commune)', () => {
+  /** Contraste WCAG entre deux couleurs #rrggbb. */
+  const contrast = (a: string, b: string) => {
+    const lum = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+        .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x)
+    return (hi + 0.05) / (lo + 0.05)
+  }
+
+  it('bleu plein : texte blanc ≥ 4,5:1, une seule teinte en clair et en sombre', () => {
+    const filled = code.match(/--filled-new:\s*(#[0-9a-f]{6})/i)![1]
+    expect(contrast(filled, '#ffffff')).toBeGreaterThanOrEqual(4.5)
+    expect(code.match(/--filled-new:/g)).toHaveLength(1)
+    const rule = block('.glass-btn.btn-filled {')
+    expect(rule).toMatch(/--glass-btn-bg:\s*var\(--filled-new\)/)
+    expect(rule).toMatch(/--glass-btn-label:\s*#fff/)
+    expect(block('.due-badge {')).toMatch(/background-color:\s*var\(--filled-new\)/)
+  })
+
+  it('tag à jour : gris sans verre, texte --label-2 ; barre : fondu sans flou ni filtre', () => {
+    const idle = block('.tag-chip.tag-chip-idle {')
+    expect(idle).toMatch(/color:\s*var\(--label-2\)/)
+    expect(idle).toMatch(/background-image:\s*none/)
+    const fade = block('.bar-fade {')
+    expect(fade).toMatch(/linear-gradient\(to bottom, var\(--bg-base\)/)
+    expect(fade).not.toMatch(/filter|blur/)
+  })
+})

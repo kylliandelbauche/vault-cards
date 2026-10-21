@@ -81,3 +81,6 @@ export const cards = (n: number) => `${n} ${n > 1 ? 'cartes' : 'carte'}`
 
 /** Fin de la phrase du bloc principal, après le nombre : « carte(s) à revoir aujourd'hui ». */
 export const todaySuffix = (n: number) => `${n > 1 ? 'cartes' : 'carte'} à revoir aujourd'hui`
+
+/** Sous-titre de la page Mes tags (#82) : « 10 cartes à revoir » (file du jour, toutes les cartes), « Tout est à jour » sinon. */
+export const tagsSubtitle = (today: number) => (today > 0 ? `${cards(today)} à revoir` : 'Tout est à jour')

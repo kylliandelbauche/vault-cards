@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { TAGS } from '../../../shared/tags'
 import type { HomeStats, TagCount } from '../../lib/home'
+import { BarActionsProvider } from '../../components/TopBar'
 import { HomeScreen } from './HomeScreen'
 import type { HomeData } from './useHomeData'
 
@@ -15,12 +16,17 @@ const stats = (over: Partial<HomeStats> = {}): HomeStats => ({
 })
 const ready = (over: Partial<HomeStats> = {}): HomeData => ({ status: 'ready', stats: stats(over) })
 
-interface Handlers { onStudy?: () => void; onReviewAll?: () => void; onSignOut?: () => void }
+interface Handlers { onStudy?: () => void; onReviewAll?: () => void }
 
 function renderHome(data: HomeData = ready(), handlers: Handlers = {}) {
-  const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onSignOut: vi.fn(), onOpenTags: vi.fn(), ...handlers }
-  const r = render(<KApp theme="ios"><HomeScreen data={data} now={now} sync="synced" {...props} /></KApp>)
-  return { ...r, ...props }
+  const onSignOut = vi.fn()
+  const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onOpenTags: vi.fn(), ...handlers }
+  const r = render(
+    <KApp theme="ios">
+      <BarActionsProvider value={{ onSignOut }}><HomeScreen data={data} now={now} sync="synced" {...props} /></BarActionsProvider>
+    </KApp>,
+  )
+  return { ...r, ...props, onSignOut }
 }
 
 const chipRow = () => screen.getByRole('list', { name: 'Réviser un tag' })
@@ -38,7 +44,10 @@ describe('HomeScreen', () => {
     const { onStudy } = renderHome()
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe("12 cartes à revoir aujourd'hui")
     const start = screen.getByRole('button', { name: 'Commencer à étudier' })
-    expect(start.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new', 'on-glass', 'h-14']))
+    // #82 : bleu plein (la seule action bleue forte de l'écran), icône ▶ décorative, libellé seul pour VoiceOver.
+    expect(start.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'btn-filled', 'on-glass', 'h-14']))
+    expect(start.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true')
+    expect(document.querySelectorAll('.btn-filled')).toHaveLength(1)
     // Dans la carte du jour (comme la maquette), sans flou propre.
     expect(start.closest('section.glass-card')?.querySelector('h1')).toBeTruthy()
     await userEvent.setup().click(start)
@@ -132,27 +141,29 @@ describe('HomeScreen', () => {
     expect(onOpenTags).toHaveBeenCalledTimes(1)
   })
 
-  it('surfaces floutées : barre + carte du jour + carte des tags = 3, aucune imbriquée ; bouton, pastilles et compteurs sans flou', () => {
+  it('surfaces floutées : carte du jour + carte des tags = 2, aucune imbriquée ; barre, bouton, pastilles et compteurs sans flou', () => {
     const { container } = renderHome()
-    expect(container.querySelectorAll(SURFACES)).toHaveLength(3)
+    expect(container.querySelectorAll(SURFACES)).toHaveLength(2)
     expect(container.querySelectorAll('.glass-card .glass-btn:not(.on-glass)')).toHaveLength(0)
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
     for (const el of container.querySelectorAll('dl div')) expect(el.className).not.toMatch(/glass|backdrop|blur/)
     for (const el of container.querySelectorAll('.tag-chip')) expect(el.className).toContain('on-glass')
-    for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|size-11|h-14)\b/)
+    for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|size-12|h-14)\b/)
   })
 
-  it('barre du haut en verre : titre, état de synchro, déconnexion ; pas de bouton « Créer une carte »', async () => {
+  it('barre du haut (#82) : « Vault Cards » + synchro à gauche, Recherche et Profil à droite ; déconnexion via Profil', async () => {
     const { container, onSignOut } = renderHome()
     const header = container.querySelector('header')!
-    expect(header.querySelector('.glass')).toBeTruthy()
-    expect(within(header).getByText('Vault Cards')).toBeTruthy()
+    expect(header.querySelector('.glass, .glass-card')).toBeNull()
+    expect(within(header).getByText('Vault Cards').className).toContain('text-[22px]')
     expect(within(header).getByRole('status').textContent).toBe('Synchronisé')
-    await userEvent.setup().click(within(header).getByRole('button', { name: 'Déconnexion' }))
+    expect(within(header).getAllByRole('button').map(b => b.getAttribute('aria-label'))).toEqual(['Rechercher', 'Profil'])
+    expect(screen.queryByRole('button', { name: /Déconnexion|Créer/ })).toBeNull()
+    const user = userEvent.setup()
+    await user.click(within(header).getByRole('button', { name: 'Profil' }))
+    await user.click(screen.getByRole('button', { name: 'Se déconnecter' }))
     expect(onSignOut).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('button', { name: /Créer/ })).toBeNull()
   })
-
   it('aucune carte : message habituel, pas de bouton d’étude, aucun raccourci de tag', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)
     const empty = TAGS.map(t => ({ ...t, total: 0, today: 0 }))

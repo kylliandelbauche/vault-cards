@@ -7,27 +7,31 @@ interface Props {
 }
 
 /**
- * Ligne d'un tag sur la page « Mes tags » : verre neutre comme les boutons de notation, texte neutre (noir/blanc),
- * libellé seul (ni icône ni couleur, #63), nombre de cartes et cartes à revoir aujourd'hui. Posée sur une carte
- * en verre → `on-glass` : aucun backdrop-filter (pas de flou imbriqué). Cible ≥ 44 px ; tap → session du tag.
- * Tag sans carte : sans remplissage, texte gris, non cliquable (`aria-disabled`, reste lisible et atteignable au clavier).
+ * Pastille d'un tag sur la page « Mes tags » v3 (#82) : libellé seul (ni icône ni couleur par tag, #63), 44 px.
+ * - Cartes dues : verre neutre (flou propre : posée sur le fond, aucune carte dessous) + badge bleu plein du
+ *   nombre de cartes dues.
+ * - À jour : pastille grise sans verre (`tag-chip-idle`, texte ≥ 4,5:1), toujours cliquable (révision libre au bout).
+ * - Sans carte : contour en pointillés, non cliquable (`aria-disabled`, reste lisible et atteignable au clavier).
  */
 export function TagChip({ tag: t, onStudy }: Props) {
   const empty = t.total === 0
-  const detail = empty ? null : `${t.today} à revoir aujourd'hui`
+  const due = t.today > 0
+  const detail = empty ? '' : due ? `, ${t.today} à revoir` : ', à jour'
+  const look = due ? '' : `on-glass ${empty ? 'tag-chip-empty' : 'tag-chip-idle'}`
   return (
     <GlassButton
       tone="neutral"
       aria-disabled={empty || undefined}
-      aria-label={`${t.label}, ${cards(t.total)}${detail ? `, ${detail}` : ''}`}
+      aria-label={`${t.label}, ${cards(t.total)}${detail}`}
       onClick={empty ? undefined : () => onStudy(t.slug)}
-      className={`on-glass tag-chip ${empty ? 'tag-chip-empty' : ''} flex min-h-13 w-full items-center gap-2 rounded-2xl px-3 py-2 text-start`}
+      className={`tag-chip ${look} flex h-11 items-center gap-2.5 rounded-full ${due ? 'ps-[18px] pe-[7px]' : 'px-[18px]'} text-[15px] leading-[18px] font-medium whitespace-nowrap`}
     >
-      <span className="min-w-0 flex-1 text-[14px] leading-tight font-medium">{t.label}</span>
-      <span className="flex shrink-0 flex-col items-end">
-        <span className="text-[14px] leading-tight font-semibold tabular-nums">{cards(t.total)}</span>
-        {detail && <span className="text-[12px] leading-tight tabular-nums">{detail}</span>}
-      </span>
+      {t.label}
+      {due && (
+        <span aria-hidden="true" className="due-badge flex h-[30px] min-w-[30px] items-center justify-center rounded-full px-2 text-[14px] leading-4 font-bold tabular-nums">
+          {t.today}
+        </span>
+      )}
     </GlassButton>
   )
 }

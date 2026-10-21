@@ -5,7 +5,6 @@ import { App as KApp } from 'konsta/react'
 import { stateFromReviews } from '../../lib/scheduler'
 import type { Card } from '../../lib/types'
 import { ReviewScreen } from './ReviewScreen'
-import type { SyncIndicator } from './useAutoSync'
 import type { ReviewSession } from './useReviewSession'
 
 const card: Card = { id: 'a', source: 'vault', deck: 'd', tags: ['ia'], source_path: 'd/a.md', front: 'Question ?', back: 'Réponse.', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null }
@@ -13,25 +12,41 @@ const now = () => new Date('2026-10-13T10:00:00Z')
 
 const session = (over: Partial<ReviewSession> = {}): ReviewSession => ({
   status: 'empty', current: null, revealed: false, saveFailed: false, reveal: vi.fn(), rate: vi.fn(),
-  counts: { new: 0, learn: 0, due: 0 }, progress: 0, stats: { again: 0, hard: 0, good: 0 }, nextDueAt: null, restart: vi.fn(), reviewAll: vi.fn(),
+  counts: { new: 0, learn: 0, due: 0 }, progress: 0, position: { n: 1, total: 1 }, stats: { again: 0, hard: 0, good: 0 }, nextDueAt: null, restart: vi.fn(), reviewAll: vi.fn(),
   ...over,
 })
 const reviewing = (over: Partial<ReviewSession> = {}) =>
   session({ status: 'reviewing', current: { card, state: stateFromReviews([]) }, counts: { new: 1, learn: 0, due: 0 }, ...over })
 
-const renderScreen = (s: ReviewSession, sync: SyncIndicator = 'synced') =>
-  render(<KApp theme="ios"><ReviewScreen session={s} now={now} sync={sync} /></KApp>)
+const renderScreen = (s: ReviewSession, title?: string) =>
+  render(<KApp theme="ios"><ReviewScreen session={s} now={now} title={title} /></KApp>)
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('ReviewScreen', () => {
-  it.each([
-    ['synced', 'Synchronisé'],
-    ['unsynced', 'Non synchronisé'],
-    ['syncing', 'Synchronisation…'],
-  ] as const)('indicateur de synchro toujours visible : %s → « %s »', (sync, label) => {
-    renderScreen(reviewing(), sync)
-    expect(screen.getByRole('status').textContent).toBe(label)
+  const barText = (c: HTMLElement) => [...c.querySelector('header')!.querySelectorAll('p')].map(p => p.textContent)
+
+  it('titre selon l’entrée (#82) : « Révision du jour » via Commencer à étudier, + « Carte 3 sur 21 »', () => {
+    const { container } = renderScreen(reviewing({ position: { n: 3, total: 21 } }))
+    expect(barText(container)).toEqual(['Révision du jour', 'Carte 3 sur 21'])
+  })
+
+  it('titre selon l’entrée (#82) : nom du tag depuis un tag, + « Carte 3 sur 10 »', () => {
+    const { container } = renderScreen(reviewing({ position: { n: 3, total: 10 } }), 'IA & agents')
+    expect(barText(container)).toEqual(['IA & agents', 'Carte 3 sur 10'])
+  })
+
+  it('pas de « Carte n sur N » hors révision (fin de session) ; plus d’indicateur de synchro ni de compteurs dans la barre', () => {
+    const { container } = renderScreen(session({ status: 'done' }))
+    expect(barText(container)).toEqual(['Révision du jour'])
+    renderScreen(reviewing({ counts: { new: 12, learn: 3, due: 40 } }))
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByText('12')).toBeNull()
+  })
+
+  it('barre de progression fine sous la barre pendant la révision', () => {
+    const { container } = renderScreen(reviewing({ progress: 0.3 }))
+    expect(container.querySelector('header .k-progressbar')).toBeTruthy()
   })
 
   it('« Réviser à nouveau » lance la révision libre', async () => {
@@ -130,26 +145,7 @@ describe('ReviewScreen', () => {
     expect(btn.closest('.glass, .glass-card')).toBeNull()
   })
 
-  it('compteurs lisibles par VoiceOver : le libellé est dans le texte, pas dans un aria-label', () => {
-    renderScreen(reviewing({ counts: { new: 12, learn: 3, due: 40 } }))
-    for (const label of ['12 nouvelles', '3 à revoir', '40 dues']) {
-      const pill = screen.getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === label)
-      expect(pill.hasAttribute('aria-label')).toBe(false)
-      expect(pill.hasAttribute('title')).toBe(false)
-    }
-  })
-
-  it('indicateur de synchro : texte opaque, point animé seulement si les animations sont permises', () => {
-    renderScreen(reviewing(), 'syncing')
-    const badge = screen.getByRole('status')
-    expect(badge.className).not.toMatch(/opacity/)
-    expect(badge.parentElement?.className ?? '').not.toMatch(/opacity/)
-    const dot = badge.querySelector('[aria-hidden]')!
-    expect(dot.className).toMatch(/motion-safe:animate-pulse/)
-    expect(dot.className.split(' ')).not.toContain('animate-pulse')
-  })
-
-  it('barres superposées au contenu, marges de zone sûre gauche/droite ; barre du haut en verre, bas transparent', () => {
+  it('barres superposées au contenu, marges de zone sûre gauche/droite ; haut sur un fondu (sans bandeau en verre), bas transparent', () => {
     const { container } = renderScreen(reviewing())
     const header = container.querySelector('header')!
     const footer = container.querySelector('footer')!
@@ -158,19 +154,20 @@ describe('ReviewScreen', () => {
       expect(bar.className).toMatch(/--k-safe-area-left/)
       expect(bar.className).toMatch(/--k-safe-area-right/)
     }
-    expect(header.querySelector('.glass')).toBeTruthy()
+    expect(header.querySelector('.glass, .glass-card')).toBeNull()
+    expect(header.className.split(' ')).toContain('bar-fade')
     // #39 : plus de barre en verre autour des boutons, chacun est son propre verre.
     expect(footer.querySelector('.glass, .glass-card')).toBeNull()
     expect(footer.querySelectorAll('.glass-btn')).toHaveLength(1)
     expect(container.querySelector('main')!.className).toMatch(/--k-safe-area-left/)
   })
 
-  const SURFACES = '.glass, .glass-card, .glass-btn'
+  const SURFACES = '.glass, .glass-card, .glass-btn:not(.on-glass)'
   const NESTED = ['.glass', '.glass-card', '.glass-btn'].flatMap(a => ['.glass', '.glass-card', '.glass-btn'].map(b => `${a} ${b}`)).join(', ')
 
   it.each([
-    ['avant dévoilement', false, 3], // barre du haut + carte + « Afficher la réponse »
-    ['après dévoilement', true, 5], // barre du haut + carte + 3 notes
+    ['avant dévoilement', false, 2], // carte + « Afficher la réponse » (boutons de la barre : verre imité, sans flou)
+    ['après dévoilement', true, 4], // carte + 3 notes
   ])('surfaces floutées %s : %i, aucune imbriquée', (_, revealed, n) => {
     const { container } = renderScreen(reviewing({ revealed }))
     expect(container.querySelectorAll('main .glass-card')).toHaveLength(1)
@@ -178,16 +175,16 @@ describe('ReviewScreen', () => {
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
   })
 
-  it('fin de session : bilan sur une carte en verre, boutons en verre en dehors (4 surfaces, aucune imbriquée)', () => {
+  it('fin de session : bilan sur une carte en verre, boutons en verre en dehors (3 surfaces, aucune imbriquée)', () => {
     const { container } = render(
-      <KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} sync="synced" onBack={vi.fn()} /></KApp>,
+      <KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} onBack={vi.fn()} /></KApp>,
     )
     const restart = screen.getByRole('button', { name: 'Réviser à nouveau' })
     const home = screen.getByRole('button', { name: "Retour à l'accueil" })
     expect(restart.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-new']))
     expect(home.className.split(' ')).toEqual(expect.arrayContaining(['glass-btn', 'glass-btn-neutral']))
     expect(container.querySelector('main .glass-card')?.textContent).toContain('Session terminée')
-    expect(container.querySelectorAll(SURFACES)).toHaveLength(4)
+    expect(container.querySelectorAll(SURFACES)).toHaveLength(3)
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
   })
 
@@ -198,23 +195,15 @@ describe('ReviewScreen', () => {
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 
-  it('chevron retour en tête de la barre du haut : étiqueté « Accueil », cible 44 px, appelle onBack', async () => {
+  it('flèche retour ronde en tête de la barre du haut : étiquetée « Accueil », cible 48 px, appelle onBack', async () => {
     const onBack = vi.fn()
-    const { container } = render(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} sync="synced" onBack={onBack} /></KApp>)
+    const { container } = render(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} onBack={onBack} /></KApp>)
     const header = container.querySelector('header')!
     const btn = within(header).getByRole('button', { name: 'Accueil' })
-    expect(btn.className).toMatch(/\bsize-11\b/)
+    expect(btn.className).toMatch(/\bsize-12\b/)
     expect(within(header).getAllByRole('button')[0]).toBe(btn)
     await userEvent.setup().click(btn)
     expect(onBack).toHaveBeenCalledTimes(1)
-  })
-
-  it('titre de la barre : « Vault Cards » par défaut, nom du tag pour une session par tag ; plus de déconnexion ici', () => {
-    const { container, rerender } = renderScreen(reviewing())
-    expect(container.querySelector('header p')?.textContent).toBe('Vault Cards')
-    rerender(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} title="IA & agents" onBack={vi.fn()} /></KApp>)
-    expect(container.querySelector('header p')?.textContent).toBe('IA & agents')
-    expect(screen.queryByRole('button', { name: 'Déconnexion' })).toBeNull()
   })
 
   it('sans onBack : pas de chevron', () => {
