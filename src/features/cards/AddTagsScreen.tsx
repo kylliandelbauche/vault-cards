@@ -95,12 +95,13 @@ export function AddTagsScreen({ initial, choices, onCancel, onDone }: Props) {
 
         {error && <p role="alert" className="mx-auto w-fit rounded-full bg-again-tint px-3 py-0.5 text-center text-[15px] text-again">{error}</p>}
 
+        {/* Rangée « Sur cette carte » à hauteur fixe (44 px) : vide ou pleine, rien ne bouge en dessous (règle des composants à taille fixe). */}
         <section aria-labelledby="on-card" className="flex shrink-0 flex-col gap-2">
           <h2 id="on-card" className={SECTION}>SUR CETTE CARTE · {selected.length}</h2>
           {selected.length === 0
-            ? <p className="px-1 text-[15px] leading-5 text-label-2">Aucun tag pour l’instant.</p>
+            ? <p className="flex h-11 items-center px-1 text-[15px] leading-5 text-label-2">Aucun tag pour l’instant.</p>
             : (
-              <ul role="list" className="chip-row flex gap-2 py-0.5">
+              <ul role="list" className="chip-row flex h-11 items-center gap-2">
                 {selected.map(name => (
                   <li key={tagKey(name)} className="shrink-0">
                     <span className="tag-pill flex h-10 items-center gap-2 rounded-full ps-4 pe-2.5 text-[15px] leading-[18px] font-medium whitespace-nowrap">
