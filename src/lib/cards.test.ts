@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
-import { CardValidationError, createManualCard, deleteManualCard, FRONT_MAX, BACK_MAX, updateManualCard, validateManualCard } from './cards'
+import { CardValidationError, createManualCard, deleteManualCard, FRONT_MAX, BACK_MAX, updateCard, validateManualCard } from './cards'
 import { buildQueue } from './session'
 import { homeStats } from './home'
 import { pendingCount } from './sync'
@@ -71,7 +71,7 @@ describe('createManualCard', () => {
     expect(buildQueue(cards, [], NOW).map(i => i.card.id)).toEqual([card.id])
     const stats = homeStats(cards, [], NOW)
     expect(stats.fresh).toBe(1)
-    expect(stats.tags.find(t => t.slug === 'dev')!.total).toBe(1)
+    expect(stats.tags.find(t => t.name === 'dev')!.total).toBe(1)
   })
 
   it('UUID par défaut : crypto.randomUUID', async () => {
@@ -85,25 +85,25 @@ describe('createManualCard', () => {
   })
 })
 
-describe('updateManualCard', () => {
+describe('updateCard', () => {
   it('modifie question, réponse ou tags (validés), repasse la carte à envoyer', async () => {
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] }, opts())
     await db.cards.update(card.id, { synced: 1 })
     const later = new Date('2026-10-14T11:00:00.000Z')
-    const updated = await updateManualCard(db, card.id, { back: ' R2 ', tags: ['culture'] }, { now: () => later })
+    const updated = await updateCard(db, card.id, { back: ' R2 ', tags: ['culture'] }, { now: () => later })
     expect(updated).toMatchObject({ front: 'Q', back: 'R2', tags: ['culture'], synced: 0, updated_at: later.toISOString() })
     expect(await db.cards.get(card.id)).toEqual(updated)
-    await expect(updateManualCard(db, card.id, { front: ' ' })).rejects.toBeInstanceOf(CardValidationError)
+    await expect(updateCard(db, card.id, { front: ' ' })).rejects.toBeInstanceOf(CardValidationError)
     expect((await db.cards.get(card.id))!.front).toBe('Q')
   })
 
   it('refuse une carte vault, inconnue ou supprimée', async () => {
     await db.cards.add({ id: 'v', source: 'vault', deck: 'd', source_path: 'd/v.md', tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
-    await expect(updateManualCard(db, 'v', { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
-    await expect(updateManualCard(db, 'nope', { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
+    await expect(updateCard(db, 'v', { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
+    await expect(updateCard(db, 'nope', { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] }, opts())
     await deleteManualCard(db, card.id)
-    await expect(updateManualCard(db, card.id, { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
+    await expect(updateCard(db, card.id, { front: 'X' })).rejects.toThrow('carte manuelle introuvable')
     expect((await db.cards.get('v'))!.front).toBe('Q')
   })
 })

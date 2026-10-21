@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
 import { after as afterFilter, cardsOutbox, outboxQueue, parseCursor, pendingCount, reviewsOutbox, supabaseRemote, sync, SyncError, type Cursor, type ManualCardRow, type OutboxQueue, type PushResult, type Remote } from './sync'
-import { createManualCard, deleteManualCard, updateManualCard } from './cards'
+import { createManualCard, deleteManualCard, updateCard } from './cards'
 import { acceptDraft, rejectDraft, updateDraft } from './drafts'
 import { buildQueue } from './session'
 import type { supabase } from './supabase'
-import type { Card, Review } from './types'
+import { tagKey } from '../../shared/tags'
+import type { Card, Review, Tag } from './types'
 
 type ServerReview = Omit<Review, 'synced' | 'free'> & { inserted_at: string }
 
@@ -19,6 +20,7 @@ function fakeServer() {
   const stamp = () => new Date((t += 1000)).toISOString()
   const cards = new Map<string, Card>()
   const reviews = new Map<string, ServerReview>()
+  const tags = new Map<string, Tag>()
   // Même filtre que la vraie requête : (horodatage, id) strictement après le curseur.
   const isAfter = (at: string, id: string, c: Cursor | null) => c === null || at > c.at || (at === c.at && id > c.id)
   const byStampThenId = <T extends { id: string }>(key: (x: T) => string) => (a: T, b: T) =>
@@ -27,6 +29,7 @@ function fakeServer() {
   const server: {
     cards: Map<string, Card>
     reviews: Map<string, ServerReview>
+    tags: Map<string, Tag>
     failPush: null | 'before' | 'after'
     failCardPush: null | 'before' | 'after'
     enforceFk: boolean
@@ -38,6 +41,7 @@ function fakeServer() {
   } = {
     cards,
     reviews,
+    tags,
     /** 'before' : échec réseau sans écriture ; 'after' : la ligne est écrite mais la réponse se perd. */
     failPush: null,
     /** Idem pour l'envoi des cartes manuelles. */
@@ -51,6 +55,16 @@ function fakeServer() {
     putCard(c: Partial<Card> & { id: string }, at = stamp()) {
       const prev = cards.get(c.id)
       const card: Card = { source: 'vault', deck: 'd', tags: [], source_path: `d/${c.id}.md`, front: c.id, back: c.id, deleted_at: null, ...prev, ...c, updated_at: at }
+      // Trigger cards_tags_sync (#79) : orthographe d'un tag existant reprise ; tags créés pour une carte active vivante.
+      const known = new Map([...tags.values()].map(t => [tagKey(t.name), t.name]))
+      card.tags = [...new Map(card.tags.map(n => [tagKey(n), known.get(tagKey(n)) ?? n])).values()]
+      if (card.status !== 'draft' && card.deleted_at === null) {
+        for (const name of card.tags) if (!known.has(tagKey(name))) {
+          const id = `tag-${tags.size + 1}`
+          tags.set(id, { id, name, updated_at: stamp() })
+          known.set(tagKey(name), name)
+        }
+      }
       cards.set(c.id, card)
       return card
     },
@@ -80,6 +94,12 @@ function fakeServer() {
             server.putCard({ id: r.id, front: r.front, back: r.back, tags: r.tags, deleted_at: r.deleted_at, ...(r.status ? { status: r.status } : {}) })
             continue
           }
+          if (r.source === 'vault') {
+            // Carte du vault (#79, décision #73) : UPDATE seul de front, back, tags, deleted_at.
+            if (prev?.source !== 'vault') { failed.push({ id: r.id, error: new Error(`carte ${r.id} : aucune ligne modifiée`) }); continue }
+            server.putCard({ id: r.id, front: r.front, back: r.back, tags: r.tags, deleted_at: r.deleted_at })
+            continue
+          }
           if (prev && prev.source !== 'manual') throw new Error(`carte ${r.id} : 0 ligne modifiée`)
           server.putCard({ ...r, source: 'manual', deck: null, source_path: null, source_title: null })
         }
@@ -95,6 +115,9 @@ function fakeServer() {
       pullReviews: vi.fn(async (after: Cursor | null, limit: number) =>
         [...reviews.values()].filter(r => isAfter(r.inserted_at, r.id, after))
           .sort(byStampThenId<ServerReview>(r => r.inserted_at)).slice(0, Math.min(limit, server.pullLimit))),
+      pullTags: vi.fn(async (after: Cursor | null, limit: number) =>
+        [...tags.values()].filter(t => isAfter(t.updated_at, t.id, after))
+          .sort(byStampThenId<Tag>(t => t.updated_at)).slice(0, Math.min(limit, server.pullLimit))),
     },
   }
   return server
@@ -170,12 +193,12 @@ describe('sync : push et pull indépendants', () => {
 
     expect(err).toBeInstanceOf(SyncError)
     expect((err as SyncError).message).toBe('réseau coupé')
-    expect((err as SyncError).result).toEqual({ pushed: 0, pulledCards: 2, pulledReviews: 0 })
+    expect((err as SyncError).result).toEqual({ pushed: 0, pulledCards: 2, pulledReviews: 0, pulledTags: 0 })
     expect(await db.cards.count()).toBe(2)
     expect((await db.reviews.get('r1'))!.synced).toBe(0)
 
     server.failPush = null
-    expect(await sync(db, server.remote)).toEqual({ pushed: 1, pulledCards: 0, pulledReviews: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 1, pulledCards: 0, pulledReviews: 0, pulledTags: 0 })
     expect((await db.reviews.get('r1'))!.synced).toBe(1)
   })
 
@@ -409,13 +432,13 @@ describe('sync : seuls les vrais changements comptent (pas de restart() inutile)
   it('syncs répétés sans changement serveur : 0 carte, 0 review ; nos propres reviews relues ne comptent pas', async () => {
     const server = fakeServer()
     server.putCard({ id: 'a' })
-    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 1, pulledReviews: 0 })
-    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 0, pulledReviews: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 1, pulledReviews: 0, pulledTags: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 0, pulledReviews: 0, pulledTags: 0 })
 
     await db.reviews.add(review('r1', 'a'))
     // La review poussée revient par le pull : déjà connue localement, ce n'est pas un changement.
-    expect(await sync(db, server.remote)).toEqual({ pushed: 1, pulledCards: 0, pulledReviews: 0 })
-    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 0, pulledReviews: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 1, pulledCards: 0, pulledReviews: 0, pulledTags: 0 })
+    expect(await sync(db, server.remote)).toEqual({ pushed: 0, pulledCards: 0, pulledReviews: 0, pulledTags: 0 })
   })
 
   it('review locale déjà sur le serveur (réponse du push perdue) : le pull la marque synced: 1 sans la compter', async () => {
@@ -722,7 +745,7 @@ describe('sync : cartes manuelles (#54)', () => {
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] })
     await sync(db, server.remote)
 
-    await updateManualCard(db, card.id, { front: 'Q2', tags: ['dev', 'ia'] })
+    await updateCard(db, card.id, { front: 'Q2', tags: ['dev', 'ia'] })
     expect(await pendingCount(db)).toBe(1)
     await sync(db, server.remote)
     expect(server.cards.get(card.id)).toMatchObject({ front: 'Q2', back: 'R', tags: ['dev', 'ia'], deleted_at: null })
@@ -739,7 +762,7 @@ describe('sync : cartes manuelles (#54)', () => {
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] })
     const push = server.remote.pushCards.getMockImplementation() as Remote['pushCards']
     server.remote.pushCards.mockImplementationOnce(async (rows: ManualCardRow[]) => {
-      await updateManualCard(db, card.id, { back: 'R2' }) // l'utilisateur édite pendant que l'envoi est en vol
+      await updateCard(db, card.id, { back: 'R2' }) // l'utilisateur édite pendant que l'envoi est en vol
       await push(rows)
     })
 
@@ -770,7 +793,7 @@ describe('sync : cartes manuelles (#54)', () => {
     const server = fakeServer()
     const card = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] })
     await sync(db, server.remote)
-    await updateManualCard(db, card.id, { front: 'locale' })
+    await updateCard(db, card.id, { front: 'locale' })
     server.putCard({ id: card.id, front: 'autre appareil' }) // modifiée ailleurs entre-temps
     server.failCardPush = 'before'
 
@@ -897,5 +920,73 @@ describe('sync : brouillon sur deux appareils (#55)', () => {
     await expect(sync(other, server.remote)).rejects.toThrow('refus durable')
     expect((await other.cards.get(manual.id))!.synced).not.toBe(0) // partie (puis relue du serveur)
     expect((await other.cards.get('d'))!.synced).toBe(0)
+  })
+})
+
+describe('sync : tags libres (#79)', () => {
+  const opts = (id: string) => ({ uuid: () => id, now: () => new Date('2026-10-21T10:00:00Z') })
+
+  it('tag créé hors ligne sur une carte manuelle : part avec la carte, créé côté serveur, puis tiré dans db.tags', async () => {
+    const server = fakeServer()
+    await createManualCard(db, { front: 'Q', back: 'R', tags: ['  Chimie   organique '] }, opts('m1'))
+    expect((await db.cards.get('m1'))!.tags).toEqual(['Chimie organique'])
+    const res = await sync(db, server.remote)
+    expect([...server.tags.values()].map(t => t.name)).toEqual(['Chimie organique'])
+    expect((await db.tags.toArray()).map(t => t.name)).toEqual(['Chimie organique'])
+    expect(res.pulledTags).toBe(1)
+    // Idempotent : un second sync ne retire ni ne recompte rien.
+    expect((await sync(db, server.remote)).pulledTags).toBe(0)
+    expect(await db.tags.count()).toBe(1)
+  })
+
+  it('même nom créé hors ligne sur deux appareils (casse différente) : un seul tag, orthographe du premier reprise', async () => {
+    const server = fakeServer()
+    const other = new VaultDB('test-b-' + crypto.randomUUID())
+    try {
+      await createManualCard(db, { front: 'Q1', back: 'R', tags: ['Cerveau'] }, opts('m1'))
+      await createManualCard(other, { front: 'Q2', back: 'R', tags: ['cerveau'] }, opts('m2'))
+      await sync(db, server.remote)
+      await sync(other, server.remote)
+      await sync(db, server.remote)
+      expect([...server.tags.values()].map(t => t.name)).toEqual(['Cerveau'])
+      expect(server.cards.get('m2')!.tags).toEqual(['Cerveau'])
+      for (const d of [db, other]) {
+        expect((await d.tags.toArray()).map(t => t.name)).toEqual(['Cerveau'])
+        expect((await d.cards.get('m2'))!.tags).toEqual(['Cerveau'])
+      }
+    } finally {
+      await other.delete()
+    }
+  })
+
+  it('carte du vault modifiée dans l’app (#73) : UPDATE seul, nouveaux tags créés, plus rien en attente', async () => {
+    const server = fakeServer()
+    server.putCard({ id: 'v1', tags: ['IA & agents'] })
+    await sync(db, server.remote)
+    await updateCard(db, 'v1', { front: 'Nouvelle question', tags: ['IA & agents', 'Mémoire'] })
+    await sync(db, server.remote)
+    expect(server.remote.pushCards).toHaveBeenLastCalledWith([
+      { id: 'v1', source: 'vault', front: 'Nouvelle question', back: 'v1', tags: ['IA & agents', 'Mémoire'], deleted_at: null },
+    ])
+    expect(server.cards.get('v1')).toMatchObject({ source: 'vault', front: 'Nouvelle question', tags: ['IA & agents', 'Mémoire'] })
+    expect([...server.tags.values()].map(t => t.name).sort()).toEqual(['IA & agents', 'Mémoire'])
+    expect(await pendingCount(db)).toBe(0)
+  })
+
+  it('brouillon : un nouveau tag proposé n’est créé qu’à la validation, jamais s’il est retiré avant', async () => {
+    const server = fakeServer()
+    const draft = { source: 'inbox' as const, status: 'draft' as const, inbox_id: 'i1', deck: null, source_path: null }
+    server.putCard({ id: 'd1', ...draft, tags: ['Nouveau A', 'Culture'] })
+    server.putCard({ id: 'd2', ...draft, tags: ['Nouveau B', 'Culture'] })
+    await sync(db, server.remote)
+    expect(server.tags.size).toBe(0)
+    await updateDraft(db, 'd1', { tags: ['Nouveau A', 'Culture', 'Nouveau C'] })
+    await sync(db, server.remote)
+    expect(server.tags.size).toBe(0)
+    await acceptDraft(db, 'd1')
+    await acceptDraft(db, 'd2', { tags: ['Culture'] }) // « Nouveau B » retiré avant de valider
+    await sync(db, server.remote)
+    expect([...server.tags.values()].map(t => t.name).sort()).toEqual(['Culture', 'Nouveau A', 'Nouveau C'])
+    expect((await db.tags.toArray()).map(t => t.name).sort()).toEqual(['Culture', 'Nouveau A', 'Nouveau C'])
   })
 })

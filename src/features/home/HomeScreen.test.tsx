@@ -2,7 +2,10 @@ import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
-import { TAGS } from '../../../shared/tags'
+import { LEGACY_TAG_NAMES } from '../../../shared/tags'
+
+/** Les 8 tags d'origine (#79 : noms libres), par leur ancien slug. */
+const TAGS = Object.entries(LEGACY_TAG_NAMES).map(([slug, name]) => ({ slug, name }))
 import type { HomeStats, TagCount } from '../../lib/home'
 import { BarActionsProvider } from '../../components/TopBar'
 import { HomeScreen } from './HomeScreen'
