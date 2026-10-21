@@ -63,6 +63,7 @@ describe('TopBar (#82)', () => {
     await user.click(search)
     expect(search.getAttribute('aria-expanded')).toBe('true')
     const dialog = screen.getByRole('dialog', { name: 'Rechercher' })
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
     expect(dialog.textContent).toBe('La recherche dans tes cartes arrive bientôt.')
     expect(within(dialog).queryAllByRole('button')).toHaveLength(0)
     await user.keyboard('{Escape}')
@@ -80,6 +81,15 @@ describe('TopBar (#82)', () => {
     await user.click(out)
     expect(onSignOut).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('focus rendu au bouton d’ouverture même s’il n’avait pas le focus (Safari/iOS)', async () => {
+    const { user } = withActions()
+    const profile = screen.getByRole('button', { name: 'Profil' })
+    profile.dispatchEvent(new MouseEvent('click', { bubbles: true })) // clic sans focus, comme un tap sur iOS
+    expect(document.activeElement).not.toBe(profile)
+    await user.keyboard('{Escape}')
+    expect(document.activeElement).toBe(profile)
   })
 
   it('Profil : tap à côté ferme sans se déconnecter', async () => {

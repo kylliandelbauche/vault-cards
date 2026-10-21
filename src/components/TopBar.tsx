@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type MouseEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { GlassButton } from './GlassButton'
 
@@ -84,25 +84,31 @@ type Panel = 'search' | 'profile'
  */
 function BarActions({ onSignOut }: BarActionsValue) {
   const [open, setOpen] = useState<Panel | null>(null)
-  const toggle = (p: Panel) => setOpen(o => (o === p ? null : p))
+  // Bouton qui a ouvert la fenêtre, pour lui rendre le focus (Safari/iOS : un tap ne donne pas le focus au bouton,
+  // `document.activeElement` serait <body>).
+  const opener = useRef<HTMLElement | null>(null)
+  const toggle = (p: Panel, e: MouseEvent<HTMLButtonElement>) => {
+    opener.current = e.currentTarget
+    setOpen(o => (o === p ? null : p))
+  }
   const close = () => setOpen(null)
   return (
     <>
-      <RoundButton label="Rechercher" aria-haspopup="dialog" aria-expanded={open === 'search'} onClick={() => toggle('search')}>
+      <RoundButton label="Rechercher" aria-haspopup="dialog" aria-expanded={open === 'search'} onClick={e => toggle('search', e)}>
         <circle cx="11" cy="11" r="7" />
         <path d="M20 20l-3.5-3.5" />
       </RoundButton>
-      <RoundButton label="Profil" aria-haspopup="dialog" aria-expanded={open === 'profile'} onClick={() => toggle('profile')}>
+      <RoundButton label="Profil" aria-haspopup="dialog" aria-expanded={open === 'profile'} onClick={e => toggle('profile', e)}>
         <circle cx="12" cy="8" r="4" />
         <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
       </RoundButton>
       {open === 'search' && (
-        <BarPopover label="Rechercher" onClose={close}>
+        <BarPopover label="Rechercher" onClose={close} opener={opener}>
           <p className="px-[18px] py-3.5 text-[15px] leading-5 text-label-2">La recherche dans tes cartes arrive bientôt.</p>
         </BarPopover>
       )}
       {open === 'profile' && (
-        <BarPopover label="Profil" onClose={close}>
+        <BarPopover label="Profil" onClose={close} opener={opener}>
           <p className="px-[18px] pt-3.5 pb-3 text-[13px] leading-[18px] text-label-2">Le profil arrive bientôt.</p>
           <button
             type="button"
@@ -120,14 +126,15 @@ function BarActions({ onSignOut }: BarActionsValue) {
 /**
  * Petite fenêtre sous les boutons de droite (style menu iOS 26) : fond presque opaque (`--glass-solid`, texte et
  * rouge ≥ 4,5:1), aucun voile. Échap ou tap à côté = fermer ; focus posé dans la fenêtre, gardé dedans (Tab),
- * puis rendu au bouton d'origine.
+ * puis rendu au bouton d'origine (`opener`). Modale pour les lecteurs d'écran (`aria-modal`). Surface floutée
+ * transitoire : l'accueil passe à 4 surfaces tant qu'elle est ouverte.
  */
-function BarPopover({ label, onClose, children }: { label: string; onClose(): void; children: ReactNode }) {
+function BarPopover({ label, onClose, opener, children }: { label: string; onClose(): void; opener: RefObject<HTMLElement | null>; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null)
   const latest = useRef(onClose)
   useEffect(() => { latest.current = onClose })
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const back = opener.current
     const first = box.current?.querySelector<HTMLElement>('button')
     ;(first ?? box.current)?.focus()
     const onKey = (e: KeyboardEvent) => {
@@ -140,8 +147,8 @@ function BarPopover({ label, onClose, children }: { label: string; onClose(): vo
       items[(i + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus()
     }
     window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey); opener?.focus() }
-  }, [])
+    return () => { window.removeEventListener('keydown', onKey); back?.focus() }
+  }, [opener])
   // Rendue dans <body> : au-dessus des barres `sticky` (la zone d'action du bas comprise), un tap à côté ne
   // déclenche jamais un bouton dessous. Hors de `.safe-areas` : zones sûres lues directement (env()).
   return createPortal(
@@ -150,6 +157,7 @@ function BarPopover({ label, onClose, children }: { label: string; onClose(): vo
       <div
         ref={box}
         role="dialog"
+        aria-modal="true"
         aria-label={label}
         tabIndex={-1}
         style={{ backgroundColor: 'var(--glass-solid)' }}
