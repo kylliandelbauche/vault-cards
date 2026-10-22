@@ -146,18 +146,30 @@ describe('useNavigation : garde de sortie (#88)', () => {
     expect(depth()).toBe(1)
   })
 
-  it('deux retours d’affilée : pas de boucle, pas de dérive de la pile', async () => {
+  it('deux retours d’affilée : un appel du garde par retour, pas de boucle, pas de dérive de la pile', async () => {
     const { result, guard } = setup()
     act(() => { result.current.registerGuard(guard) })
-    act(() => { window.history.back(); window.history.back() })
+    act(() => { window.history.back() })
+    await waitFor(() => expect(guard).toHaveBeenCalledTimes(1))
     await settle()
-    expect(guard.mock.calls.length).toBeGreaterThanOrEqual(1)
-    expect(guard.mock.calls.length).toBeLessThanOrEqual(2)
+    act(() => { window.history.back() })
+    await settle()
+    expect(guard).toHaveBeenCalledTimes(2)
     expect(result.current.screen).toEqual({ name: 'new-card' })
     expect(depth()).toBe(1)
     act(() => result.current.back())
     await waitFor(() => expect(depth()).toBe(0))
     expect(result.current.screen).toEqual({ name: 'home' })
+  })
+
+  it('deux retours dans le même instant : jsdom n’en traverse qu’un, le garde est appelé exactement une fois, pile intacte', async () => {
+    const { result, guard } = setup()
+    act(() => { result.current.registerGuard(guard) })
+    act(() => { window.history.back(); window.history.back() })
+    await settle()
+    expect(guard).toHaveBeenCalledTimes(1)
+    expect(result.current.screen).toEqual({ name: 'new-card' })
+    expect(depth()).toBe(1)
   })
 
   it('garde remplacé : l’ancien, en se retirant, n’efface pas le nouveau', async () => {

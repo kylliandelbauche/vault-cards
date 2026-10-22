@@ -222,6 +222,29 @@ describe('SignedInApp : retour avec « Modifier la carte » depuis le menu ⋯ (
   })
 })
 
+describe('SignedInApp : retour sans modification depuis « Modifier la carte » du menu ⋯ (#88)', () => {
+  const depth = () => (window.history.state as { vaultCardsDepth?: number } | null)?.vaultCardsDepth ?? 0
+  const settle = () => act(() => new Promise(r => setTimeout(r, 50)))
+
+  it('ferme seulement le formulaire (la révision reste), comme le ✕ ; un second retour quitte la révision', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    await user.click(screen.getByRole('button', { name: 'Actions de la carte' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+    expect(heading()).toBe('Modifier la carte')
+    act(() => { window.history.back() })
+    expect(await screen.findByRole('button', { name: 'Afficher la réponse' })).toBeTruthy()
+    await settle()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(depth()).toBe(1)
+    act(() => { window.history.back() })
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await waitFor(() => expect(depth()).toBe(0))
+  })
+})
+
 describe('SignedInApp : barre commune (#82)', () => {
   it('Recherche et Profil sur l’accueil, Mes tags et la révision ; « Se déconnecter » dans Profil', async () => {
     const { user } = renderApp()

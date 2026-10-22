@@ -58,6 +58,7 @@ export function ReviewScreen({ session, db, now, title = DAY_TITLE, onBack, back
         initial={editing}
         source={editing.source_title?.trim() || undefined}
         minTags={editing.source === 'vault' ? 0 : 1}
+        overlay
         onClose={() => setEditing(null)}
         save={async patch => { await session.edit(patch); onWrite?.() }}
       />

@@ -4,6 +4,7 @@ import { MAX_TAGS, byTagName, normalizeTagName, tagKey, tagNameError } from '../
 import { DiscardDialog, SheetBar } from '../../components/SheetBar'
 import { EDGES } from '../../components/TopBar'
 import { cards } from '../../lib/home'
+import { useLeaveGuard } from '../home/useLeaveGuard'
 import type { TagChoice } from '../../lib/tags'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { indexLetter } from './useTagChoices'
@@ -35,6 +36,8 @@ export function AddTagsScreen({ initial, choices, onCancel, onDone }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const dirty = !sameList(selected, initial)
+  // #88 : le retour du navigateur / geste iOS revient au formulaire ; avec des modifications, après la confirmation du ✕.
+  useLeaveGuard(true, () => (dirty ? setConfirming(true) : onCancel()))
   const full = selected.length >= MAX_TAGS
   const selectedKeys = new Set(selected.map(tagKey))
 

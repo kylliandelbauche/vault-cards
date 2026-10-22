@@ -73,6 +73,8 @@ export interface EditFormProps {
   source?: string
   /** Nombre minimal de tags affiché (« 1 à 5 ») : 0 pour une carte du vault (« 5 au plus »). La règle vit dans cards.ts. */
   minTags?: 0 | 1
+  /** Formulaire posé sur un écran sans être un niveau de la pile (révision) : le retour le ferme lui seul, même sans modification. */
+  overlay?: boolean
   onClose(): void
   save(patch: ManualCardInput): Promise<unknown>
 }
@@ -86,7 +88,7 @@ const FIELD_LABEL: Record<CardValidationError['field'], string> = { front: 'Ques
  * Formulaire « Modifier la carte » / « Nouvelle carte » : brouillons (#81), création (#54), et toute carte depuis le
  * menu ⋯ de la révision (#73).
  */
-export function EditForm({ db, title, initial: card, creating = false, source, minTags = 1, onClose, save }: EditFormProps) {
+export function EditForm({ db, title, initial: card, creating = false, source, minTags = 1, overlay = false, onClose, save }: EditFormProps) {
   const [front, setFront] = useState(card.front)
   const [back, setBack] = useState(card.back)
   const [tags, setTags] = useState<string[]>([...card.tags])
@@ -97,8 +99,8 @@ export function EditForm({ db, title, initial: card, creating = false, source, m
   const choices = useTagChoices(db)
   const dirty = front !== card.front || back !== card.back || !sameTags(tags, card.tags)
   const filled = front.trim() !== '' && back.trim() !== ''
-  // #88 : retour du navigateur / geste iOS = même confirmation que le ✕ (sauf pendant le choix des tags).
-  useLeaveGuard(dirty && !picking, () => setConfirming(true))
+  // #88 : retour du navigateur / geste iOS = même confirmation que le ✕ (le choix des tags a son propre garde).
+  useLeaveGuard((dirty || overlay) && !picking, () => (dirty ? setConfirming(true) : onClose()))
 
   const submit = async () => {
     if (saving) return
