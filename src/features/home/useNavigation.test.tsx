@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import { useNavigation } from './useNavigation'
 
@@ -99,5 +99,108 @@ describe('useNavigation : course retour / nouvelle session', () => {
     await settle()
     expect(result.current.screen).toEqual({ name: 'home' })
     expect(depth()).toBe(0)
+  })
+})
+
+describe('useNavigation : garde de sortie (#88)', () => {
+  const setup = () => {
+    const guard = vi.fn()
+    const hook = renderHook(() => useNavigation())
+    act(() => hook.result.current.open({ name: 'new-card' }))
+    expect(depth()).toBe(1)
+    return { guard, ...hook }
+  }
+
+  it('sans garde : le retour de l’utilisateur ferme l’écran tout de suite (comportement inchangé)', async () => {
+    const { result } = setup()
+    act(() => { window.history.back() })
+    await waitFor(() => expect(result.current.screen).toEqual({ name: 'home' }))
+    expect(depth()).toBe(0)
+  })
+
+  it('avec garde : l’écran reste, l’entrée d’historique est reposée et le garde est appelé ; « Ignorer » dépile', async () => {
+    const { result, guard } = setup()
+    act(() => { result.current.registerGuard(guard) })
+    act(() => { window.history.back() })
+    await waitFor(() => expect(guard).toHaveBeenCalledTimes(1))
+    await settle()
+    expect(result.current.screen).toEqual({ name: 'new-card' })
+    expect(depth()).toBe(1)
+    // « Ignorer » = back() de l'app : l'écran se ferme, l'historique est dépilé, le garde n'est pas rappelé.
+    act(() => result.current.back())
+    await waitFor(() => expect(depth()).toBe(0))
+    expect(result.current.screen).toEqual({ name: 'home' })
+    expect(guard).toHaveBeenCalledTimes(1)
+  })
+
+  it('« Continuer » : l’écran reste et un nouveau retour redemande', async () => {
+    const { result, guard } = setup()
+    act(() => { result.current.registerGuard(guard) })
+    act(() => { window.history.back() })
+    await waitFor(() => expect(guard).toHaveBeenCalledTimes(1))
+    await settle()
+    act(() => { window.history.back() })
+    await waitFor(() => expect(guard).toHaveBeenCalledTimes(2))
+    await settle()
+    expect(result.current.screen).toEqual({ name: 'new-card' })
+    expect(depth()).toBe(1)
+  })
+
+  it('deux retours d’affilée : pas de boucle, pas de dérive de la pile', async () => {
+    const { result, guard } = setup()
+    act(() => { result.current.registerGuard(guard) })
+    act(() => { window.history.back(); window.history.back() })
+    await settle()
+    expect(guard.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(guard.mock.calls.length).toBeLessThanOrEqual(2)
+    expect(result.current.screen).toEqual({ name: 'new-card' })
+    expect(depth()).toBe(1)
+    act(() => result.current.back())
+    await waitFor(() => expect(depth()).toBe(0))
+    expect(result.current.screen).toEqual({ name: 'home' })
+  })
+
+  it('garde remplacé : l’ancien, en se retirant, n’efface pas le nouveau', async () => {
+    const { result, guard } = setup()
+    let off = () => {}
+    act(() => { off = result.current.registerGuard(guard) })
+    const other = vi.fn()
+    act(() => { result.current.registerGuard(other) })
+    act(() => off())
+    act(() => { window.history.back() })
+    await waitFor(() => expect(other).toHaveBeenCalledTimes(1))
+    expect(guard).not.toHaveBeenCalled()
+  })
+
+  it('garde retiré (plus de modification) : le retour redevient immédiat', async () => {
+    const { result, guard } = setup()
+    let off = () => {}
+    act(() => { off = result.current.registerGuard(guard) })
+    act(() => off())
+    act(() => { window.history.back() })
+    await waitFor(() => expect(result.current.screen).toEqual({ name: 'home' }))
+    expect(guard).not.toHaveBeenCalled()
+  })
+
+  it('le retour lancé par l’app n’est jamais intercepté, même avec un garde', async () => {
+    const { result, guard } = setup()
+    act(() => { result.current.registerGuard(guard) })
+    act(() => result.current.back())
+    await settle()
+    expect(guard).not.toHaveBeenCalled()
+    expect(result.current.screen).toEqual({ name: 'home' })
+    expect(depth()).toBe(0)
+  })
+
+  it('retour de plusieurs niveaux d’un coup avec garde : tous les niveaux sont reposés', async () => {
+    const { result, guard } = setup()
+    act(() => result.current.open({ name: 'source-text' }))
+    expect(depth()).toBe(2)
+    act(() => { result.current.registerGuard(guard) })
+    act(() => { window.history.go(-2) })
+    await waitFor(() => expect(guard).toHaveBeenCalledTimes(1))
+    await settle()
+    expect(result.current.screen).toEqual({ name: 'source-text' })
+    expect(depth()).toBe(2)
   })
 })

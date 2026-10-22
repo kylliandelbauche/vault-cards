@@ -8,6 +8,7 @@ import type { VaultDB } from '../../lib/db'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { AddTagsScreen } from '../cards/AddTagsScreen'
 import { useTagChoices } from '../cards/useTagChoices'
+import { useLeaveGuard } from '../home/useLeaveGuard'
 import type { DraftsTarget } from '../home/useNavigation'
 import { useDrafts } from './useDrafts'
 
@@ -96,7 +97,8 @@ export function EditForm({ db, title, initial: card, creating = false, source, m
   const choices = useTagChoices(db)
   const dirty = front !== card.front || back !== card.back || !sameTags(tags, card.tags)
   const filled = front.trim() !== '' && back.trim() !== ''
-
+  // #88 : retour du navigateur / geste iOS = même confirmation que le ✕ (sauf pendant le choix des tags).
+  useLeaveGuard(dirty && !picking, () => setConfirming(true))
 
   const submit = async () => {
     if (saving) return
