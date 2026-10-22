@@ -74,6 +74,55 @@ begin
     || E'\nOK: normalisation serveur identique au client sur 7 cas limites (espaces Unicode, U+200B, U+0085, NFC)', true);
 end $$;
 
+-- Contraintes prouvées SANS le trigger (#94) : le trigger normalise avant elles et masquerait leur absence.
+-- 1. tags_name_check : insert direct dans `tags` en propriétaire (aucun trigger d'insertion sur `tags`).
+-- 2. cards_tags_check : insert de cartes avec cards_tags_sync désactivé (propriétaire, dans la transaction annulée ;
+--    réactivé aussitôt et vérifié). Un témoin valide prouve que le trigger est bien coupé (aucun tag créé) et que seul
+--    le nom est en cause dans les refus.
+do $$
+declare
+  v text;
+  i int := 0;
+  ok text := '';
+  bad text[] := array[' [sql-check] x', '[sql-check]  x', E'[sql-check]\u00a0x', E'[sql-check] a\u0001b',
+                      E'[sql-check] Se\u0301curite\u0301', '', repeat('x', 41)];
+begin
+  insert into public.tags (name) values (E'[sql-check] zw\u200bsp');
+  foreach v in array bad loop
+    begin
+      insert into public.tags (name) values (v);
+      raise exception 'ÉCHEC: tags_name_check accepte « % »', v;
+    exception when check_violation then null;
+    end;
+  end loop;
+  ok := ok || E'\nOK: tags_name_check (insert direct) : nom normalisé accepté, 7 noms refusés (bord, double espace, U+00A0, contrôle, non NFC, vide, 41 car.) (23514)';
+
+  alter table public.cards disable trigger cards_tags_sync;
+  insert into public.cards (id, source, front, back, tags)
+  values ('00000000-0000-4000-8000-0000000094a0', 'manual', '[sql-check] sans trigger', 'R', '{[sql-check] brut}');
+  if (select tags from public.cards where id = '00000000-0000-4000-8000-0000000094a0') <> '{[sql-check] brut}'::text[] then
+    raise exception 'ÉCHEC: témoin sans trigger modifié';
+  end if;
+  if exists (select 1 from public.tags where name = '[sql-check] brut') then
+    raise exception 'ÉCHEC: le trigger n''était pas désactivé';
+  end if;
+  foreach v in array bad[1:5] loop
+    i := i + 1;
+    begin
+      insert into public.cards (id, source, front, back, tags)
+      values (('00000000-0000-4000-8000-0000000094a' || i)::uuid, 'manual', '[sql-check] sans trigger', 'R', array[v]);
+      raise exception 'ÉCHEC: cards_tags_check accepte « % » sans le trigger', v;
+    exception when check_violation then null;
+    end;
+  end loop;
+  alter table public.cards enable trigger cards_tags_sync;
+  if (select tgenabled from pg_trigger where tgrelid = 'public.cards'::regclass and tgname = 'cards_tags_sync') <> 'O' then
+    raise exception 'ÉCHEC: cards_tags_sync non réactivé';
+  end if;
+  ok := ok || E'\nOK: cards_tags_check sans trigger : témoin accepté, 5 noms non normalisés ou avec contrôle refusés (23514)';
+  perform set_config('vc.log', current_setting('vc.log') || ok, true);
+end $$;
+
 set local role authenticated;
 set local request.jwt.claims = '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000000000"}';
 
@@ -364,6 +413,24 @@ begin
   select count(*) into n from public.tags where name = '[sql-check] outil brouillon';
   if n <> 0 then raise exception 'ÉCHEC: brouillon de l''outil : tag créé'; end if;
   ok := ok || E'\nOK: service_role : un brouillon inbox ne crée aucun tag';
+  -- Restauration par l'outil : carte vault supprimée puis restaurée → tag créé ; brouillon restauré → rien.
+  insert into public.cards (id, source, deck, source_path, front, back, tags, deleted_at)
+  values ('00000000-0000-4000-8000-0000000094f9', 'vault', 'test', '3-Resources/test/z.md', '[sql-check] vault outil supprimée', 'R',
+          '{[sql-check] outil restauré}', now());
+  update public.cards set deleted_at = now() where id = '00000000-0000-4000-8000-0000000094f8';
+  select count(*) into n from public.tags where lower(name) in ('[sql-check] outil restauré');
+  if n <> 0 then raise exception 'ÉCHEC: carte vault supprimée de l''outil : tag créé'; end if;
+  update public.cards set deleted_at = null where id = '00000000-0000-4000-8000-0000000094f9';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'ÉCHEC: restauration vault par service_role : % ligne(s)', n; end if;
+  select count(*) into n from public.tags where name = '[sql-check] outil restauré';
+  if n <> 1 then raise exception 'ÉCHEC: restauration vault par service_role : tag non créé'; end if;
+  update public.cards set deleted_at = null where id = '00000000-0000-4000-8000-0000000094f8';
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'ÉCHEC: restauration d''un brouillon par service_role : % ligne(s)', n; end if;
+  select count(*) into n from public.tags where name = '[sql-check] outil brouillon';
+  if n <> 0 then raise exception 'ÉCHEC: restauration d''un brouillon par service_role : tag créé'; end if;
+  ok := ok || E'\nOK: service_role : restauration d''une carte vault → tag créé ; d''un brouillon → rien';
   begin
     update public.cards set tags = array[E'[sql-check] a\u0002b'] where id = '00000000-0000-4000-8000-0000000094f7';
     raise exception 'ÉCHEC: service_role : caractère de contrôle accepté';

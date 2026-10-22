@@ -12,7 +12,7 @@ const read = (rel: string) => fs.readFileSync(path.join(repo, rel), 'utf8')
 describe('règles de nom de tag (#79)', () => {
   it('normalise les espaces et la forme Unicode', () => {
     expect(normalizeTagName('  IA   &\tagents ')).toBe('IA & agents')
-    expect(normalizeTagName('Sécurité')).toBe('Sécurité')
+    expect(normalizeTagName('Se\u0301curite\u0301')).toBe('Sécurité')
     expect(tagKey(' SÉCURITÉ ')).toBe(tagKey('sécurité'))
   })
 
@@ -68,12 +68,16 @@ describe('alignement avec la migration', () => {
 
   it('normalisation et caractères de contrôle identiques au serveur (#94)', () => {
     const fix = read('supabase/migrations/20261022000000_tags_sync_fix.sql')
-    const fn = fix.slice(fix.indexOf('create function public.tag_name_normalize'), fix.indexOf('revoke execute on function public.tag_name_normalize'))
-    // Même ordre : NFC, bords retirés, espaces internes réduits ; même liste d'espaces aux trois endroits.
-    expect(fn).toContain('normalize(p_name, nfc)')
-    expect(fn).toContain(`'^[${TAG_SPACE_CLASS}]+|[${TAG_SPACE_CLASS}]+$',\n      '', 'g')`)
-    expect(fn).toContain(`'[${TAG_SPACE_CLASS}]+', ' ', 'g')`)
-    expect(fix).toContain(`t !~ '[${TAG_CONTROL_CLASS}]'`)
+    // Comparaison indépendante de la mise en forme : commentaires SQL et blancs retirés, casse ignorée (des deux côtés).
+    const compact = (s: string) => s.replace(/--[^\n]*/g, '').replace(/\s+/g, '').toLowerCase()
+    const body = /function public\.tag_name_normalize\(p_name text\)[\s\S]*?\$\$([\s\S]*?)\$\$/.exec(fix)?.[1] ?? ''
+    // Même ordre : NFC, puis bords retirés, puis espaces internes réduits ; même liste d'espaces aux trois endroits.
+    expect(compact(body)).toBe(compact(`
+      select regexp_replace(
+        regexp_replace(normalize(p_name, nfc), '^[${TAG_SPACE_CLASS}]+|[${TAG_SPACE_CLASS}]+$', '', 'g'),
+        '[${TAG_SPACE_CLASS}]+', ' ', 'g')`))
+    expect(compact(fix)).toContain(compact(`t !~ '[${TAG_CONTROL_CLASS}]'`))
+    expect(compact(fix)).toContain(compact('t = public.tag_name_normalize(t)'))
   })
 
   it('mêmes limites que la contrainte SQL', () => {

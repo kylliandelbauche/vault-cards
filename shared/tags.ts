@@ -1,6 +1,8 @@
 /**
- * Tags libres (#79) : règles de nom partagées par l'app (src/) et l'outil (tools/cards), alignées sur la migration
- * 20261021000000_free_tags (trigger cards_tags_sync et contrainte cards_tags_check). Un tag est un NOM porté par la
+ * Tags libres (#79) : règles de nom partagées par l'app (src/) et l'outil (tools/cards), alignées sur les migrations
+ * 20261021000000_free_tags (registre, trigger cards_tags_sync, contrainte cards_tags_check) et
+ * 20261022000000_tags_sync_fix (#94 : normalisation tag_name_normalize, caractères de contrôle refusés, restauration).
+ * Un tag est un NOM porté par la
  * carte (`cards.tags`) ; la table `tags` en est le registre (créé côté serveur pour les cartes actives).
  * Ni icône (#53) ni couleur (#63) : un tag est reconnu à son nom seul, en verre neutre.
  */

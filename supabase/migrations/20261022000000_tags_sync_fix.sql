@@ -16,7 +16,7 @@
 
 -- Normalisation d'un nom (fonction pure). Exécutable par les auteurs d'écritures sur `cards` (une contrainte check
 -- s'évalue avec leurs droits), jamais par anon.
-create function public.tag_name_normalize(p_name text) returns text
+create or replace function public.tag_name_normalize(p_name text) returns text
 language sql immutable strict set search_path = '' as $$
   select regexp_replace(
     regexp_replace(
@@ -43,11 +43,11 @@ language sql immutable set search_path = '' as $$
 $$;
 
 -- Contraintes recréées pour être validées sur les lignes existantes avec les nouvelles règles.
-alter table public.cards drop constraint cards_tags_check;
+alter table public.cards drop constraint if exists cards_tags_check;
 alter table public.cards add constraint cards_tags_check check (
   cardinality(tags) <= 5 and public.tag_names_valid(tags)
 );
-alter table public.tags drop constraint tags_name_check;
+alter table public.tags drop constraint if exists tags_name_check;
 alter table public.tags add constraint tags_name_check check (public.tag_names_valid(array[name]));
 
 -- Trigger : même logique que #79, avec la normalisation alignée. SECURITY DEFINER (seul moyen de créer un tag),
@@ -79,6 +79,6 @@ begin
 end $$;
 revoke execute on function public.cards_tags_sync() from public, anon, authenticated;
 
-drop trigger cards_tags_sync on public.cards;
+drop trigger if exists cards_tags_sync on public.cards;
 create trigger cards_tags_sync before insert or update of tags, status, deleted_at on public.cards
   for each row execute function public.cards_tags_sync();
