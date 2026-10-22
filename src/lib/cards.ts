@@ -137,3 +137,18 @@ export async function deleteManualCard(db: VaultDB, id: string, { now = () => ne
     await db.cards.update(id, { deleted_at: at, updated_at: at, synced: 0 })
   })
 }
+
+/**
+ * Suppression douce d'une carte vivante et active, quelle que soit son origine (#73 : vault, manual, inbox validée ;
+ * un brouillon se rejette par drafts.ts) : `deleted_at` posé, la carte sort des sessions et des compteurs, ses reviews
+ * restent. Envoyée par la synchro (UPDATE de deleted_at seul pour vault/inbox). Déjà supprimée : sans effet.
+ */
+export async function deleteCard(db: VaultDB, id: string, { now = () => new Date() }: Pick<WriteOptions, 'now'> = {}): Promise<void> {
+  await db.transaction('rw', db.cards, async () => {
+    const card = await db.cards.get(id)
+    if (card && card.deleted_at !== null) return
+    if (!card || card.status === 'draft') throw new Error(`carte introuvable : ${id}`)
+    const at = now().toISOString()
+    await db.cards.update(id, { deleted_at: at, updated_at: at, synced: 0 })
+  })
+}

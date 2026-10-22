@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef, type CSSProperties } from 'react'
+import { createPortal } from 'react-dom'
 import { GlassButton } from './GlassButton'
 import { EDGES, IconButton } from './TopBar'
 
@@ -45,16 +46,46 @@ export function SheetBar({ title, onClose, onConfirm, confirmLabel = 'Enregistre
 
 /**
  * ✕ avec des modifications (Paper « Ajouter des tags · 4 ») : petite fenêtre sous le ✕, voile sombre derrière.
- * Fond presque opaque (`--glass-solid`) : le rouge reste ≥ 4,5:1 malgré le voile. Échap ou tap sur le voile =
- * continuer à modifier. Le focus va sur « Continuer à modifier » (le choix sans perte).
+ * Échap ou tap sur le voile = continuer à modifier ; focus sur « Continuer à modifier » (le choix sans perte).
  */
 export function DiscardDialog({ onDiscard, onContinue }: { onDiscard(): void; onContinue(): void }) {
+  return (
+    <ConfirmDialog
+      message="Tes modifications ne seront pas enregistrées."
+      confirmLabel="Ignorer les modifications"
+      cancelLabel="Continuer à modifier"
+      onConfirm={onDiscard}
+      onCancel={onContinue}
+      className="start-[max(16px,env(safe-area-inset-left))] top-[calc(max(12px,env(safe-area-inset-top))+68px)] w-[270px]"
+    />
+  )
+}
+
+interface ConfirmDialogProps {
+  message: string
+  /** Choix destructeur, en rouge. */
+  confirmLabel: string
+  /** Choix sans perte, en gras, qui reçoit le focus. */
+  cancelLabel: string
+  onConfirm(): void
+  onCancel(): void
+  /** Position et largeur de la fenêtre (classes `absolute`), ou `style` pour une position calculée. */
+  className?: string
+  style?: CSSProperties
+}
+
+/**
+ * Petite fenêtre de confirmation (✕ avec modifications, suppression d'une carte #73) : voile sombre, fond presque
+ * opaque (`--glass-solid`) : le rouge reste ≥ 4,5:1 malgré le voile. Échap ou tap sur le voile = annuler. Rendue dans
+ * <body> (au-dessus des barres `sticky`, jamais dans une surface floutée : pas de flou imbriqué).
+ */
+export function ConfirmDialog({ message, confirmLabel, cancelLabel, onConfirm, onCancel, className = '', style }: ConfirmDialogProps) {
   const keep = useRef<HTMLButtonElement>(null)
   const box = useRef<HTMLDivElement>(null)
-  const latest = useRef(onContinue)
-  useEffect(() => { latest.current = onContinue })
-  // Monté une seule fois : focus posé sur « Continuer à modifier », Échap, piège de Tab dans la fenêtre, puis focus
-  // rendu à l'élément d'origine (le ✕) à la fermeture.
+  const latest = useRef(onCancel)
+  useEffect(() => { latest.current = onCancel })
+  // Monté une seule fois : focus posé sur le choix sans perte, Échap, piège de Tab dans la fenêtre, puis focus
+  // rendu à l'élément d'origine à la fermeture.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
     keep.current?.focus()
@@ -69,24 +100,24 @@ export function DiscardDialog({ onDiscard, onContinue }: { onDiscard(): void; on
     window.addEventListener('keydown', onKey)
     return () => { window.removeEventListener('keydown', onKey); opener?.focus() }
   }, [])
-  const row = 'flex h-[50px] w-full items-center border-t border-black/10 px-[18px] text-start text-[17px] leading-[22px] hover:bg-black/5 active:bg-black/10 dark:border-white/12 dark:hover:bg-white/8 dark:active:bg-white/12'
-  return (
+  const id = useId()
+  const row = 'flex h-[50px] w-full cursor-pointer items-center border-t border-black/10 px-[18px] text-start text-[17px] leading-[22px] hover:bg-black/5 active:bg-black/10 dark:border-white/12 dark:hover:bg-white/8 dark:active:bg-white/12'
+  return createPortal(
     <div className="fixed inset-0 z-40">
-      <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onContinue} />
+      <div aria-hidden="true" className="absolute inset-0 bg-black/40" onClick={onCancel} />
       <div
         ref={box}
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="discard-message"
-        style={{ backgroundColor: 'var(--glass-solid)' }}
-        className="glass absolute start-[max(16px,var(--k-safe-area-left))] top-[calc(max(12px,var(--k-safe-area-top))+68px)] w-[270px] overflow-hidden rounded-[22px] text-black dark:text-white"
+        aria-labelledby={id}
+        style={{ backgroundColor: 'var(--glass-solid)', ...style }}
+        className={`glass absolute overflow-hidden rounded-[22px] text-black dark:text-white ${className}`}
       >
-        <p id="discard-message" className="px-[18px] pt-3.5 pb-3 text-[13px] leading-[18px] text-label-2">
-          Tes modifications ne seront pas enregistrées.
-        </p>
-        <button type="button" onClick={onDiscard} className={`${row} font-medium text-again`}>Ignorer les modifications</button>
-        <button type="button" ref={keep} onClick={onContinue} className={`${row} font-semibold`}>Continuer à modifier</button>
+        <p id={id} className="px-[18px] pt-3.5 pb-3 text-[13px] leading-[18px] text-label-2">{message}</p>
+        <button type="button" onClick={onConfirm} className={`${row} font-medium text-again`}>{confirmLabel}</button>
+        <button type="button" ref={keep} onClick={onCancel} className={`${row} font-semibold`}>{cancelLabel}</button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

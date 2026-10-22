@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { VaultDB } from './db'
-import { CardValidationError, createManualCard, deleteManualCard, FRONT_MAX, BACK_MAX, updateCard, validateManualCard } from './cards'
+import { CardValidationError, createManualCard, deleteCard, deleteManualCard, FRONT_MAX, BACK_MAX, updateCard, validateManualCard } from './cards'
 import { buildQueue } from './session'
 import { homeStats } from './home'
 import { pendingCount } from './sync'
@@ -139,5 +139,24 @@ describe('deleteManualCard', () => {
     await deleteManualCard(db, card.id, { now: () => NOW })
     await deleteManualCard(db, card.id, { now: () => new Date('2030-01-01T00:00:00.000Z') })
     expect((await db.cards.get(card.id))!.deleted_at).toBe(NOW.toISOString())
+  })
+})
+
+describe('deleteCard (#73)', () => {
+  it('suppression douce de toute carte active (vault, manual, inbox validée) ; deux fois sans effet', async () => {
+    await db.cards.add({ id: 'v', source: 'vault', deck: 'd', source_path: 'd/v.md', tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null, synced: 1 })
+    await db.cards.add({ id: 'i', source: 'inbox', status: 'active', inbox_id: 'x', deck: null, source_path: null, tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
+    const manual = await createManualCard(db, { front: 'Q', back: 'R', tags: ['ia'] }, opts())
+    for (const id of ['v', 'i', manual.id]) await deleteCard(db, id, { now: () => NOW })
+    for (const id of ['v', 'i', manual.id]) expect(await db.cards.get(id)).toMatchObject({ deleted_at: NOW.toISOString(), synced: 0, front: 'Q' })
+    await deleteCard(db, 'v', { now: () => new Date('2030-01-01T00:00:00.000Z') })
+    expect((await db.cards.get('v'))!.deleted_at).toBe(NOW.toISOString())
+  })
+
+  it('refuse une carte inconnue ou un brouillon', async () => {
+    await expect(deleteCard(db, 'nope')).rejects.toThrow('carte introuvable')
+    await db.cards.add({ id: 'd', source: 'inbox', status: 'draft', inbox_id: 'i', deck: null, source_path: null, tags: ['ia'], front: 'Q', back: 'R', updated_at: 't', deleted_at: null })
+    await expect(deleteCard(db, 'd')).rejects.toThrow('carte introuvable')
+    expect((await db.cards.get('d'))!.deleted_at).toBeNull()
   })
 })
