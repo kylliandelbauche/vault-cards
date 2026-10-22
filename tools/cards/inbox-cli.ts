@@ -25,7 +25,8 @@ interface Item { id: string; kind: 'text' | 'file'; status: string; text: string
  * quand une carte active le porte (carte du vault à apply, brouillon à sa validation dans l'app).
  */
 export async function fetchTagNames(db: SupabaseClient): Promise<string[]> {
-  // Pagination par clé (#70) sur l'id du tag : l'ordre des noms n'a pas d'importance pour les appelants (tagCounts trie).
+  // Pagination par clé (#70) sur l'id du tag, puis noms triés A–Z en mémoire : même ordre que l'ancien `order('name')`
+  // de la base (collation ICU en-US), que `scan` affiche tel quel.
   const rows = await readAllByKey<{ id: string; name: string }>(async (after, limit) => {
     let query = db.from('tags').select('id, name')
     if (after !== null) query = query.gt('id', after)
@@ -33,7 +34,8 @@ export async function fetchTagNames(db: SupabaseClient): Promise<string[]> {
     if (error) fail('lecture des tags', error)
     return data
   })
-  return rows.map(t => t.name)
+  const collate = new Intl.Collator('en-US').compare
+  return rows.map(t => t.name).sort((a, b) => collate(a, b) || (a < b ? -1 : a > b ? 1 : 0))
 }
 
 async function getItem(db: SupabaseClient, id: string): Promise<Item> {

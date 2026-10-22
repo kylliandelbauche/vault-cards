@@ -325,8 +325,8 @@ export function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * Taille de page des lectures complètes. Une page plus courte signifie « fin des données » : elle ne doit pas
- * dépasser `max_rows` de l'API Supabase (1000 par défaut), sinon la lecture s'arrêterait trop tôt sans erreur.
+ * Taille de page des lectures complètes (1000 = `max_rows` par défaut de l'API Supabase). Elle n'a pas besoin d'y être
+ * égale : la lecture ne s'arrête que sur une page vide, donc un plafond plus bas du serveur ralentit sans tronquer.
  */
 export const KEYSET_PAGE_SIZE = 1000
 
@@ -335,7 +335,8 @@ export const KEYSET_PAGE_SIZE = 1000
  * au plus `limit` lignes d'`id` strictement supérieur à `after` (tout depuis le début si `after` est null), triées par
  * `id`. Contrairement à un décalage `.range()`, une ligne ajoutée ou modifiée pendant la lecture ne décale pas les
  * suivantes : aucune ligne n'est sautée ni lue deux fois (`id` est unique et ne change jamais). Même principe que
- * `src/lib/sync.ts`, avec `id` seul comme clé : la lecture est complète, pas incrémentale.
+ * `src/lib/sync.ts`, avec `id` seul comme clé : la lecture est complète, pas incrémentale. Seule une page vide termine
+ * la lecture (une page plus courte que `size` peut venir d'un plafond serveur) : un appel de plus, jamais de troncature.
  */
 export async function readAllByKey<T extends { id: string }>(
   page: (after: string | null, limit: number) => Promise<T[]>,
@@ -352,7 +353,7 @@ export async function readAllByKey<T extends { id: string }>(
       after = row.id
       rows.push(row)
     }
-    if (got.length < size) return rows
+    if (got.length === 0) return rows
   }
 }
 
@@ -363,9 +364,12 @@ export async function readAllByKey<T extends { id: string }>(
  */
 export function sortCardsForOutput<T extends { id: string; source_path: string; created_at: string }>(cards: readonly T[]): T[] {
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-  // Les chemins sont triés comme le faisait Postgres (collation ICU, emoji compris : vérifié sur la vraie base),
-  // pas par unités de code UTF-16 qui placeraient les emoji dans un autre ordre.
-  const byPathCollation = new Intl.Collator('en').compare
+  // Les chemins sont triés comme le faisait `order('source_path')` côté base. Relevé en lecture seule (pg_database) :
+  // fournisseur ICU (datlocprovider = i), locale en-US, colonne sans collation propre. Intl.Collator('en-US') en est
+  // l'équivalent côté Node ; sur les 23 notes réelles (emoji compris), l'ordre obtenu est identique à celui de la base.
+  // Une version d'ICU différente pourrait classer autrement des caractères rares : l'ordre n'est pas une garantie.
+  // Un tri par unités de code UTF-16 placerait les emoji autrement (voir le test).
+  const byPathCollation = new Intl.Collator('en-US').compare
   // Secondes entières (Date.parse) puis fraction à 6 chiffres (microsecondes de Postgres, que Date perdrait).
   const instant = (iso: string) => {
     const m = /^(.*?)(?:\.(\d+))?(Z|[+-]\d\d(?::?\d\d)?)$/.exec(iso)
