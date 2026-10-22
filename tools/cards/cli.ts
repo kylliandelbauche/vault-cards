@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  DECK, REMOVED_HASH, canonicalTags, hashContent, tagCounts, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, readAllByKey, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
+  DECK, REMOVED_HASH, canonicalTags, hashContent, tagCounts, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, readAllByKey, sortCardsForOutput, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
   type ExistingCard, type NoteRow, type RelinkState, type RetagTarget, type TitledCard,
 } from './lib.ts'
 import { extractTitle } from '../../shared/source-title.ts'
@@ -66,12 +66,16 @@ async function fetchExisting(db: SupabaseClient, sourcePath: string): Promise<(E
 
 /** Toutes les cartes vivantes (lecture seule) : base de la procédure de re-tag. */
 async function fetchAll(db: SupabaseClient) {
-  const { data, error } = await vaultOnly(db.from('cards').select('id, source_path, source_title, front, back, tags'))
-    .is('deleted_at', null)
-    .order('source_path')
-    .order('created_at')
-  if (error) fail('lecture des cartes', error)
-  return data
+  // Pagination par clé (#70, #100) : PostgREST plafonne à 1000 lignes, au-delà la liste serait tronquée sans erreur.
+  // L'ordre de sortie (source_path, created_at) est rétabli en mémoire ; created_at ne fait pas partie de la sortie.
+  const rows = await readAllByKey<{ id: string; source_path: string; source_title: string | null; front: string; back: string; tags: string[]; created_at: string }>(async (after, limit) => {
+    let query = vaultOnly(db.from('cards').select('id, source_path, source_title, front, back, tags, created_at')).is('deleted_at', null)
+    if (after !== null) query = query.gt('id', after)
+    const { data, error } = await query.order('id').limit(limit)
+    if (error) fail('lecture des cartes', error)
+    return data
+  })
+  return sortCardsForOutput(rows).map(c => ({ id: c.id, source_path: c.source_path, source_title: c.source_title, front: c.front, back: c.back, tags: c.tags }))
 }
 
 /** Un `source_path` par carte vivante des notes données. Paquets de chemins (URL courte) et pagination (plafond PostgREST de 1000 lignes). */

@@ -356,6 +356,33 @@ export async function readAllByKey<T extends { id: string }>(
   }
 }
 
+/**
+ * Ordre de sortie de la commande `all` : `source_path`, puis `created_at`, puis `id` (départage stable : des cartes
+ * ajoutées par un même `apply` partagent le même `created_at`). Tri en mémoire, après une lecture paginée par `id`.
+ * `created_at` est comparé comme instant (PostgREST supprime les zéros finaux des fractions : pas de tri textuel).
+ */
+export function sortCardsForOutput<T extends { id: string; source_path: string; created_at: string }>(cards: readonly T[]): T[] {
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+  // Les chemins sont triés comme le faisait Postgres (collation ICU, emoji compris : vérifié sur la vraie base),
+  // pas par unités de code UTF-16 qui placeraient les emoji dans un autre ordre.
+  const byPathCollation = new Intl.Collator('en').compare
+  // Secondes entières (Date.parse) puis fraction à 6 chiffres (microsecondes de Postgres, que Date perdrait).
+  const instant = (iso: string) => {
+    const m = /^(.*?)(?:\.(\d+))?(Z|[+-]\d\d(?::?\d\d)?)$/.exec(iso)
+    if (!m) throw new Error(`created_at illisible : ${iso}`)
+    const ms = Date.parse(m[1] + m[3])
+    if (Number.isNaN(ms)) throw new Error(`created_at illisible : ${iso}`)
+    return { ms, frac: (m[2] ?? '').padEnd(6, '0') }
+  }
+  return [...cards].sort((a, b) => {
+    const byPath = byPathCollation(a.source_path, b.source_path) || cmp(a.source_path, b.source_path)
+    if (byPath) return byPath
+    const x = instant(a.created_at)
+    const y = instant(b.created_at)
+    return x.ms - y.ms || cmp(x.frac, y.frac) || cmp(a.id, b.id)
+  })
+}
+
 /** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */
 export function countLiveCards(removed: string[], liveRows: { source_path: string }[]): { source_path: string; live_cards: number }[] {
   const counts = new Map<string, number>()

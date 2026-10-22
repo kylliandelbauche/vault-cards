@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { readAllByKey, KEYSET_PAGE_SIZE } from './lib.ts'
+import { readAllByKey, sortCardsForOutput, KEYSET_PAGE_SIZE } from './lib.ts'
 import { fetchTagNames } from './inbox-cli.ts'
 
 describe('readAllByKey (#70 : pagination par clé, plus de .range())', () => {
@@ -137,6 +137,64 @@ describe('fetchTagNames (#70) : pagination par clé sur la table tags', () => {
     const { db, queries } = fakeDb(tags)
     expect(await fetchTagNames(db)).toHaveLength(1000)
     expect(queries).toHaveLength(2)
+  })
+})
+
+describe('sortCardsForOutput (#100) : ordre de la commande all après lecture par id', () => {
+  const card = (id: string, source_path: string, created_at: string) => ({ id, source_path, created_at })
+
+  it('trie par source_path, puis created_at, puis id', () => {
+    const got = sortCardsForOutput([
+      card('3', 'b.md', '2026-10-12T10:00:00+00:00'),
+      card('2', 'a.md', '2026-10-12T11:00:00+00:00'),
+      card('1', 'a.md', '2026-10-12T10:00:00+00:00'),
+      card('5', 'a.md', '2026-10-12T11:00:00+00:00'), // même created_at que 2 : départage par id
+    ])
+    expect(got.map(c => c.id)).toEqual(['1', '2', '5', '3'])
+  })
+
+  it('compare created_at comme un instant : fractions sans zéros finaux, microsecondes, fuseau', () => {
+    const got = sortCardsForOutput([
+      card('a', 'x', '2026-10-12T10:00:00.5+00:00'), // .5 = .500000 > .123456
+      card('b', 'x', '2026-10-12T10:00:00.123456+00:00'),
+      card('c', 'x', '2026-10-12T10:00:00.123457+00:00'),
+      card('d', 'x', '2026-10-12T10:00:00+00:00'),
+      card('e', 'x', '2026-10-12T12:00:00+02:00'), // = 10:00:00Z, même instant que d : id
+    ])
+    expect(got.map(c => c.id)).toEqual(['d', 'e', 'b', 'c', 'a'])
+  })
+
+  it('ne modifie pas le tableau reçu et refuse une date illisible', () => {
+    const input = [card('2', 'b', '2026-10-12T10:00:00+00:00'), card('1', 'a', '2026-10-12T10:00:00+00:00')]
+    sortCardsForOutput(input)
+    expect(input.map(c => c.id)).toEqual(['2', '1'])
+    expect(() => sortCardsForOutput([card('1', 'a', 'hier'), card('2', 'a', 'demain')])).toThrow(/illisible/)
+  })
+
+  it('lecture paginée puis tri : même résultat que l’ancien tri serveur, au-delà de 1000 cartes', async () => {
+    const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
+    // 2500 cartes dont l'ordre d'id est sans rapport avec (source_path, created_at).
+    const rows = Array.from({ length: 2500 }, (_, i) => ({
+      id: id(i + 1),
+      source_path: `note ${(i * 7) % 13}.md`,
+      created_at: new Date(Date.UTC(2026, 9, 1) + ((i * 31) % 2500) * 1000).toISOString().replace('Z', '+00:00'),
+    }))
+    const page = async (after: string | null, limit: number) => rows.filter(r => after === null || r.id > after).sort((a, b) => (a.id < b.id ? -1 : 1)).slice(0, limit)
+    const got = sortCardsForOutput(await readAllByKey(page))
+    expect(got).toHaveLength(2500)
+    expect(new Set(got.map(c => c.id)).size).toBe(2500)
+    const collate = new Intl.Collator('en').compare
+    for (let i = 1; i < got.length; i++) {
+      const [p, c] = [got[i - 1], got[i]]
+      const byPath = collate(p.source_path, c.source_path)
+      expect(byPath < 0 || (byPath === 0 && p.created_at <= c.created_at)).toBe(true)
+    }
+  })
+
+  it('chemins avec emoji : même ordre que la base (collation, pas unités de code UTF-16)', () => {
+    // Ordre relevé sur la vraie base (#100) : 🤖 🧠 puis 😴 🚫 ; un tri par unités de code donnerait 😴 🚫 🤖 🧠.
+    const paths = ['🚫', '😴', '🧠', '🤖'].map((p, i) => card(String(i), `${p} a.md`, '2026-10-12T10:00:00+00:00'))
+    expect(sortCardsForOutput(paths).map(c => c.source_path[0] + c.source_path[1])).toEqual(['🤖', '🧠', '😴', '🚫'])
   })
 })
 
