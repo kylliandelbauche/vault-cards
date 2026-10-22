@@ -4,7 +4,7 @@
 // dans le dossier de l'exécution (RUN_DIR) pour que l'agent le lise, et traité comme de la donnée.
 import fs from 'node:fs/promises'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { canonicalTags, chunk } from './lib.ts'
+import { canonicalTags, chunk, readAllByKey } from './lib.ts'
 import { INBOX_SOURCE, PENDING_EXPIRY_MS, STALE_MS, assertRunDir, claimPath, fileProblem, payloadPath, readPayload, shortError, validateInboxPayload, type InboxCommand } from './inbox.ts'
 
 const BUCKET = 'inbox'
@@ -25,13 +25,15 @@ interface Item { id: string; kind: 'text' | 'file'; status: string; text: string
  * quand une carte active le porte (carte du vault à apply, brouillon à sa validation dans l'app).
  */
 export async function fetchTagNames(db: SupabaseClient): Promise<string[]> {
-  const names: string[] = []
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await db.from('tags').select('name').order('name').range(from, from + 999)
+  // Pagination par clé (#70) sur l'id du tag : l'ordre des noms n'a pas d'importance pour les appelants (tagCounts trie).
+  const rows = await readAllByKey<{ id: string; name: string }>(async (after, limit) => {
+    let query = db.from('tags').select('id, name')
+    if (after !== null) query = query.gt('id', after)
+    const { data, error } = await query.order('id').limit(limit)
     if (error) fail('lecture des tags', error)
-    names.push(...(data as { name: string }[]).map(t => t.name))
-    if (data.length < 1000) return names
-  }
+    return data
+  })
+  return rows.map(t => t.name)
 }
 
 async function getItem(db: SupabaseClient, id: string): Promise<Item> {

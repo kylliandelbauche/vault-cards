@@ -324,6 +324,38 @@ export function chunk<T>(items: T[], size: number): T[][] {
   return out
 }
 
+/**
+ * Taille de page des lectures complètes. Une page plus courte signifie « fin des données » : elle ne doit pas
+ * dépasser `max_rows` de l'API Supabase (1000 par défaut), sinon la lecture s'arrêterait trop tôt sans erreur.
+ */
+export const KEYSET_PAGE_SIZE = 1000
+
+/**
+ * Lit toutes les lignes d'une requête, page par page, en pagination par clé (keyset, #70) : `page(after, limit)` renvoie
+ * au plus `limit` lignes d'`id` strictement supérieur à `after` (tout depuis le début si `after` est null), triées par
+ * `id`. Contrairement à un décalage `.range()`, une ligne ajoutée ou modifiée pendant la lecture ne décale pas les
+ * suivantes : aucune ligne n'est sautée ni lue deux fois (`id` est unique et ne change jamais). Même principe que
+ * `src/lib/sync.ts`, avec `id` seul comme clé : la lecture est complète, pas incrémentale.
+ */
+export async function readAllByKey<T extends { id: string }>(
+  page: (after: string | null, limit: number) => Promise<T[]>,
+  size: number = KEYSET_PAGE_SIZE,
+): Promise<T[]> {
+  if (!Number.isInteger(size) || size < 1) throw new Error('readAllByKey : taille invalide')
+  const rows: T[] = []
+  let after: string | null = null
+  for (;;) {
+    const got: T[] = await page(after, size)
+    if (got.length > size) throw new Error(`lecture paginée : ${got.length} lignes reçues pour une page de ${size} au plus`)
+    for (const row of got) {
+      if (after !== null && !(row.id > after)) throw new Error('lecture paginée : lignes non triées par id (ligne lue deux fois ou ordre inattendu)')
+      after = row.id
+      rows.push(row)
+    }
+    if (got.length < size) return rows
+  }
+}
+
 /** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */
 export function countLiveCards(removed: string[], liveRows: { source_path: string }[]): { source_path: string; live_cards: number }[] {
   const counts = new Map<string, number>()

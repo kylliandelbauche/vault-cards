@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  DECK, REMOVED_HASH, canonicalTags, hashContent, tagCounts, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
+  DECK, REMOVED_HASH, canonicalTags, hashContent, tagCounts, isSynthese, planRelink, resolveNotesDir, validateRelinkPayload, assertContentHashFresh, assertDeckMatchesPath, assertDeleteConfirmed, assertRemovedNoteGone, chunk, computeScan, readAllByKey, cardsNeedingTitle, planTitles, resolveInVault, countLiveCards, parseArgs, USAGE, diffCards, listSyntheses, planRetag, validatePayload, validateRetagPayload, vaultOnly, VAULT_SOURCE,
   type ExistingCard, type NoteRow, type RelinkState, type RetagTarget, type TitledCard,
 } from './lib.ts'
 import { extractTitle } from '../../shared/source-title.ts'
@@ -76,20 +76,17 @@ async function fetchAll(db: SupabaseClient) {
 
 /** Un `source_path` par carte vivante des notes données. Paquets de chemins (URL courte) et pagination (plafond PostgREST de 1000 lignes). */
 const PATHS_PER_QUERY = 20 // chemins longs + emojis encodés : on reste loin de la limite de longueur d'URL
-const PAGE_SIZE = 1000
 async function fetchLiveCardPaths(db: SupabaseClient, paths: string[]): Promise<{ source_path: string }[]> {
   const rows: { source_path: string }[] = []
   for (const group of chunk(paths, PATHS_PER_QUERY)) {
-    for (let from = 0; ; from += PAGE_SIZE) {
-      const { data, error } = await vaultOnly(db.from('cards').select('source_path'))
-        .in('source_path', group)
-        .is('deleted_at', null)
-        .order('id')
-        .range(from, from + PAGE_SIZE - 1)
+    // Pagination par clé (#70) : une carte modifiée pendant la lecture ne fait sauter ni répéter aucune autre.
+    rows.push(...await readAllByKey<{ id: string; source_path: string }>(async (after, limit) => {
+      let query = vaultOnly(db.from('cards').select('id, source_path')).in('source_path', group).is('deleted_at', null)
+      if (after !== null) query = query.gt('id', after)
+      const { data, error } = await query.order('id').limit(limit)
       if (error) fail('lecture des cartes', error)
-      rows.push(...data)
-      if (data.length < PAGE_SIZE) break
-    }
+      return data
+    }))
   }
   return rows
 }
@@ -109,13 +106,13 @@ async function scan() {
 /** Tags existants (#79), A–Z, avec leur nombre de cartes vivantes du vault. Lecture seule. */
 async function tags(db: SupabaseClient) {
   const names = await fetchTagNames(db)
-  const cards: { tags: string[] }[] = []
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await vaultOnly(db.from('cards').select('tags')).is('deleted_at', null).order('id').range(from, from + PAGE_SIZE - 1)
+  const cards = await readAllByKey<{ id: string; tags: string[] }>(async (after, limit) => {
+    let query = vaultOnly(db.from('cards').select('id, tags')).is('deleted_at', null)
+    if (after !== null) query = query.gt('id', after)
+    const { data, error } = await query.order('id').limit(limit)
     if (error) fail('lecture des cartes', error)
-    cards.push(...(data as { tags: string[] }[]))
-    if (data.length < PAGE_SIZE) break
-  }
+    return data
+  })
   return tagCounts(names, cards)
 }
 
@@ -214,16 +211,13 @@ async function retag(db: SupabaseClient, file: string) {
  * Refuse tout (rien d'écrit) si un fichier source est introuvable.
  */
 async function titles(db: SupabaseClient) {
-  const cards: TitledCard[] = []
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await vaultOnly(db.from('cards').select('id, source_path, source_title'))
-      .is('deleted_at', null)
-      .order('id')
-      .range(from, from + PAGE_SIZE - 1)
+  const cards = await readAllByKey<TitledCard>(async (after, limit) => {
+    let query = vaultOnly(db.from('cards').select('id, source_path, source_title')).is('deleted_at', null)
+    if (after !== null) query = query.gt('id', after)
+    const { data, error } = await query.order('id').limit(limit)
     if (error) fail('lecture des cartes', error)
-    cards.push(...(data as TitledCard[]))
-    if (data.length < PAGE_SIZE) break
-  }
+    return data as TitledCard[]
+  })
   const found = new Map<string, string>()
   for (const source_path of new Set(cards.map(c => c.source_path))) {
     try {
