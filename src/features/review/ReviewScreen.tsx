@@ -1,7 +1,12 @@
 import { Page, Preloader, Progressbar } from 'konsta/react'
+import { useState } from 'react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { BarTitle, EDGES, TopBar } from '../../components/TopBar'
+import type { VaultDB } from '../../lib/db'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
+import type { Card } from '../../lib/types'
+import { EditForm } from '../inbox/EditCardScreen'
+import { CardMenu, DeleteCardDialog } from './CardMenu'
 import { CardView } from './CardView'
 import { DoneScreen } from './DoneScreen'
 import { RatingBar } from './RatingBar'
@@ -13,6 +18,8 @@ export const DAY_TITLE = 'Révision du jour'
 
 interface Props {
   session: ReviewSession
+  /** Cache local : tags proposés dans « Modifier la carte » (menu ⋯, #73). */
+  db: VaultDB
   now: () => Date
   /** Titre de la barre selon l'entrée (Paper, note « titre selon l'entrée ») : nom du tag, ou « Révision du jour ». */
   title?: string
@@ -22,16 +29,51 @@ interface Props {
   backLabel?: string
   /** « Retour à l'accueil » de l'écran de fin (par défaut : onBack). */
   onHome?(): void
+  /** Après une modification ou une suppression locale (menu ⋯) : synchro immédiate. */
+  onWrite?(): void
 }
+
+/** Menu ⋯ (#73) : fermé, ouvert sous le bouton, ou confirmation de suppression au même endroit. */
+type MenuState = { open: 'menu' | 'confirm'; anchor: DOMRect } | null
 
 /**
  * Révision (#82, Paper « Révision · Question / Réponse ») : barre commune (flèche, titre selon l'entrée,
  * sous-titre « Carte n sur N », Recherche, Profil), barre de progression fine dessous. Le reste ne change pas.
  */
-export function ReviewScreen({ session, now, title = DAY_TITLE, onBack, backLabel, onHome = onBack }: Props) {
-  useReviewKeys(session)
+export function ReviewScreen({ session, db, now, title = DAY_TITLE, onBack, backLabel, onHome = onBack, onWrite }: Props) {
+  const [menu, setMenu] = useState<MenuState>(null)
+  // Carte en cours de modification (instantané à l'ouverture) : « Modifier la carte » remplace la révision.
+  const [editing, setEditing] = useState<Card | null>(null)
+  const [deleteFailed, setDeleteFailed] = useState(false)
+  useReviewKeys(session, editing !== null)
   const { status, current, revealed } = session
   const reviewing = status === 'reviewing'
+
+  if (editing) {
+    return (
+      <EditForm
+        key={editing.id}
+        db={db}
+        title="Modifier la carte"
+        initial={editing}
+        source={editing.source_title?.trim() || undefined}
+        minTags={editing.source === 'vault' ? 0 : 1}
+        onClose={() => setEditing(null)}
+        save={async patch => { await session.edit(patch); onWrite?.() }}
+      />
+    )
+  }
+
+  const confirmDelete = async () => {
+    setMenu(null)
+    try {
+      await session.remove()
+      setDeleteFailed(false)
+      onWrite?.()
+    } catch {
+      setDeleteFailed(true)
+    }
+  }
 
   // La page entière est le conteneur de défilement ; les barres en verre sont `sticky` et se
   // superposent au contenu qui passe dessous. Une carte courte tient sans scroll (#27) ; une carte
@@ -72,13 +114,26 @@ export function ReviewScreen({ session, now, title = DAY_TITLE, onBack, backLabe
         {status === 'done' && (
           <DoneScreen stats={session.stats} nextDueAt={session.nextDueAt} now={now()} onRestart={session.reviewAll} onHome={onHome} />
         )}
-        {current && <CardView card={current.card} revealed={revealed} onReveal={session.reveal} />}
+        {current && (
+          <CardView
+            card={current.card}
+            revealed={revealed}
+            onReveal={session.reveal}
+            menuOpen={menu?.open === 'menu'}
+            onMenu={button => setMenu({ open: 'menu', anchor: button.getBoundingClientRect() })}
+          />
+        )}
       </main>
 
       {current && (
         // Zone du bas transparente (#39) : chaque bouton est son propre verre et flotte sur le fond.
         <footer className={`action-dock sticky bottom-0 z-20 shrink-0 pt-2 pb-[max(12px,var(--k-safe-area-bottom))] ${EDGES}`}>
           <div className="mx-auto max-w-xl">
+            {deleteFailed && (
+              <p role="alert" className="mx-auto mb-1.5 w-fit rounded-full bg-again-tint px-3 py-0.5 text-center text-[15px] text-again">
+                Carte non supprimée. Réessaie.
+              </p>
+            )}
             {session.saveFailed && (
               <p role="alert" className="mx-auto mb-1.5 w-fit rounded-full bg-again-tint px-3 py-0.5 text-center text-[15px] text-again">
                 Note non enregistrée. Réessaie.
@@ -92,6 +147,17 @@ export function ReviewScreen({ session, now, title = DAY_TITLE, onBack, backLabe
             </div>
           </div>
         </footer>
+      )}
+      {current && menu?.open === 'menu' && (
+        <CardMenu
+          anchor={menu.anchor}
+          onClose={() => setMenu(null)}
+          onEdit={() => { setMenu(null); setDeleteFailed(false); setEditing(current.card) }}
+          onDelete={() => setMenu({ ...menu, open: 'confirm' })}
+        />
+      )}
+      {current && menu?.open === 'confirm' && (
+        <DeleteCardDialog anchor={menu.anchor} onConfirm={() => void confirmDelete()} onCancel={() => setMenu(null)} />
       )}
     </Page>
   )

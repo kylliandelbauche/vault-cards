@@ -21,6 +21,73 @@ describe('useReviewSession', () => {
     expect(result.current.current!.card.id).not.toBe(first)
     expect(result.current.revealed).toBe(false)
   })
+  describe('menu ⋯ (#73)', () => {
+    it('modifier : même carte, même face, texte mis à jour, aucune note', async () => {
+      const store = memoryStore(cards)
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      const id = result.current.current!.card.id
+      act(() => result.current.reveal())
+      await act(async () => result.current.edit({ front: 'Nouvelle question', back: 'Nouvelle réponse', tags: ['Mémoire'] }))
+      expect(result.current.current!.card).toMatchObject({ id, front: 'Nouvelle question', back: 'Nouvelle réponse', tags: ['Mémoire'] })
+      expect(result.current.revealed).toBe(true)
+      expect(result.current.position).toEqual({ n: 1, total: 2 })
+      expect(await store.loadReviews()).toHaveLength(0)
+      expect((await store.loadCards()).find(c => c.id === id)!.front).toBe('Nouvelle question')
+    })
+
+    it('modifier en échec : rejette, la carte affichée ne change pas', async () => {
+      const store: ReviewStore = { ...memoryStore(cards), updateCard: async () => { throw new Error('IndexedDB indisponible') } }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      const before = result.current.current!.card
+      await act(async () => { await expect(result.current.edit({ front: 'X', back: 'Y', tags: [] })).rejects.toThrow() })
+      expect(result.current.current!.card).toEqual(before)
+    })
+
+    it('supprimer : carte suivante, aucune note comptée, « sur N » réduit, plus proposée', async () => {
+      const store = memoryStore(cards)
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      const first = result.current.current!.card.id
+      act(() => result.current.reveal())
+      await act(async () => result.current.remove())
+      expect(result.current.current!.card.id).not.toBe(first)
+      expect(result.current.revealed).toBe(false)
+      expect(result.current.position).toEqual({ n: 1, total: 1 })
+      expect(result.current.progress).toBe(0)
+      expect(result.current.stats).toEqual({ again: 0, hard: 0, good: 0 })
+      expect(await store.loadReviews()).toHaveLength(0)
+      expect((await store.loadCards()).find(c => c.id === first)!.deleted_at).not.toBeNull()
+    })
+
+    it('supprimer une carte déjà ratée : « sur N » inchangé ; dernière carte → fin de session', async () => {
+      const store = memoryStore(cards)
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      act(() => result.current.reveal()); await act(async () => result.current.rate(1)) // ratée : revient à la fin
+      act(() => result.current.reveal()); await act(async () => result.current.rate(3))
+      expect(result.current.position).toEqual({ n: 2, total: 2 })
+      await act(async () => result.current.remove())
+      expect(result.current.status).toBe('done')
+      expect(result.current.stats).toEqual({ again: 1, hard: 0, good: 1 })
+    })
+
+    it('supprimer la seule carte : écran vide ; échec d’écriture : rejette, rien ne change', async () => {
+      const failing: ReviewStore = { ...memoryStore(cards), deleteCard: async () => { throw new Error('IndexedDB indisponible') } }
+      const a = renderHook(() => useReviewSession(failing, fixedNow))
+      await waitFor(() => expect(a.result.current.status).toBe('reviewing'))
+      const before = a.result.current.current!.card.id
+      await act(async () => { await expect(a.result.current.remove()).rejects.toThrow() })
+      expect(a.result.current.current!.card.id).toBe(before)
+      expect(a.result.current.position).toEqual({ n: 1, total: 2 })
+
+      const b = renderHook(() => useReviewSession(memoryStore([cards[0]]), fixedNow))
+      await waitFor(() => expect(b.result.current.status).toBe('reviewing'))
+      await act(async () => b.result.current.remove())
+      expect(b.result.current.status).toBe('empty')
+    })
+  })
   it('noter sans avoir révélé ne fait rien', async () => {
     const store = memoryStore(cards)
     const { result } = renderHook(() => useReviewSession(store, fixedNow))

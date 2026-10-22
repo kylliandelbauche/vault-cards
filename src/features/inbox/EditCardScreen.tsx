@@ -63,13 +63,15 @@ export function NewCardScreen({ db, onClose, onWrite }: { db: VaultDB; onClose()
 
 const EMPTY: ManualCardInput = { front: '', back: '', tags: [] }
 
-interface FormProps {
+export interface EditFormProps {
   db: VaultDB
   title: string
   initial: ManualCardInput
   /** Création : ✓ actif seulement quand question et réponse sont remplies ; sinon ✓ sans modification = fermer. */
   creating?: boolean
   source?: string
+  /** Nombre minimal de tags affiché (« 1 à 5 ») : 0 pour une carte du vault (« 5 au plus »). La règle vit dans cards.ts. */
+  minTags?: 0 | 1
   onClose(): void
   save(patch: ManualCardInput): Promise<unknown>
 }
@@ -79,7 +81,11 @@ const LABEL = 'px-1.5 text-[13px] leading-4 font-semibold tracking-[0.06em] text
 const FIELD = 'glass-card block w-full resize-none rounded-[22px] px-[18px] py-4 text-black outline-none focus:outline-2 focus:-outline-offset-2 focus:outline-new dark:text-white'
 const FIELD_LABEL: Record<CardValidationError['field'], string> = { front: 'Question', back: 'Réponse', tags: 'Tags' }
 
-function EditForm({ db, title, initial: card, creating = false, source, onClose, save }: FormProps) {
+/**
+ * Formulaire « Modifier la carte » / « Nouvelle carte » : brouillons (#81), création (#54), et toute carte depuis le
+ * menu ⋯ de la révision (#73).
+ */
+export function EditForm({ db, title, initial: card, creating = false, source, minTags = 1, onClose, save }: EditFormProps) {
   const [front, setFront] = useState(card.front)
   const [back, setBack] = useState(card.back)
   const [tags, setTags] = useState<string[]>([...card.tags])
@@ -130,7 +136,7 @@ function EditForm({ db, title, initial: card, creating = false, source, onClose,
           <textarea id="edit-back" rows={4} value={back} onChange={e => setBack(e.target.value)} className={`${FIELD} min-h-[150px] text-[17px] leading-6`} />
         </div>
         <fieldset className="flex flex-col gap-2">
-          <legend className={`${LABEL} mb-2`}>TAGS <span className="font-normal tracking-normal">· 1 à {MAX_TAGS}</span></legend>
+          <legend className={`${LABEL} mb-2`}>TAGS <span className="font-normal tracking-normal">· {minTags === 0 ? `${MAX_TAGS} au plus` : `1 à ${MAX_TAGS}`}</span></legend>
           <ul role="list" className="flex flex-wrap gap-2.5">
             {tags.map(name => (
               <li key={name}>

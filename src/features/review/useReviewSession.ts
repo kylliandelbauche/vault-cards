@@ -1,20 +1,36 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { stateFromReviews } from '../../lib/scheduler'
 import { buildQueue, countKinds, freeQueue, isLive, nextDue, type SessionItem } from '../../lib/session'
+import type { ManualCardInput } from '../../lib/cards'
 import type { Card, Rating, Review } from '../../lib/types'
 
 export interface ReviewStore {
   loadCards(): Promise<Card[]>
   loadReviews(): Promise<Review[]>
   addReview(r: Review): Promise<void>
+  /** Menu ⋯ (#73) : modifie question, réponse, tags (rejette CardValidationError si invalide) ; renvoie la carte écrite. */
+  updateCard(id: string, patch: ManualCardInput): Promise<Card>
+  /** Menu ⋯ (#73) : suppression douce. */
+  deleteCard(id: string): Promise<void>
 }
 
 export const memoryStore = (cards: Card[]): ReviewStore => {
   const reviews: Review[] = []
+  const all = [...cards]
   return {
-    loadCards: async () => [...cards],
+    loadCards: async () => [...all],
     loadReviews: async () => [...reviews],
     addReview: async r => { reviews.push(r) },
+    updateCard: async (id, patch) => {
+      const i = all.findIndex(c => c.id === id)
+      if (i < 0) throw new Error(`carte introuvable : ${id}`)
+      all[i] = { ...all[i], ...patch, tags: [...patch.tags] }
+      return all[i]
+    },
+    deleteCard: async id => {
+      const i = all.findIndex(c => c.id === id)
+      if (i >= 0) all[i] = { ...all[i], deleted_at: new Date().toISOString() }
+    },
   }
 }
 
@@ -52,6 +68,16 @@ export interface ReviewSession {
   restart(): void
   /** Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes (du tag), dues ou non. */
   reviewAll(): void
+  /**
+   * Menu ⋯ (#73) : enregistre la retouche de la carte affichée (cache local, puis synchro) et met à jour son texte ;
+   * même carte, même face, progression FSRS intacte. Rejette si l'écriture échoue (CardValidationError comprise).
+   */
+  edit(patch: ManualCardInput): Promise<void>
+  /**
+   * Menu ⋯ (#73) : suppression douce de la carte affichée, puis carte suivante. Aucune note comptée ; la carte sort
+   * de « Carte n sur N » si elle n'avait pas encore été notée. Rejette si l'écriture échoue (rien ne change).
+   */
+  remove(): Promise<void>
 }
 
 interface State {
@@ -96,7 +122,10 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   const live = useRef<State>(INITIAL)
   const cards = useRef<Card[]>([])
   const reviews = useRef<Review[]>([])
+  // Verrou d'écriture (note ou suppression) : posé avant tout await, un double tap n'écrit qu'une fois.
   const rating = useRef(false)
+  // Cartes déjà notées pendant cette session (une suppression ne retire du « sur N » qu'une carte jamais notée).
+  const rated = useRef(new Set<string>())
   // Numéro du dernier chargement lancé : un chargement plus ancien qui se termine après est ignoré.
   const generation = useRef(0)
   // Dernières valeurs de `store` / `now` / `scope`, lues par les gestionnaires sans en faire des dépendances.
@@ -119,6 +148,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
       const hasLiveCards = cs.some(isLive) // brouillons (#55) et cartes supprimées exclus
       cards.current = cs
       reviews.current = rs
+      rated.current = new Set()
       commit({
         ...INITIAL,
         scope: target,
@@ -172,6 +202,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         return
       }
       reviews.current = [...reviews.current, review]
+      rated.current.add(item.card.id)
       const updated = stateFromReviews(reviews.current.filter(x => x.card_id === item.card.id))
       const rest = live.current.queue.slice(1)
       const queue = r === 1 ? [...rest, { card: item.card, state: updated }] : rest
@@ -186,6 +217,53 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         processed: live.current.processed + 1,
         stats: { ...live.current.stats, [STAT_KEY[r]]: live.current.stats[STAT_KEY[r]] + 1 },
         nextDueAt: finished ? nextDue(cards.current, reviews.current, t, live.current.scope?.tag) : null,
+        shownAt: t.getTime(),
+      })
+    } finally {
+      rating.current = false
+    }
+  }, [commit])
+
+  const edit = useCallback(async (patch: ManualCardInput) => {
+    const s = live.current
+    const item = s.queue[0]
+    if (s.scope !== io.current.scope || s.status !== 'reviewing' || !item) throw new Error('aucune carte affichée')
+    const { store, now } = io.current
+    const updated = await store.updateCard(item.card.id, patch)
+    cards.current = cards.current.map(c => (c.id === updated.id ? updated : c))
+    const cur = live.current
+    if (cur.scope !== s.scope) return // session quittée pendant l'écriture : la carte est enregistrée, rien à afficher
+    commit({
+      ...cur,
+      queue: cur.queue.map(q => (q.card.id === updated.id ? { ...q, card: updated } : q)),
+      // Retour de « Modifier la carte » = changement d'écran : le 2e tap d'un double tap sur ✓ ne révèle rien.
+      shownAt: now().getTime(),
+    })
+  }, [commit])
+
+  const remove = useCallback(async () => {
+    const s = live.current
+    const item = s.queue[0]
+    if (rating.current || s.scope !== io.current.scope || s.status !== 'reviewing' || !item) return
+    const { store, now } = io.current
+    rating.current = true
+    try {
+      const id = item.card.id
+      await store.deleteCard(id)
+      const t = now()
+      cards.current = cards.current.map(c => (c.id === id ? { ...c, deleted_at: t.toISOString() } : c))
+      const cur = live.current
+      if (cur.scope !== s.scope) return
+      const queue = cur.queue.filter(q => q.card.id !== id)
+      const finished = queue.length === 0
+      commit({
+        ...cur,
+        status: finished ? (cards.current.some(isLive) ? 'done' : 'empty') : 'reviewing',
+        queue,
+        revealed: false,
+        saveFailed: false,
+        initial: rated.current.has(id) ? cur.initial : Math.max(0, cur.initial - 1),
+        nextDueAt: finished ? nextDue(cards.current, reviews.current, t, cur.scope?.tag) : null,
         shownAt: t.getTime(),
       })
     } finally {
@@ -219,5 +297,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     nextDueAt: state.nextDueAt,
     restart,
     reviewAll,
+    edit,
+    remove,
   }
 }

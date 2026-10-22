@@ -73,11 +73,13 @@ function SignedInScreens({ db, runSync, now, inbox }: Props) {
     return (
       <ReviewScreen
         session={session}
+        db={db}
         now={now}
         title={screen.scope.tag ?? DAY_TITLE}
         onBack={back}
         backLabel={previous?.name === 'tags' ? 'Mes tags' : 'Accueil'}
         onHome={goHome}
+        onWrite={syncNow}
       />
     )
   }

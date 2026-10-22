@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
+import { VaultDB } from '../../lib/db'
 import { stateFromReviews } from '../../lib/scheduler'
 import type { Card } from '../../lib/types'
 import { ReviewScreen } from './ReviewScreen'
-import type { ReviewSession } from './useReviewSession'
+import { memoryStore, useReviewSession, type ReviewSession, type ReviewStore } from './useReviewSession'
 
 const card: Card = { id: 'a', source: 'vault', deck: 'd', tags: ['ia'], source_path: 'd/a.md', front: 'Question ?', back: 'Réponse.', updated_at: '2026-10-13T00:00:00+00:00', deleted_at: null }
 const now = () => new Date('2026-10-13T10:00:00Z')
@@ -13,14 +14,17 @@ const now = () => new Date('2026-10-13T10:00:00Z')
 const session = (over: Partial<ReviewSession> = {}): ReviewSession => ({
   status: 'empty', current: null, revealed: false, saveFailed: false, reveal: vi.fn(), rate: vi.fn(),
   counts: { new: 0, learn: 0, due: 0 }, progress: 0, position: { n: 1, total: 1 }, stats: { again: 0, hard: 0, good: 0 }, nextDueAt: null, restart: vi.fn(), reviewAll: vi.fn(),
+  edit: vi.fn().mockResolvedValue(undefined), remove: vi.fn().mockResolvedValue(undefined),
   ...over,
 })
 const reviewing = (over: Partial<ReviewSession> = {}) =>
   session({ status: 'reviewing', current: { card, state: stateFromReviews([]) }, counts: { new: 1, learn: 0, due: 0 }, ...over })
 
 const renderScreen = (s: ReviewSession, title?: string) =>
-  render(<KApp theme="ios"><ReviewScreen session={s} now={now} title={title} /></KApp>)
+  render(<KApp theme="ios"><ReviewScreen db={db} session={s} now={now} title={title} /></KApp>)
 
+// Cache local (fake-indexeddb) : seulement lu par « Modifier la carte » (tags proposés).
+const db = new VaultDB('review-screen-test')
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 describe('ReviewScreen', () => {
@@ -177,7 +181,7 @@ describe('ReviewScreen', () => {
 
   it('fin de session : bilan sur une carte en verre, boutons en verre en dehors (3 surfaces, aucune imbriquée)', () => {
     const { container } = render(
-      <KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} onBack={vi.fn()} /></KApp>,
+      <KApp theme="ios"><ReviewScreen db={db} session={session({ status: 'done' })} now={now} onBack={vi.fn()} /></KApp>,
     )
     const restart = screen.getByRole('button', { name: 'Réviser à nouveau' })
     const home = screen.getByRole('button', { name: "Retour à l'accueil" })
@@ -190,14 +194,14 @@ describe('ReviewScreen', () => {
 
   it('fin de session : « Retour à l’accueil » appelle onBack', async () => {
     const onBack = vi.fn()
-    render(<KApp theme="ios"><ReviewScreen session={session({ status: 'done' })} now={now} onBack={onBack} /></KApp>)
+    render(<KApp theme="ios"><ReviewScreen db={db} session={session({ status: 'done' })} now={now} onBack={onBack} /></KApp>)
     await userEvent.setup().click(screen.getByRole('button', { name: "Retour à l'accueil" }))
     expect(onBack).toHaveBeenCalledTimes(1)
   })
 
   it('flèche retour ronde en tête de la barre du haut : étiquetée « Accueil », cible 48 px, appelle onBack', async () => {
     const onBack = vi.fn()
-    const { container } = render(<KApp theme="ios"><ReviewScreen session={reviewing()} now={now} onBack={onBack} /></KApp>)
+    const { container } = render(<KApp theme="ios"><ReviewScreen db={db} session={reviewing()} now={now} onBack={onBack} /></KApp>)
     const header = container.querySelector('header')!
     const btn = within(header).getByRole('button', { name: 'Accueil' })
     expect(btn.className).toMatch(/\bsize-12\b/)
@@ -209,5 +213,149 @@ describe('ReviewScreen', () => {
   it('sans onBack : pas de chevron', () => {
     renderScreen(reviewing())
     expect(screen.queryByRole('button', { name: 'Accueil' })).toBeNull()
+  })
+
+  describe('menu ⋯ de la carte (#73)', () => {
+    const menuButton = () => screen.getByRole('button', { name: 'Actions de la carte' })
+
+    it('⋯ en haut à droite de la carte (question et réponse) : cible 44 px, aria-haspopup / aria-expanded', () => {
+      const { container } = renderScreen(reviewing())
+      const btn = menuButton()
+      expect(container.querySelector('article')!.contains(btn)).toBe(true)
+      expect(btn.className).toMatch(/\bsize-11\b/)
+      expect(btn.getAttribute('aria-haspopup')).toBe('menu')
+      expect(btn.getAttribute('aria-expanded')).toBe('false')
+      cleanup()
+      renderScreen(reviewing({ revealed: true }))
+      expect(menuButton()).toBeTruthy()
+    })
+
+    it('ouvre le menu sans révéler la carte ; Modifier (focus) et Supprimer ; Échap ferme et rend le focus au ⋯', async () => {
+      const s = reviewing()
+      const { container } = renderScreen(s)
+      const user = userEvent.setup()
+      await user.click(menuButton())
+      expect(s.reveal).not.toHaveBeenCalled()
+      expect(menuButton().getAttribute('aria-expanded')).toBe('true')
+      const menu = screen.getByRole('menu', { name: 'Actions de la carte' })
+      expect(within(menu).getAllByRole('menuitem').map(b => b.textContent)).toEqual(['Modifier', 'Supprimer'])
+      expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Modifier' }))
+      expect(within(menu).getByRole('menuitem', { name: 'Supprimer' }).className).toMatch(/\btext-again\b/)
+      // Rendu hors de la carte floutée : pas de flou imbriqué.
+      expect(container.querySelector('article')!.contains(menu)).toBe(false)
+      await user.keyboard('{ArrowDown}')
+      expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Supprimer' }))
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(document.activeElement).toBe(menuButton())
+    })
+
+    it('menu ouvert : les raccourcis ne révèlent ni ne notent ; un tap à côté ferme le menu sans toucher la carte', async () => {
+      const s = reviewing({ revealed: true })
+      renderScreen(s)
+      const user = userEvent.setup()
+      await user.click(menuButton())
+      fireEvent.keyDown(window, { key: '3' })
+      fireEvent.keyDown(document.body, { key: ' ' })
+      expect(s.rate).not.toHaveBeenCalled()
+      await user.click(document.querySelector('.fixed.inset-0 > [aria-hidden="true"]')!)
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(s.reveal).not.toHaveBeenCalled()
+      expect(s.rate).not.toHaveBeenCalled()
+    })
+
+    it('Supprimer → confirmation ; Annuler ne supprime rien, « Supprimer » supprime puis synchronise', async () => {
+      const s = reviewing()
+      const onWrite = vi.fn()
+      render(<KApp theme="ios"><ReviewScreen db={db} session={s} now={now} onWrite={onWrite} /></KApp>)
+      const user = userEvent.setup()
+      await user.click(menuButton())
+      await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }))
+      let dialog = screen.getByRole('alertdialog', { name: 'Supprimer cette carte ?' })
+      expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Annuler' }))
+      await user.click(within(dialog).getByRole('button', { name: 'Annuler' }))
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+      expect(s.remove).not.toHaveBeenCalled()
+      await user.click(menuButton())
+      await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }))
+      dialog = screen.getByRole('alertdialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Supprimer' }))
+      expect(s.remove).toHaveBeenCalledTimes(1)
+      expect(onWrite).toHaveBeenCalledTimes(1)
+      expect(screen.queryByRole('alertdialog')).toBeNull()
+    })
+
+    it('suppression en échec : message, rien de synchronisé', async () => {
+      const s = reviewing({ remove: vi.fn().mockRejectedValue(new Error('IndexedDB')) })
+      const onWrite = vi.fn()
+      render(<KApp theme="ios"><ReviewScreen db={db} session={s} now={now} onWrite={onWrite} /></KApp>)
+      const user = userEvent.setup()
+      await user.click(menuButton())
+      await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }))
+      await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }))
+      expect(await screen.findByText('Carte non supprimée. Réessaie.')).toBeTruthy()
+      expect(onWrite).not.toHaveBeenCalled()
+    })
+
+    describe('avec une vraie session', () => {
+      let tick = 0
+      const clock = () => new Date(Date.parse('2026-10-13T10:00:00Z') + 1000 * tick++) // après la garde anti double tap
+      const cards: Card[] = ['a', 'b'].map(id => ({ ...card, id, front: `Question ${id} ?`, back: `Réponse ${id}.` }))
+      function Live({ store, onWrite }: { store: ReviewStore; onWrite?(): void }) {
+        const s = useReviewSession(store, clock)
+        return <ReviewScreen db={db} session={s} now={clock} onWrite={onWrite} />
+      }
+      const renderLive = (store: ReviewStore, onWrite?: () => void) => render(<KApp theme="ios"><Live store={store} onWrite={onWrite} /></KApp>)
+
+      it('Modifier → « Modifier la carte » ; ✓ enregistre, retour sur la même carte avec le nouveau texte, synchro', async () => {
+        const store = memoryStore(cards)
+        const onWrite = vi.fn()
+        renderLive(store, onWrite)
+        const user = userEvent.setup()
+        await screen.findByText('Question a ?')
+        await user.click(menuButton())
+        await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+        expect(screen.getByRole('heading', { name: 'Modifier la carte' })).toBeTruthy()
+        // Espace dans le champ : écrit, ne révèle rien derrière.
+        const front = screen.getByLabelText('QUESTION')
+        await user.clear(front)
+        await user.type(front, 'Question modifiée ?')
+        await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
+        await screen.findByText('Question modifiée ?')
+        expect(screen.queryByText('Réponse a.')).toBeNull() // toujours côté question
+        expect(screen.getByText('Carte 1 sur 2')).toBeTruthy()
+        expect((await store.loadCards()).find(c => c.id === 'a')!.front).toBe('Question modifiée ?')
+        expect(await store.loadReviews()).toHaveLength(0)
+        expect(onWrite).toHaveBeenCalledTimes(1)
+      })
+
+      it('Modifier puis ✕ sans modification : retour à la révision, rien d’écrit', async () => {
+        const store = memoryStore(cards)
+        const update = vi.spyOn(store, 'updateCard')
+        renderLive(store)
+        const user = userEvent.setup()
+        await screen.findByText('Question a ?')
+        await user.click(menuButton())
+        await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+        await user.click(screen.getByRole('button', { name: 'Fermer' }))
+        expect(await screen.findByText('Question a ?')).toBeTruthy()
+        expect(update).not.toHaveBeenCalled()
+      })
+
+      it('Supprimer → confirmer : carte suivante, « Carte 1 sur 1 », aucune note', async () => {
+        const store = memoryStore(cards)
+        renderLive(store)
+        const user = userEvent.setup()
+        await screen.findByText('Question a ?')
+        await user.click(menuButton())
+        await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }))
+        await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }))
+        await screen.findByText('Question b ?')
+        expect(screen.getByText('Carte 1 sur 1')).toBeTruthy()
+        await act(async () => {})
+        expect(await store.loadReviews()).toHaveLength(0)
+        await waitFor(async () => expect((await store.loadCards()).find(c => c.id === 'a')!.deleted_at).not.toBeNull())
+      })
+    })
   })
 })
