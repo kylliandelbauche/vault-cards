@@ -324,6 +324,69 @@ export function chunk<T>(items: T[], size: number): T[][] {
   return out
 }
 
+/**
+ * Taille de page des lectures complètes (1000 = `max_rows` par défaut de l'API Supabase). Elle n'a pas besoin d'y être
+ * égale : la lecture ne s'arrête que sur une page vide, donc un plafond plus bas du serveur ralentit sans tronquer.
+ */
+export const KEYSET_PAGE_SIZE = 1000
+
+/**
+ * Lit toutes les lignes d'une requête, page par page, en pagination par clé (keyset, #70) : `page(after, limit)` renvoie
+ * au plus `limit` lignes d'`id` strictement supérieur à `after` (tout depuis le début si `after` est null), triées par
+ * `id`. Contrairement à un décalage `.range()`, une ligne ajoutée ou modifiée pendant la lecture ne décale pas les
+ * suivantes : aucune ligne n'est sautée ni lue deux fois (`id` est unique et ne change jamais). Même principe que
+ * `src/lib/sync.ts`, avec `id` seul comme clé : la lecture est complète, pas incrémentale. Seule une page vide termine
+ * la lecture (une page plus courte que `size` peut venir d'un plafond serveur) : un appel de plus, jamais de troncature.
+ */
+export async function readAllByKey<T extends { id: string }>(
+  page: (after: string | null, limit: number) => Promise<T[]>,
+  size: number = KEYSET_PAGE_SIZE,
+): Promise<T[]> {
+  if (!Number.isInteger(size) || size < 1) throw new Error('readAllByKey : taille invalide')
+  const rows: T[] = []
+  let after: string | null = null
+  for (;;) {
+    const got: T[] = await page(after, size)
+    if (got.length > size) throw new Error(`lecture paginée : ${got.length} lignes reçues pour une page de ${size} au plus`)
+    for (const row of got) {
+      if (after !== null && !(row.id > after)) throw new Error('lecture paginée : lignes non triées par id (ligne lue deux fois ou ordre inattendu)')
+      after = row.id
+      rows.push(row)
+    }
+    if (got.length === 0) return rows
+  }
+}
+
+/**
+ * Ordre de sortie de la commande `all` : `source_path`, puis `created_at`, puis `id` (départage stable : des cartes
+ * ajoutées par un même `apply` partagent le même `created_at`). Tri en mémoire, après une lecture paginée par `id`.
+ * `created_at` est comparé comme instant (PostgREST supprime les zéros finaux des fractions : pas de tri textuel).
+ */
+export function sortCardsForOutput<T extends { id: string; source_path: string; created_at: string }>(cards: readonly T[]): T[] {
+  const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+  // Les chemins sont triés comme le faisait `order('source_path')` côté base. Relevé en lecture seule (pg_database) :
+  // fournisseur ICU (datlocprovider = i), locale en-US, colonne sans collation propre. Intl.Collator('en-US') en est
+  // l'équivalent côté Node ; sur les 23 notes réelles (emoji compris), l'ordre obtenu est identique à celui de la base.
+  // Une version d'ICU différente pourrait classer autrement des caractères rares : l'ordre n'est pas une garantie.
+  // Un tri par unités de code UTF-16 placerait les emoji autrement (voir le test).
+  const byPathCollation = new Intl.Collator('en-US').compare
+  // Secondes entières (Date.parse) puis fraction à 6 chiffres (microsecondes de Postgres, que Date perdrait).
+  const instant = (iso: string) => {
+    const m = /^(.*?)(?:\.(\d+))?(Z|[+-]\d\d(?::?\d\d)?)$/.exec(iso)
+    if (!m) throw new Error(`created_at illisible : ${iso}`)
+    const ms = Date.parse(m[1] + m[3])
+    if (Number.isNaN(ms)) throw new Error(`created_at illisible : ${iso}`)
+    return { ms, frac: (m[2] ?? '').padEnd(6, '0') }
+  }
+  return [...cards].sort((a, b) => {
+    const byPath = byPathCollation(a.source_path, b.source_path) || cmp(a.source_path, b.source_path)
+    if (byPath) return byPath
+    const x = instant(a.created_at)
+    const y = instant(b.created_at)
+    return x.ms - y.ms || cmp(x.frac, y.frac) || cmp(a.id, b.id)
+  })
+}
+
 /** Nombre de cartes vivantes par note `removed` (rows = cartes vivantes de ces notes), pour les présenter avant suppression. */
 export function countLiveCards(removed: string[], liveRows: { source_path: string }[]): { source_path: string; live_cards: number }[] {
   const counts = new Map<string, number>()
