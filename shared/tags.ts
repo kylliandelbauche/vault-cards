@@ -10,9 +10,25 @@ export const MAX_TAGS = 5
 /** Longueur d'un nom de tag, en caractères (points de code), comme char_length en SQL. */
 export const TAG_NAME_MAX = 40
 
-/** Forme stockée d'un nom : NFC, espaces de bord retirés, espaces internes réduits à un seul (comme le trigger). */
+/**
+ * « Espaces » d'un nom de tag, en syntaxe de classe d'expression régulière commune à JavaScript et Postgres : exactement
+ * le `\s` / `trim()` de JavaScript, écrit en toutes lettres car le `\s` de Postgres diffère (#94). La migration
+ * 20261022000000_tags_sync_fix reprend cette chaîne telle quelle (vérifié par tools/cards/tags.test.ts).
+ */
+export const TAG_SPACE_CLASS = '\\t\\n\\u000b\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff'
+/** Caractères de contrôle (Unicode Cc) refusés dans un nom, même syntaxe ; NUL est de toute façon refusé par Postgres. */
+export const TAG_CONTROL_CLASS = '\\u0000-\\u001f\\u007f-\\u009f'
+
+const EDGE_SPACES = new RegExp(`^[${TAG_SPACE_CLASS}]+|[${TAG_SPACE_CLASS}]+$`, 'g')
+const SPACE_RUNS = new RegExp(`[${TAG_SPACE_CLASS}]+`, 'g')
+const CONTROL = new RegExp(`[${TAG_CONTROL_CLASS}]`)
+
+/**
+ * Forme stockée d'un nom, dans le même ordre que le serveur (public.tag_name_normalize) : NFC, espaces de bord retirés,
+ * puis espaces internes réduits à un seul.
+ */
 export function normalizeTagName(name: string): string {
-  return name.normalize('NFC').trim().replace(/\s+/g, ' ')
+  return name.normalize('NFC').replace(EDGE_SPACES, '').replace(SPACE_RUNS, ' ')
 }
 
 /** Clé d'unicité : un même tag quelle que soit la casse ou l'espacement (index unique lower(name)). */
@@ -22,9 +38,6 @@ export const tagKey = (name: string) => normalizeTagName(name).toLowerCase()
 export const sameTag = (a: string, b: string) => tagKey(a) === tagKey(b)
 
 const chars = (s: string) => Array.from(s).length
-// Caractères de contrôle : jamais dans un nom affiché (et NUL est refusé par Postgres).
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u001f\u007f]/
 
 /** Message d'erreur si le nom (déjà normalisé) est refusé, sinon null. */
 export function tagNameError(name: string): string | null {
