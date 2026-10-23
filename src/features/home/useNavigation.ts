@@ -10,13 +10,15 @@ export interface DraftsTarget {
 }
 
 /**
- * Écran affiché : l'accueil, « Mes tags », « Mes cartes » (#80), une session de révision, ou la boîte de réception (#81) : saisie d'un
- * texte, brouillons d'une source, modification d'un brouillon.
+ * Écran affiché : l'accueil, « Mes tags », « Mes cartes » (#80, éventuellement filtré sur un document), « Nouvelles
+ * cartes » (hub, #86), une session de révision, ou la boîte de réception (#81) : saisie d'un texte, brouillons d'une
+ * source, modification d'un brouillon.
  */
 export type Screen =
   | { name: 'home' }
   | { name: 'tags' }
-  | { name: 'cards' }
+  | { name: 'cards'; documentId?: string }
+  | { name: 'hub' }
   | { name: 'review'; scope: SessionScope }
   | { name: 'source-text' }
   | { name: 'new-card' }

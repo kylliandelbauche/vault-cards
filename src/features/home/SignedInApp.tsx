@@ -11,6 +11,7 @@ import { useReviewSession, type ReviewSession } from '../review/useReviewSession
 import { DraftsScreen } from '../inbox/DraftsScreen'
 import { EditCardScreen, NewCardScreen } from '../inbox/EditCardScreen'
 import { NewCardsBlock } from '../inbox/NewCardsBlock'
+import { NewCardsHub } from '../inbox/NewCardsHub'
 import { SourceTextScreen } from '../inbox/SourceTextScreen'
 import { sourceName } from '../inbox/sourceName'
 import { MyCardsScreen } from '../cards/MyCardsScreen'
@@ -22,7 +23,7 @@ import { useNavigation, type Screen } from './useNavigation'
 
 /** Nom accessible de la flèche retour : l'écran de destination. */
 const backLabel = (to: Screen | null) =>
-  to?.name === 'tags' ? 'Mes tags' : to?.name === 'drafts' ? 'Brouillons' : to?.name === 'review' ? to.scope.tag ?? DAY_TITLE : 'Accueil'
+  to?.name === 'tags' ? 'Mes tags' : to?.name === 'hub' ? 'Nouvelles cartes' : to?.name === 'drafts' ? 'Brouillons' : to?.name === 'review' ? to.scope.tag ?? DAY_TITLE : 'Accueil'
 
 interface Props {
   db: VaultDB
@@ -115,8 +116,25 @@ function SignedInScreens({ db, runSync, now, inbox, nav }: Props & { nav: Omit<R
       />
     )
   }
+  if (inbox && screen.name === 'hub') {
+    return (
+      <NewCardsHub
+        db={db}
+        deps={inbox}
+        now={now}
+        onBack={back}
+        onManual={() => open({ name: 'new-card' })}
+        onText={() => open({ name: 'source-text' })}
+        onSent={item => open(draftsOf(item))}
+        // Dernière génération : ses brouillons s'il en reste, sinon ses cartes dans « Mes cartes ».
+        onOpenGeneration={last => open(last.drafts > 0
+          ? { name: 'drafts', inboxId: last.inboxId, source: last.title }
+          : { name: 'cards', documentId: last.inboxId })}
+      />
+    )
+  }
   if (screen.name === 'cards') {
-    return <MyCardsScreen db={db} onBack={back} backLabel={backLabel(previous)} onWrite={syncNow} />
+    return <MyCardsScreen db={db} initialDocumentId={screen.documentId} onBack={back} backLabel={backLabel(previous)} onWrite={syncNow} />
   }
   if (screen.name === 'new-card') {
     return <NewCardScreen db={db} onClose={back} onWrite={syncNow} />
@@ -144,6 +162,7 @@ function SignedInScreens({ db, runSync, now, inbox, nav }: Props & { nav: Omit<R
           onText={() => open({ name: 'source-text' })}
           onSent={item => open(draftsOf(item))}
           onOpenDrafts={() => open({ name: 'drafts' })}
+          onOpenHub={() => open({ name: 'hub' })}
         />
       )}
     />
