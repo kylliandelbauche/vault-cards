@@ -104,6 +104,7 @@ function Counter({ label, value }: { label: string; value: number }) {
 /** « Tes créations » : deux compteurs, puis la dernière génération (ou un état vide sobre). */
 function Creation({ creations, now, onOpenGeneration }: { creations: Creations; now: Date; onOpenGeneration(last: LastGeneration): void }) {
   const { total, thisMonth, last } = creations
+  const ago = last ? formatAgo(new Date(last.at), now) : ''
   return (
     <section aria-labelledby="creations" className="flex flex-col gap-2">
       <h2 id="creations" className="px-1 text-[13px] leading-4 font-semibold tracking-[0.06em] text-label-2 uppercase">Tes créations</h2>
@@ -124,7 +125,7 @@ function Creation({ creations, now, onOpenGeneration }: { creations: Creations; 
                 <SourceIcon kind="file" className="size-5" />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className={CAPTION}>Dernière génération · {formatAgo(new Date(last.at), now)}</span>
+                <span className={CAPTION}>{ago ? `Dernière génération · ${ago}` : 'Dernière génération'}</span>
                 <span className="truncate text-[17px] leading-[22px] font-semibold">
                   {last.title} · {cards(last.count)}
                   {last.drafts > 0 && <span className="sr-only">, {draftsLabel(last.drafts)} à valider</span>}

@@ -20,6 +20,12 @@ describe('formatAgo', () => {
   it('sous la minute', () => expect(ago(30_000)).toBe("à l'instant"))
   it('minutes', () => { expect(ago(MIN)).toBe('il y a 1 min'); expect(ago(59 * MIN + 59_000)).toBe('il y a 59 min') })
   it('heures, arrondies vers le bas', () => { expect(ago(60 * MIN)).toBe('il y a 1 h'); expect(ago(170 * MIN)).toBe('il y a 2 h') })
-  it('jours', () => { expect(ago(DAY)).toBe('il y a 1 j'); expect(ago(45 * DAY)).toBe('il y a 45 j') })
+  it('jours', () => { expect(ago(DAY)).toBe('il y a 1 j'); expect(ago(29 * DAY)).toBe('il y a 29 j') })
+  it('mois', () => { expect(ago(30 * DAY)).toBe('il y a 1 mois'); expect(ago(75 * DAY)).toBe('il y a 2 mois'); expect(ago(364 * DAY)).toBe('il y a 12 mois') })
+  it('années', () => { expect(ago(365 * DAY)).toBe('il y a 1 an'); expect(ago(800 * DAY)).toBe('il y a 2 ans') })
+  it('date invalide : rien, pas « à l’instant »', () => {
+    expect(formatAgo(new Date('pas une date'), t0)).toBe('')
+    expect(formatAgo(t0, new Date(NaN))).toBe('')
+  })
   it('date dans le futur (horloge en retard)', () => expect(ago(-DAY)).toBe("à l'instant"))
 })

@@ -57,6 +57,9 @@ export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accu
   const ready = data.status === 'ready' ? data : null
   // Document choisi disparu (dernière carte supprimée) : retour à « Tous ».
   const doc = ready && documentId !== null ? ready.documents.find(d => d.id === documentId) ?? null : null
+  // Document disparu (dernière carte supprimée, ou filtre initial inconnu) : l'état revient à « Tous », pour qu'il ne
+  // se réapplique pas en silence si le document revient.
+  if (ready && documentId !== null && doc === null) setDocumentId(null)
   const results = useMemo(() => (ready ? filterCards(ready.cards, deferredQuery, doc?.id ?? null) : []), [ready, deferredQuery, doc])
 
   // Nouvelle recherche ou autre document : on repart de la première tranche, aucune carte ouverte.

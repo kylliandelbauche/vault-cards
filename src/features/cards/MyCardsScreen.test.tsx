@@ -280,6 +280,21 @@ describe('MyCardsScreen (#80)', () => {
     expect(screen.getByRole('button', { name: 'Tous' }).getAttribute('aria-pressed')).toBe('true')
   })
 
+  it('document filtré qui disparaît : l’état revient à « Tous » et ne se réapplique pas si le document revient', async () => {
+    renderScreen('pdf')
+    await waitFor(() => expect(fronts()).toHaveLength(2))
+    const gone = (deleted_at: string | null) => act(async () => {
+      await db.cards.bulkUpdate([{ key: 'i1', changes: { deleted_at } }, { key: 'i2', changes: { deleted_at } }])
+    })
+    await gone('2026-10-08T00:00:00Z')
+    await waitFor(() => expect(fronts()).toHaveLength(3))
+    expect(screen.getByRole('button', { name: 'Tous' }).getAttribute('aria-pressed')).toBe('true')
+    await gone(null)
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    expect(screen.getByRole('button', { name: 'Tous' }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }).getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('flèche retour : onBack', async () => {
     const { user, onBack } = renderScreen()
     await user.click(screen.getByRole('button', { name: 'Accueil' }))

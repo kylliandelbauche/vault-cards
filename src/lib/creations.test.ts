@@ -69,6 +69,14 @@ describe('computeCreations : dernière génération (#86)', () => {
     expect(computeCreations([inbox('i1', 'A.pdf'), inbox('i1', 'A.pdf')], now).last).toMatchObject({ count: 2, drafts: 0 })
   })
 
+  it('à date égale, le plus petit inboxId l’emporte, quel que soit l’ordre des cartes', () => {
+    const same = at(2026, 10, 19, 9, 0)
+    const a = inbox('a1', 'A.pdf', { created_at: same })
+    const b = inbox('b1', 'B.pdf', { created_at: same })
+    expect(computeCreations([a, b], now).last?.inboxId).toBe('a1')
+    expect(computeCreations([b, a], now).last?.inboxId).toBe('a1')
+  })
+
   it('document sans titre : « Document importé »', () => {
     expect(computeCreations([inbox('i1', null)], now).last?.title).toBe('Document importé')
   })
