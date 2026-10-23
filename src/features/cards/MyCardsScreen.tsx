@@ -16,6 +16,8 @@ import { useMyCards } from './useMyCards'
 interface Props {
   db: VaultDB
   onBack(): void
+  /** Document (`inbox_id`) filtré à l'ouverture, depuis « Tes créations » (#86) ; absent : « Tous ». Retiré s'il n'existe plus. */
+  initialDocumentId?: string
   /** Nom accessible de la flèche : l'écran de destination. */
   backLabel?: string
   /** Après une modification ou une suppression locale : synchro immédiate. */
@@ -41,10 +43,10 @@ function nearCard(anchor: DOMRect): CSSProperties {
  * posé sur la liste : le retour iOS le ferme, garde #88 compris) ; glisser à gauche → « Supprimer » → confirmation →
  * suppression douce (deleteCard, comme le menu ⋯). Aucun bouton bleu : seul l'anneau de focus du champ l'est.
  */
-export function MyCardsScreen({ db, onBack, backLabel = 'Accueil', onWrite }: Props) {
+export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accueil', onWrite }: Props) {
   const data = useMyCards(db)
   const [query, setQuery] = useState('')
-  const [documentId, setDocumentId] = useState<string | null>(null)
+  const [documentId, setDocumentId] = useState<string | null>(initialDocumentId ?? null)
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Card | null>(null)
   const [deleting, setDeleting] = useState<{ card: Card; anchor: DOMRect } | null>(null)

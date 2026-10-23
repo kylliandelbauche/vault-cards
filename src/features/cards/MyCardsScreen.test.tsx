@@ -25,10 +25,10 @@ beforeEach(async () => {
 })
 afterEach(async () => { cleanup(); db.close(); await db.delete() })
 
-function renderScreen() {
+function renderScreen(initialDocumentId?: string) {
   const onBack = vi.fn()
   const onWrite = vi.fn()
-  render(<KApp theme="ios"><MyCardsScreen db={db} onBack={onBack} onWrite={onWrite} /></KApp>)
+  render(<KApp theme="ios"><MyCardsScreen db={db} initialDocumentId={initialDocumentId} onBack={onBack} onWrite={onWrite} /></KApp>)
   return { onBack, onWrite, user: userEvent.setup() }
 }
 const list = () => screen.getByRole('list', { name: 'Cartes' })
@@ -263,6 +263,21 @@ describe('MyCardsScreen (#80)', () => {
     } finally {
       vi.unstubAllGlobals()
     }
+  })
+
+  it('filtre initial (#86, depuis « Tes créations ») : le document est déjà choisi ; « Tous » le retire', async () => {
+    const { user } = renderScreen('pdf')
+    await waitFor(() => expect(fronts()).toHaveLength(2))
+    expect(screen.getByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }).getAttribute('aria-pressed')).toBe('true')
+    expect(subtitle()).toBe('2 cartes')
+    await user.click(screen.getByRole('button', { name: 'Tous' }))
+    expect(fronts()).toHaveLength(5)
+  })
+
+  it('filtre initial sur un document qui n’existe plus : « Tous »', async () => {
+    renderScreen('disparu')
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    expect(screen.getByRole('button', { name: 'Tous' }).getAttribute('aria-pressed')).toBe('true')
   })
 
   it('flèche retour : onBack', async () => {
