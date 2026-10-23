@@ -256,8 +256,64 @@ describe('SignedInApp : barre commune (#82)', () => {
     expect(actions()).toEqual(['Accueil', 'Rechercher', 'Profil'])
     await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
-    expect(actions()).toEqual(['Mes tags', 'Rechercher', 'Profil'])
+    expect(actions()).toEqual(['Mes tags', 'Profil']) // #80 : pas de loupe en révision
     await user.click(screen.getByRole('button', { name: 'Profil' }))
     expect(within(screen.getByRole('dialog', { name: 'Profil' })).getByRole('button', { name: 'Se déconnecter' })).toBeTruthy()
+  })
+})
+
+describe('SignedInApp : Mes cartes (#80)', () => {
+  const depth = () => (window.history.state as { vaultCardsDepth?: number } | null)?.vaultCardsDepth ?? 0
+  const actions = () => within(document.querySelector('header')!).getAllByRole('button').map(b => b.getAttribute('aria-label'))
+
+  it('la loupe de l’accueil ouvre Mes cartes (un niveau) ; flèche → accueil', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Rechercher' }))
+    await waitFor(() => expect(heading()).toBe('Mes cartes'))
+    expect(actions()).toEqual(['Accueil', 'Profil']) // pas de loupe sur Mes cartes
+    expect(await screen.findByText('Question a ?')).toBeTruthy()
+    expect(depth()).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'Accueil' }))
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await waitFor(() => expect(depth()).toBe(0))
+  })
+
+  it('révision en cours : pas de loupe (Mes cartes ne remet jamais la session à zéro)', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await user.click(await screen.findByRole('button', { name: 'Afficher la réponse' }))
+    await user.click(await screen.findByRole('button', { name: /Très bien/ }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(screen.queryByRole('button', { name: 'Rechercher' })).toBeNull()
+    expect(actions()).toEqual(['Accueil', 'Profil'])
+    expect([...document.querySelectorAll('header p')].map(p => p.textContent)).toEqual(['Révision du jour', 'Carte 2 sur 3'])
+  })
+
+  it('geste retour / « précédent » du navigateur depuis Mes cartes : écran d’avant (Mes tags)', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Mes tags, voir les 8 tags' }))
+    await waitFor(() => expect(heading()).toBe('Mes tags'))
+    await user.click(screen.getByRole('button', { name: 'Rechercher' }))
+    await waitFor(() => expect(heading()).toBe('Mes cartes'))
+    expect(actions()).toEqual(['Mes tags', 'Profil'])
+    await waitFor(() => expect(depth()).toBe(2))
+    act(() => { window.history.back() })
+    await waitFor(() => expect(heading()).toBe('Mes tags'))
+    await waitFor(() => expect(depth()).toBe(1))
+  })
+
+  it('modifier une carte depuis Mes cartes : le retour iOS ferme le formulaire et reste sur Mes cartes', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Rechercher' }))
+    await user.click(await screen.findByText('Question b ?'))
+    expect(await screen.findByRole('heading', { name: 'Modifier la carte' })).toBeTruthy()
+    act(() => { window.history.back() })
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Modifier la carte' })).toBeNull())
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Mes cartes')
+    await waitFor(() => expect(depth()).toBe(1))
   })
 })

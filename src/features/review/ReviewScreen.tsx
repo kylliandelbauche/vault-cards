@@ -84,6 +84,7 @@ export function ReviewScreen({ session, db, now, title = DAY_TITLE, onBack, back
       <TopBar
         onBack={onBack}
         backLabel={backLabel}
+        search={false}
         extra={reviewing && (
           <Progressbar
             className="mt-2.5"

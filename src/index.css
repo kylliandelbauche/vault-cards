@@ -538,3 +538,35 @@ button:not(:disabled):not([aria-disabled='true']),
 [role='button']:not([aria-disabled='true']) {
   cursor: pointer;
 }
+
+/*
+ * « Mes cartes » (#80). `.list-card` : carte de la liste, même teinte et même liseré que `.glass-card`, mais sans
+ * backdrop-filter (des centaines de surfaces floutées ne défileraient pas fluidement ; le fond décoratif, déjà flou,
+ * se voit au travers) ; texte noir / blanc ≥ 12:1 sur ce fond. `contain` : un glissement ne repeint que la carte.
+ */
+.list-card {
+  contain: layout paint;
+  background-color: var(--glass-card-bg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-edge),
+    inset 0 0 0 0.5px var(--glass-edge),
+    0 0 0 0.5px var(--glass-hairline);
+}
+
+/* « Supprimer » révélé par le glissement : rouge plein, libellé blanc (4,99:1, le #FF453A de Paper n'atteint que 3:1). */
+.delete-action {
+  background-color: var(--again-pill);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.25);
+}
+
+/* Document choisi (« Tous » ou un document) : pastille pleine contrastée, noire en clair, blanche en sombre. */
+.tag-chip.doc-chip-on {
+  background-color: rgb(17 17 20 / 0.92);
+  background-image: none;
+  color: #fff;
+}
+.dark .tag-chip.doc-chip-on {
+  background-color: rgb(255 255 255 / 0.92);
+  color: #06080f;
+}

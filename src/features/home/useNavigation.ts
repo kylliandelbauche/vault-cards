@@ -10,12 +10,13 @@ export interface DraftsTarget {
 }
 
 /**
- * Écran affiché : l'accueil, « Mes tags », une session de révision, ou la boîte de réception (#81) : saisie d'un
+ * Écran affiché : l'accueil, « Mes tags », « Mes cartes » (#80), une session de révision, ou la boîte de réception (#81) : saisie d'un
  * texte, brouillons d'une source, modification d'un brouillon.
  */
 export type Screen =
   | { name: 'home' }
   | { name: 'tags' }
+  | { name: 'cards' }
   | { name: 'review'; scope: SessionScope }
   | { name: 'source-text' }
   | { name: 'new-card' }
@@ -106,6 +107,10 @@ export function useNavigation() {
   const openReview = useCallback((scope: SessionScope) => push({ name: 'review', scope: { ...scope } }), [push])
   /** Ouvre la page « Mes tags ». */
   const openTags = useCallback(() => push({ name: 'tags' }), [push])
+  /** Ouvre « Mes cartes » (#80, loupe de la barre). Déjà affichée : rien (jamais deux « Mes cartes » empilées). */
+  const openCards = useCallback(() => {
+    if (live.current.at(-1)?.name !== 'cards') push({ name: 'cards' })
+  }, [push])
 
   /** Ouvre un écran de la boîte de réception (Source · Texte, Brouillons, Modifier). */
   const open = useCallback((next: Screen) => push(next), [push])
@@ -126,5 +131,5 @@ export function useNavigation() {
 
   const screen = stack[stack.length - 1]
   const previous = stack.length > 1 ? stack[stack.length - 2] : null
-  return { screen, previous, openReview, openTags, open, replace, back, goHome, registerGuard }
+  return { screen, previous, openReview, openTags, openCards, open, replace, back, goHome, registerGuard }
 }
