@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { VaultDB } from '../../lib/db'
@@ -36,6 +36,15 @@ const fronts = () => within(list()).getAllByRole('listitem').map(li => li.queryS
 const subtitle = () => document.querySelector('header h1')!.nextElementSibling!.textContent
 const search = () => screen.getByRole('searchbox', { name: 'Rechercher dans mes cartes' })
 const row = (front: string) => within(list()).getByText(front).closest('li')!
+const face = (li: HTMLElement) => li.querySelector<HTMLElement>('.list-card')!
+const deleteAction = (li: HTMLElement) => li.querySelector<HTMLButtonElement>('.delete-action')
+const TOUCH = { pointerId: 7, pointerType: 'touch', isPrimary: true }
+/** Glissement horizontal au doigt depuis x = 300 jusqu'aux positions données, puis relâché. */
+function swipe(el: HTMLElement, xs: number[], pointer: object = TOUCH) {
+  fireEvent.pointerDown(el, { ...pointer, clientX: 300, clientY: 100 })
+  for (const x of xs) fireEvent.pointerMove(el, { ...pointer, clientX: x, clientY: 101 })
+  fireEvent.pointerUp(el, { ...pointer, clientX: xs.at(-1), clientY: 101 })
+}
 
 describe('MyCardsScreen (#80)', () => {
   it('titre, nombre de cartes, sans loupe ; cartes actives avec leurs tags, ni brouillons ni supprimées', async () => {
@@ -103,14 +112,11 @@ describe('MyCardsScreen (#80)', () => {
     const { user, onWrite } = renderScreen()
     await waitFor(() => expect(fronts()).toHaveLength(5))
     const li = row('Que garantit la RLS ?')
-    const face = li.querySelector('.list-card')!
-    expect(within(li).queryByRole('button', { name: 'Supprimer' })).toBeNull()
-    const touch = { pointerId: 7, pointerType: 'touch', isPrimary: true }
-    fireEvent.pointerDown(face, { ...touch, clientX: 300, clientY: 100 })
-    fireEvent.pointerMove(face, { ...touch, clientX: 280, clientY: 102 })
-    fireEvent.pointerMove(face, { ...touch, clientX: 190, clientY: 103 })
-    fireEvent.pointerUp(face, { ...touch, clientX: 190, clientY: 103 })
-    const reveal = await within(li).findByRole('button', { name: 'Supprimer' })
+    expect(deleteAction(li)).toBeNull()
+    swipe(face(li), [280, 190])
+    expect(face(li).style.transform).toBe('translate3d(-92px,0,0)')
+    const reveal = deleteAction(li)!
+    expect(reveal.style.clipPath).toBe('inset(0 0 0 0px round 22px)') // entièrement dégagé
     await user.click(reveal)
     const dialog = screen.getByRole('alertdialog', { name: 'Cette carte disparaîtra de tes révisions.' })
     await user.click(within(dialog).getByRole('button', { name: 'Supprimer la carte' }))
@@ -122,31 +128,141 @@ describe('MyCardsScreen (#80)', () => {
     expect(onWrite).toHaveBeenCalledTimes(1)
   })
 
-  it('glissement vertical : défilement, la carte ne s’ouvre pas ; tap après un glissement court : rien', async () => {
+  it('pendant le glissement, « Supprimer » n’est visible que dans la place libérée par la carte (jamais au travers)', async () => {
     renderScreen()
     await waitFor(() => expect(fronts()).toHaveLength(5))
     const li = row('Que garantit la RLS ?')
-    const face = li.querySelector('.list-card')!
-    const touch = { pointerId: 3, pointerType: 'touch', isPrimary: true }
-    fireEvent.pointerDown(face, { ...touch, clientX: 300, clientY: 100 })
-    fireEvent.pointerMove(face, { ...touch, clientX: 296, clientY: 160 })
-    fireEvent.pointerMove(face, { ...touch, clientX: 200, clientY: 170 })
-    fireEvent.pointerCancel(face, touch)
-    expect(within(li).queryByRole('button', { name: 'Supprimer' })).toBeNull()
-    expect(screen.queryByRole('heading', { name: 'Modifier la carte' })).toBeNull()
+    const f = face(li)
+    fireEvent.pointerDown(f, { ...TOUCH, clientX: 300, clientY: 100 })
+    fireEvent.pointerMove(f, { ...TOUCH, clientX: 280, clientY: 101 }) // axe horizontal choisi : bouton monté
+    fireEvent.pointerMove(f, { ...TOUCH, clientX: 270, clientY: 101 })
+    expect(f.style.transform).toBe('translate3d(-30px,0,0)')
+    expect(deleteAction(li)!.style.clipPath).toBe('inset(0 0 0 50px round 22px)') // 30 px de droite seulement
+    fireEvent.pointerUp(f, { ...TOUCH, clientX: 270, clientY: 101 }) // avant la moitié : se referme
+    expect(f.style.transform).toBe('')
+    expect(deleteAction(li)).toBeNull()
   })
 
-  it('Mac : corbeille (survol / focus) → confirmation ; Annuler garde la carte', async () => {
+  it('glissement vertical : défilement, rien ne s’ouvre même si le doigt part ensuite à l’horizontale', async () => {
+    renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    const li = row('Que garantit la RLS ?')
+    const f = face(li)
+    fireEvent.pointerDown(f, { ...TOUCH, clientX: 300, clientY: 100 })
+    fireEvent.pointerMove(f, { ...TOUCH, clientX: 296, clientY: 160 }) // vertical : laissé au navigateur
+    fireEvent.pointerMove(f, { ...TOUCH, clientX: 150, clientY: 165 })
+    expect(f.style.transform).toBe('') // la carte n'a jamais suivi le doigt
+    fireEvent.pointerUp(f, { ...TOUCH, clientX: 150, clientY: 165 })
+    expect(f.style.transform).toBe('')
+    expect(deleteAction(li)).toBeNull()
+  })
+
+  it('souris : pas de glissement (la corbeille au survol sert sur Mac)', async () => {
+    renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    const li = row('Que garantit la RLS ?')
+    swipe(face(li), [280, 150], { pointerId: 1, pointerType: 'mouse', isPrimary: true })
+    expect(face(li).style.transform).toBe('')
+    expect(deleteAction(li)).toBeNull()
+  })
+
+  it('une seule carte ouverte à la fois', async () => {
+    renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    const a = row('Que garantit la RLS ?')
+    const b = row('Que mesure la stabilité ?')
+    swipe(face(a), [280, 190])
+    expect(deleteAction(a)).not.toBeNull()
+    swipe(face(b), [280, 190], { ...TOUCH, pointerId: 9 })
+    expect(deleteAction(b)).not.toBeNull()
+    expect(deleteAction(a)).toBeNull()
+    expect(face(a).style.transform).toBe('')
+  })
+
+  it('toucher ailleurs referme sans rien ouvrir ; toucher la carte ouverte la referme sans ouvrir « Modifier »', async () => {
+    const { user } = renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    const a = row('Que garantit la RLS ?')
+    swipe(face(a), [280, 190])
+    await user.click(within(row('Que mesure la stabilité ?')).getByText('Que mesure la stabilité ?')) // autre carte
+    expect(deleteAction(a)).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Modifier la carte' })).toBeNull()
+    swipe(face(a), [280, 190], { ...TOUCH, pointerId: 11 })
+    await user.click(screen.getByRole('searchbox')) // hors de la liste
+    expect(deleteAction(a)).toBeNull()
+    swipe(face(a), [280, 190], { ...TOUCH, pointerId: 12 })
+    await user.click(within(a).getByText('Que garantit la RLS ?')) // la carte ouverte elle-même
+    expect(deleteAction(a)).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Modifier la carte' })).toBeNull()
+    await user.click(within(a).getByText('Que garantit la RLS ?')) // refermée : un tap ouvre bien « Modifier »
+    expect(await screen.findByRole('heading', { name: 'Modifier la carte' })).toBeTruthy()
+  })
+
+  it('la liste suit Dexie (synchro) : carte ajoutée, brouillon accepté, carte supprimée ailleurs', async () => {
+    renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    await db.cards.put({ ...base, id: 'n1', source: 'vault', deck: 'x', source_path: 'x/n.md', front: 'Tirée du serveur ?', back: 'Oui.', tags: [], created_at: '2026-10-09T00:00:00Z' })
+    await waitFor(() => expect(fronts()[0]).toBe('Tirée du serveur ?'))
+    await db.cards.update('d1', { status: 'active' })
+    await waitFor(() => expect(fronts()).toContain('Brouillon ?'))
+    expect(within(screen.getByRole('list', { name: 'Filtrer par document' })).getByRole('button', { name: 'Vocal du 12/10, 1 carte' })).toBeTruthy()
+    await db.cards.update('m1', { deleted_at: '2026-10-10T00:00:00Z' })
+    await waitFor(() => expect(screen.queryByText('Que garantit la RLS ?')).toBeNull())
+    expect(subtitle()).toBe('6 cartes')
+  })
+
+  it('Mac : la corbeille marche au clic et au clavier ; Annuler garde la carte', async () => {
     const { user, onWrite } = renderScreen()
     await waitFor(() => expect(fronts()).toHaveLength(5))
-    const trash = within(row('Que mesure la stabilité ?')).getByRole('button', { name: 'Supprimer la carte' })
-    expect(trash.className.split(' ')).toEqual(expect.arrayContaining(['size-11', 'pointer-fine:flex', 'group-hover:opacity-100', 'focus-visible:opacity-100']))
-    await user.click(trash)
+    const trashOf = (front: string) => within(row(front)).getByRole('button', { name: 'Supprimer la carte' })
+    await user.click(trashOf('Que mesure la stabilité ?'))
     await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Annuler' }))
     expect(screen.queryByRole('alertdialog')).toBeNull()
-    expect(fronts()).toHaveLength(5)
     expect((await db.cards.get('i1'))?.deleted_at).toBeNull()
     expect(onWrite).not.toHaveBeenCalled()
+    trashOf('Que garantit la RLS ?').focus()
+    await user.keyboard('{Enter}')
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Supprimer la carte' }))
+    await waitFor(() => expect(screen.queryByText('Que garantit la RLS ?')).toBeNull())
+    expect((await db.cards.get('m1'))?.deleted_at).not.toBeNull()
+    expect(onWrite).toHaveBeenCalledTimes(1)
+  })
+
+  it('échec de la suppression : message d’alerte, la liste ne bouge pas', async () => {
+    const { user, onWrite } = renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    await user.click(within(row('Que garantit la RLS ?')).getByRole('button', { name: 'Supprimer la carte' }))
+    vi.spyOn(db.cards, 'update').mockRejectedValueOnce(new Error('disque plein'))
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Supprimer la carte' }))
+    expect((await screen.findByRole('alert')).textContent).toBe('Carte non supprimée. Réessaie.')
+    expect(fronts()).toHaveLength(5)
+    expect(onWrite).not.toHaveBeenCalled()
+  })
+
+  it('affichage par tranches : 80 cartes, préchargement sur le conteneur qui défile (root + marge), puis la suite', async () => {
+    const observers: { cb: IntersectionObserverCallback; options?: IntersectionObserverInit }[] = []
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(cb: IntersectionObserverCallback, options?: IntersectionObserverInit) { observers.push({ cb, options }) }
+      observe() {}
+      disconnect() {}
+    })
+    try {
+      await db.cards.bulkPut(Array.from({ length: 300 }, (_, i) => ({
+        ...base, id: `bulk${i}`, source: 'manual' as const, front: `Carte ${i} ?`, back: 'R.', tags: ['T'], created_at: `2026-09-01T00:00:${String(i % 60).padStart(2, '0')}Z`,
+      })))
+      renderScreen()
+      await waitFor(() => expect(subtitle()).toBe('305 cartes'))
+      expect(fronts()).toHaveLength(80)
+      const last = observers.at(-1)!
+      expect(last.options?.rootMargin).toBe('800px 0px')
+      expect(last.options?.root).toBe(list().closest('main')!.parentElement) // la Page Konsta, qui défile
+      act(() => last.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+      expect(fronts()).toHaveLength(240)
+      act(() => observers.at(-1)!.cb([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver))
+      expect(fronts()).toHaveLength(305)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('flèche retour : onBack', async () => {

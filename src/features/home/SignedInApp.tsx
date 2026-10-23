@@ -22,7 +22,7 @@ import { useNavigation, type Screen } from './useNavigation'
 
 /** Nom accessible de la flèche retour : l'écran de destination. */
 const backLabel = (to: Screen | null) =>
-  to?.name === 'tags' ? 'Mes tags' : to?.name === 'review' ? to.scope.tag ?? DAY_TITLE : 'Accueil'
+  to?.name === 'tags' ? 'Mes tags' : to?.name === 'drafts' ? 'Brouillons' : to?.name === 'review' ? to.scope.tag ?? DAY_TITLE : 'Accueil'
 
 interface Props {
   db: VaultDB

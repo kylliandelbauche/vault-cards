@@ -1,14 +1,26 @@
-import { memo, useEffect, useRef, useState, type PointerEvent } from 'react'
+import { memo, useEffect, useRef, useState, type PointerEvent, type TransitionEvent } from 'react'
 import type { Card } from '../../lib/types'
 
 /** Course du glissement ouvert : bouton « Supprimer » (80 px) + 12 px d'écart (Paper « Mes cartes · 4 carte glissée »). */
 export const REVEAL = 92
+/** Largeur du bouton « Supprimer ». */
+const ACTION = 80
 /** Mouvement minimal avant de choisir l'axe : en dessous, c'est un tap. */
 const SLOP = 8
 /** Élasticité au-delà de la course. */
 const OVERDRAG = 24
 
 const TRASH = <><path d="M4 7h16" /><path d="M10 11v6M14 11v6" /><path d="M6 7l1 13h10l1-13" /><path d="M9 7V4h6v3" /></>
+
+const clamp = (x: number) => Math.min(0, Math.max(-REVEAL - OVERDRAG, x))
+const faceAt = (x: number) => (x ? `translate3d(${x}px,0,0)` : '')
+/**
+ * « Supprimer » découpé à la place libérée par la carte (la carte est translucide : posé dessous, le rouge se verrait au
+ * travers) : à `x` px de décalage, seuls les `|x|` px de droite du bouton sont visibles.
+ */
+const actionAt = (x: number) => `inset(0 0 0 ${Math.max(0, ACTION + x)}px round 22px)`
+/** Retour animé (sinon, « Réduire les animations » ou tests : aucun transitionend ne viendra). */
+const animates = () => window.matchMedia?.('(prefers-reduced-motion: no-preference)').matches ?? false
 
 interface Props {
   card: Card
@@ -24,27 +36,52 @@ interface Props {
  * Carte de « Mes cartes » (#80, Paper « 1 liste », « 4 carte glissée ») : question, réponse, tags. Tap → modifier.
  * Glisser vers la gauche (doigt ou stylet) révèle « Supprimer » en rouge, fait main avec les pointer events :
  * `touch-action: pan-y` laisse le défilement vertical au navigateur (il annule alors le geste : pointercancel) ; l'axe
- * n'est choisi qu'après 8 px, et la carte suit le doigt sans rendu React (transform posé directement).
- * Souris / clavier (Mac) : corbeille ronde de 44 px, visible au survol ou au focus (pointeur fin seulement).
+ * n'est choisi qu'après 8 px, et la carte suit le doigt sans rendu React (transform et découpe posés directement).
+ * Ouverte : un toucher ailleurs ne fait que la refermer (comme Mail). Souris / clavier (Mac) : corbeille ronde de
+ * 44 px, visible au survol ou au focus (pointeur fin seulement).
  * Pas de flou propre (`list-card`) : des centaines de cartes floutées ne défileraient pas à 60 i/s.
  */
 export const CardRow = memo(function CardRow({ card, open, onOpenChange, onEdit, onDelete }: Props) {
   const row = useRef<HTMLLIElement>(null)
   const face = useRef<HTMLDivElement>(null)
+  const action = useRef<HTMLButtonElement>(null)
   const drag = useRef<{ id: number; x: number; y: number; base: number; dx: number; horizontal: boolean } | null>(null)
   // Un glissement vient d'avoir lieu : le clic qui peut suivre n'ouvre pas la modification.
   const swiped = useRef(false)
   const [dragging, setDragging] = useState(false)
+  // « Supprimer » monté : pendant le glissement, ouverte, et jusqu'à la fin de l'animation de retour.
+  const [revealed, setRevealed] = useState(false)
 
-  const place = (x: number) => { if (face.current) face.current.style.transform = x ? `translate3d(${x}px,0,0)` : '' }
+  const place = (x: number) => {
+    if (face.current) face.current.style.transform = faceAt(x)
+    if (action.current) action.current.style.clipPath = actionAt(x)
+  }
+  /** Suivi du doigt sans transition ; rétablie au relâchement, en même temps que la position finale (animée). */
+  const follow = (on: boolean) => {
+    for (const el of [face.current, action.current]) if (el) el.style.transition = on ? 'none' : ''
+  }
 
-  // Ouverte : un tap n'importe où ailleurs la referme (comme Mail).
+  // Ouverte : un toucher n'importe où ailleurs la referme, et rien d'autre (le clic qui suit sur une autre carte
+  // n'ouvre pas « Modifier »).
   useEffect(() => {
     if (!open) return
-    const close = (e: globalThis.PointerEvent) => { if (!row.current?.contains(e.target as Node)) onOpenChange(card.id, false) }
+    const close = (e: globalThis.PointerEvent) => {
+      if (row.current?.contains(e.target as Node)) return
+      onOpenChange(card.id, false)
+      const swallow = (c: MouseEvent) => {
+        if ((c.target as Element | null)?.closest?.('.list-card')) { c.preventDefault(); c.stopPropagation() }
+      }
+      document.addEventListener('click', swallow, { capture: true, once: true })
+      setTimeout(() => document.removeEventListener('click', swallow, true), 800)
+    }
     document.addEventListener('pointerdown', close, true)
     return () => document.removeEventListener('pointerdown', close, true)
   }, [open, card.id, onOpenChange])
+
+  // Refermée (geste, autre carte, toucher ailleurs) sans animation : « Supprimer » démonté tout de suite.
+  useEffect(() => {
+    if (!open && !dragging && revealed && !animates()) setRevealed(false)
+  }, [open, dragging, revealed])
 
   const down = (e: PointerEvent<HTMLDivElement>) => {
     swiped.current = false
@@ -63,9 +100,11 @@ export const CardRow = memo(function CardRow({ card, open, onOpenChange, onEdit,
       swiped.current = true
       e.currentTarget.setPointerCapture?.(e.pointerId)
       setDragging(true)
+      setRevealed(true)
     }
     d.dx = dx
-    place(Math.min(0, Math.max(-REVEAL - OVERDRAG, d.base + dx)))
+    follow(true)
+    place(clamp(d.base + dx))
   }
   const end = (commit: boolean) => (e: PointerEvent<HTMLDivElement>) => {
     const d = drag.current
@@ -73,9 +112,14 @@ export const CardRow = memo(function CardRow({ card, open, onOpenChange, onEdit,
     drag.current = null
     if (!d.horizontal) return
     const next = commit ? d.base + d.dx < -REVEAL / 2 : open
+    follow(false)
     place(next ? -REVEAL : 0)
     setDragging(false)
+    if (!next && clamp(d.base + d.dx) === 0) setRevealed(false) // déjà en place : aucune animation à attendre
     if (next !== open) onOpenChange(card.id, next)
+  }
+  const settled = (e: TransitionEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget && e.propertyName === 'transform' && !open && !dragging) setRevealed(false)
   }
 
   const edit = () => {
@@ -85,13 +129,17 @@ export const CardRow = memo(function CardRow({ card, open, onOpenChange, onEdit,
   }
   const askDelete = () => { if (row.current) onDelete(card, row.current.getBoundingClientRect()) }
 
+  const motion = 'motion-safe:duration-200 motion-safe:ease-out'
   return (
     <li ref={row} className="relative">
-      {(open || dragging) && (
+      {(revealed || open) && (
         <button
+          ref={action}
           type="button"
+          tabIndex={open ? 0 : -1}
           onClick={askDelete}
-          className="delete-action absolute inset-y-0 end-0 flex w-20 flex-col items-center justify-center gap-1.5 rounded-[22px] text-[13px] leading-4 font-semibold"
+          style={{ clipPath: actionAt(open ? -REVEAL : 0) }}
+          className={`delete-action absolute inset-y-0 end-0 flex w-20 flex-col items-center justify-center gap-1.5 rounded-[22px] text-[13px] leading-4 font-semibold motion-safe:transition-[clip-path] ${motion}`}
         >
           <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[22px]" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{TRASH}</svg>
           Supprimer
@@ -103,8 +151,9 @@ export const CardRow = memo(function CardRow({ card, open, onOpenChange, onEdit,
         onPointerMove={move}
         onPointerUp={end(true)}
         onPointerCancel={end(false)}
-        style={open ? { transform: `translate3d(${-REVEAL}px,0,0)` } : undefined}
-        className={`list-card group relative touch-pan-y rounded-[20px] select-none ${dragging ? '' : 'motion-safe:transition-transform motion-safe:duration-200 motion-safe:ease-out'}`}
+        onTransitionEnd={settled}
+        style={open ? { transform: faceAt(-REVEAL) } : undefined}
+        className={`list-card group relative touch-pan-y rounded-[20px] select-none motion-safe:transition-transform ${motion}`}
       >
         <button type="button" onClick={edit} className="flex w-full flex-col gap-1 rounded-[20px] py-3.5 ps-4 pe-3 text-start pointer-fine:pe-14">
           <span className="line-clamp-3 text-[16px] leading-[21px] font-semibold text-black dark:text-white">{card.front}</span>

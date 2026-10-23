@@ -57,13 +57,15 @@ export function MyCardsScreen({ db, onBack, backLabel = 'Accueil', onWrite }: Pr
   const doc = ready && documentId !== null ? ready.documents.find(d => d.id === documentId) ?? null : null
   const results = useMemo(() => (ready ? filterCards(ready.cards, deferredQuery, doc?.id ?? null) : []), [ready, deferredQuery, doc])
 
-  // Nouvelle recherche ou autre document : on repart du haut de la liste.
+  // Nouvelle recherche ou autre document : on repart de la première tranche, aucune carte ouverte.
   const [shownFor, setShownFor] = useState({ q: deferredQuery, d: doc?.id ?? null })
   if (shownFor.q !== deferredQuery || shownFor.d !== (doc?.id ?? null)) {
     setShownFor({ q: deferredQuery, d: doc?.id ?? null })
     setLimit(SLICE)
     setOpenId(null)
   }
+  // Conteneur qui défile (la Page Konsta) : racine du préchargement, et position gardée pendant la modification.
+  const page = useRef<HTMLDivElement>(null)
   const sentinel = useRef<HTMLDivElement>(null)
   // Sans IntersectionObserver (vieux navigateur, tests) : tout d'un coup.
   const shown = typeof IntersectionObserver === 'undefined' ? Infinity : limit
@@ -71,13 +73,14 @@ export function MyCardsScreen({ db, onBack, backLabel = 'Accueil', onWrite }: Pr
   useEffect(() => {
     const el = sentinel.current
     if (!more || !el) return
-    const io = new IntersectionObserver(([e]) => { if (e?.isIntersecting) setLimit(l => l + SLICE * 2) }, { rootMargin: '800px 0px' })
+    // `root` : la marge de 800 px ne s'applique qu'au conteneur qui défile (pas à la fenêtre, qui ne défile pas) ;
+    // la tranche suivante arrive bien avant le bas, pas de blanc en défilement rapide.
+    const io = new IntersectionObserver(([e]) => { if (e?.isIntersecting) setLimit(l => l + SLICE * 2) }, { root: page.current, rootMargin: '800px 0px' })
     io.observe(el)
     return () => io.disconnect()
   }, [more, shown])
 
   // Position de la liste gardée pendant la modification (la page est masquée, pas démontée).
-  const page = useRef<HTMLDivElement>(null)
   const scrollTop = useRef(0)
   useLayoutEffect(() => { if (!editing && page.current) page.current.scrollTop = scrollTop.current }, [editing])
 
@@ -124,23 +127,26 @@ export function MyCardsScreen({ db, onBack, backLabel = 'Accueil', onWrite }: Pr
           <BarTitle title="Mes cartes" subtitle={subtitle} heading />
         </TopBar>
         <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col gap-3.5 pt-1 pb-6 ${EDGES}`}>
-          <label className="glass-card flex h-11 shrink-0 items-center gap-2.5 rounded-full px-3.5 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-new">
-            <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px] shrink-0 text-label-2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" />
-            </svg>
-            <span className="sr-only">Rechercher dans mes cartes</span>
-            <input
-              type="search"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Question, réponse, tag ou document"
-              enterKeyHint="search"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              className="min-w-0 flex-1 bg-transparent text-[17px] leading-[22px] text-black outline-none placeholder:text-label-2 dark:text-white"
-            />
-          </label>
+          {/* Formulaire : la touche « Rechercher » du clavier iOS le ferme (rien à envoyer, la liste suit la frappe). */}
+          <form role="search" className="shrink-0" onSubmit={e => { e.preventDefault(); (document.activeElement as HTMLElement | null)?.blur() }}>
+            <label className="glass-card flex h-11 shrink-0 items-center gap-2.5 rounded-full px-3.5 focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-new">
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px] shrink-0 text-label-2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <circle cx="11" cy="11" r="6.5" /><path d="M16 16l4 4" />
+              </svg>
+              <span className="sr-only">Rechercher dans mes cartes</span>
+              <input
+                type="search"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Question, réponse, tag ou document"
+                enterKeyHint="search"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent text-[17px] leading-[22px] text-black outline-none placeholder:text-label-2 dark:text-white"
+              />
+            </label>
+          </form>
 
           {ready && ready.documents.length > 0 && (
             <ul role="list" aria-label="Filtrer par document" className="chip-row -mx-1 flex shrink-0 gap-2 scroll-px-1 px-1 py-1">

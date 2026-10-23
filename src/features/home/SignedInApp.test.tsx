@@ -256,7 +256,7 @@ describe('SignedInApp : barre commune (#82)', () => {
     expect(actions()).toEqual(['Accueil', 'Rechercher', 'Profil'])
     await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
-    expect(actions()).toEqual(['Mes tags', 'Rechercher', 'Profil'])
+    expect(actions()).toEqual(['Mes tags', 'Profil']) // #80 : pas de loupe en révision
     await user.click(screen.getByRole('button', { name: 'Profil' }))
     expect(within(screen.getByRole('dialog', { name: 'Profil' })).getByRole('button', { name: 'Se déconnecter' })).toBeTruthy()
   })
@@ -277,6 +277,18 @@ describe('SignedInApp : Mes cartes (#80)', () => {
     await user.click(screen.getByRole('button', { name: 'Accueil' }))
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
     await waitFor(() => expect(depth()).toBe(0))
+  })
+
+  it('révision en cours : pas de loupe (Mes cartes ne remet jamais la session à zéro)', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await user.click(await screen.findByRole('button', { name: 'Afficher la réponse' }))
+    await user.click(await screen.findByRole('button', { name: /Très bien/ }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(screen.queryByRole('button', { name: 'Rechercher' })).toBeNull()
+    expect(actions()).toEqual(['Accueil', 'Profil'])
+    expect([...document.querySelectorAll('header p')].map(p => p.textContent)).toEqual(['Révision du jour', 'Carte 2 sur 3'])
   })
 
   it('geste retour / « précédent » du navigateur depuis Mes cartes : écran d’avant (Mes tags)', async () => {
