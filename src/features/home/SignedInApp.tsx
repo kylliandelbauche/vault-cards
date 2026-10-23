@@ -16,6 +16,7 @@ import { sourceName } from '../inbox/sourceName'
 import { HomeScreen } from './HomeScreen'
 import { TagsScreen } from './TagsScreen'
 import { useHomeData } from './useHomeData'
+import { LeaveGuardContext } from './useLeaveGuard'
 import { useNavigation } from './useNavigation'
 
 interface Props {
@@ -42,12 +43,17 @@ export function SignedInApp(props: Props) {
       void safeSignOut({ pending: () => pendingCount(db), sync: runSync, confirm: m => window.confirm(m), signOut: onSignOut })
     },
   }), [db, runSync, onSignOut])
-  return <BarActionsProvider value={barActions}><SignedInScreens {...props} /></BarActionsProvider>
+  const { registerGuard, ...nav } = useNavigation()
+  return (
+    <BarActionsProvider value={barActions}>
+      <LeaveGuardContext.Provider value={registerGuard}><SignedInScreens {...props} nav={nav} /></LeaveGuardContext.Provider>
+    </BarActionsProvider>
+  )
 }
 
-function SignedInScreens({ db, runSync, now, inbox }: Props) {
+function SignedInScreens({ db, runSync, now, inbox, nav }: Props & { nav: Omit<ReturnType<typeof useNavigation>, 'registerGuard'> }) {
   const store = useMemo(() => dexieStore(db), [db])
-  const { screen, previous, openReview, openTags, open, replace, back, goHome } = useNavigation()
+  const { screen, previous, openReview, openTags, open, replace, back, goHome } = nav
   const scope = screen.name === 'review' ? screen.scope : null
   const session = useReviewSession(store, now, scope)
   const autoSyncOptions = useMemo(() => ({ pending: () => pendingCount(db) }), [db])

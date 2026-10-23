@@ -5,6 +5,7 @@ import { DiscardDialog, SheetBar } from '../../components/SheetBar'
 import { EDGES } from '../../components/TopBar'
 import { addText, INBOX_LIMITS, type InboxDeps, type InboxItem } from '../../lib/inbox'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
+import { useLeaveGuard } from '../home/useLeaveGuard'
 import { inboxErrorMessage } from './sourceName'
 
 interface Props {
@@ -29,7 +30,9 @@ export function SourceTextScreen({ deps, onClose, onSent }: Props) {
   const count = useMemo(() => Array.from(text.trim()).length, [text])
   const tooLong = count > INBOX_LIMITS.TEXT_MAX
 
-  const close = () => (text.trim() === '' ? onClose() : setConfirming(true))
+  const dirty = text.trim() !== ''
+  useLeaveGuard(dirty, () => setConfirming(true)) // #88 : retour du navigateur / geste iOS = même confirmation que le ✕
+  const close = () => (dirty ? setConfirming(true) : onClose())
 
   const paste = async () => {
     try {

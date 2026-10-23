@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { LEGACY_TAG_NAMES } from '../../../shared/tags'
@@ -249,5 +249,145 @@ describe('Boîte de réception : écrans (#81)', () => {
     const card = await db.cards.get('a')
     expect(card?.updated_at).toBe('2026-10-18T10:00:00Z')
     expect(card?.synced).toBeUndefined()
+  })
+})
+
+describe('Retour du navigateur / geste iOS avec saisie non enregistrée (#88)', () => {
+  const depth = () => (window.history.state as { vaultCardsDepth?: number } | null)?.vaultCardsDepth ?? 0
+  const settle = () => act(() => new Promise(r => setTimeout(r, 50)))
+  const goBack = () => { act(() => { window.history.back() }) }
+
+  it('Source · Texte sans saisie : le retour ferme tout de suite', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Texte' }))
+    expect(depth()).toBe(1)
+    goBack()
+    expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await waitFor(() => expect(depth()).toBe(0))
+  })
+
+  it('Source · Texte avec saisie : le retour ouvre la confirmation et l’écran reste ; « Continuer » garde la saisie', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Texte' }))
+    await user.type(screen.getByLabelText('Texte dont tirer des cartes'), 'abc')
+    goBack()
+    expect((await screen.findByRole('alertdialog')).textContent).toMatch('Tes modifications ne seront pas enregistrées.')
+    await settle()
+    expect(title()).toBe('Texte')
+    expect(depth()).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'Continuer à modifier' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(title()).toBe('Texte')
+    expect((screen.getByLabelText('Texte dont tirer des cartes') as HTMLTextAreaElement).value).toBe('abc')
+  })
+
+  it('Source · Texte : deux retours d’affilée puis « Ignorer » → accueil, historique à la profondeur 0', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'Texte' }))
+    await user.type(screen.getByLabelText('Texte dont tirer des cartes'), 'abc')
+    goBack()
+    await screen.findByRole('alertdialog')
+    await settle()
+    goBack()
+    await settle()
+    expect(screen.getAllByRole('alertdialog')).toHaveLength(1)
+    expect(title()).toBe('Texte')
+    expect(depth()).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'Ignorer les modifications' }))
+    expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
+    await waitFor(() => expect(depth()).toBe(0))
+    await settle()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('Nouvelle carte : sans saisie, le retour ferme ; avec saisie, confirmation puis « Ignorer »', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'À la main' }))
+    goBack()
+    expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
+    await waitFor(() => expect(depth()).toBe(0))
+
+    await user.click(await screen.findByRole('button', { name: 'À la main' }))
+    await user.type(screen.getByLabelText('QUESTION'), 'a')
+    goBack()
+    await screen.findByRole('alertdialog')
+    await settle()
+    expect(title()).toBe('Nouvelle carte')
+    await user.click(screen.getByRole('button', { name: 'Ignorer les modifications' }))
+    expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
+    await waitFor(() => expect(depth()).toBe(0))
+    expect(await db.cards.count()).toBe(0)
+  })
+
+  it('Modifier la carte (brouillon) : retour avec modification → confirmation ; « Ignorer » revient aux Brouillons, une pile en moins', async () => {
+    await db.cards.put(draft('a', 'Question A ?'))
+    const { user } = renderApp({ items: [item({ status: 'done' })] })
+    await user.click(await screen.findByRole('button', { name: '1 brouillon à valider' }))
+    await user.click(await screen.findByRole('button', { name: /^Question A \?/ }))
+    await screen.findByLabelText('QUESTION')
+    expect(depth()).toBe(2)
+    goBack() // sans modification : retour immédiat aux Brouillons
+    await waitFor(() => expect(title()).toBe('1 brouillon'))
+    await waitFor(() => expect(depth()).toBe(1))
+
+    await user.click(await screen.findByRole('button', { name: /^Question A \?/ }))
+    await user.type(await screen.findByLabelText('QUESTION'), ' bis')
+    goBack()
+    await screen.findByRole('alertdialog')
+    await settle()
+    expect(title()).toBe('Modifier la carte')
+    expect(depth()).toBe(2)
+    await user.click(screen.getByRole('button', { name: 'Ignorer les modifications' }))
+    await waitFor(() => expect(title()).toBe('1 brouillon'))
+    await waitFor(() => expect(depth()).toBe(1))
+    expect((await db.cards.get('a'))?.front).toBe('Question A ?')
+  })
+
+  it('Nouvelle carte : retour depuis « Ajouter des tags » → formulaire, saisie intacte ; second retour → confirmation du formulaire', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'À la main' }))
+    await user.type(screen.getByLabelText('QUESTION'), 'important')
+    await user.click(screen.getByRole('button', { name: 'Ajouter un tag' }))
+    expect(title()).toBe('Ajouter des tags')
+    goBack()
+    await waitFor(() => expect(title()).toBe('Nouvelle carte'))
+    await settle()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect((screen.getByLabelText('QUESTION') as HTMLTextAreaElement).value).toBe('important')
+    expect(depth()).toBe(1)
+    goBack()
+    expect((await screen.findByRole('alertdialog')).textContent).toMatch('Tes modifications ne seront pas enregistrées.')
+    await settle()
+    expect(title()).toBe('Nouvelle carte')
+    expect(depth()).toBe(1)
+  })
+
+  it('« Ajouter des tags » modifié : le retour ouvre sa confirmation ; « Ignorer » revient au formulaire, tags inchangés', async () => {
+    const { user } = renderApp()
+    await user.click(await screen.findByRole('button', { name: 'À la main' }))
+    await user.click(screen.getByRole('button', { name: 'Ajouter un tag' }))
+    await user.click(await screen.findByRole('button', { name: /^Dev & outils/ }))
+    goBack()
+    await screen.findByRole('alertdialog')
+    await settle()
+    expect(title()).toBe('Ajouter des tags')
+    await user.click(screen.getByRole('button', { name: 'Ignorer les modifications' }))
+    await waitFor(() => expect(title()).toBe('Nouvelle carte'))
+    expect(screen.queryByRole('button', { name: 'Retirer Dev & outils' })).toBeNull()
+    expect(depth()).toBe(1)
+  })
+
+  it('un retour de l’app (✓ Enregistrer, ✕ sans modification) n’ouvre jamais la confirmation', async () => {
+    await db.cards.put(draft('a', 'Question A ?'))
+    const { user } = renderApp({ items: [item({ status: 'done' })] })
+    await user.click(await screen.findByRole('button', { name: '1 brouillon à valider' }))
+    await user.click(await screen.findByRole('button', { name: /^Question A \?/ }))
+    await user.type(await screen.findByLabelText('QUESTION'), ' bis')
+    await user.click(screen.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(title()).toBe('1 brouillon'))
+    await settle()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    await waitFor(() => expect(depth()).toBe(1))
   })
 })

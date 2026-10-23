@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { LEGACY_TAG_NAMES } from '../../../shared/tags'
@@ -182,6 +182,66 @@ describe('SignedInApp : page Mes tags (#53)', () => {
     await rateAll(user)
     await user.click(await screen.findByRole('button', { name: "Retour à l'accueil" }))
     await waitFor(() => expect(heading()).toBe("1 carte à revoir aujourd'hui"))
+  })
+})
+
+describe('SignedInApp : retour avec « Modifier la carte » depuis le menu ⋯ (#88)', () => {
+  const depth = () => (window.history.state as { vaultCardsDepth?: number } | null)?.vaultCardsDepth ?? 0
+  const settle = () => act(() => new Promise(r => setTimeout(r, 50)))
+
+  it('retour avec modification : confirmation, la révision reste ; « Ignorer » ferme le formulaire sans quitter la révision', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(depth()).toBe(1)
+    await user.click(screen.getByRole('button', { name: 'Actions de la carte' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+
+    await user.type(screen.getByLabelText('QUESTION'), ' bis')
+    act(() => { window.history.back() })
+    await screen.findByRole('alertdialog')
+    await settle()
+    expect(heading()).toBe('Modifier la carte')
+    expect(depth()).toBe(1)
+
+    await user.click(screen.getByRole('button', { name: 'Continuer à modifier' }))
+    expect(heading()).toBe('Modifier la carte')
+
+    act(() => { window.history.back() })
+    await screen.findByRole('alertdialog')
+    await settle()
+    await user.click(screen.getByRole('button', { name: 'Ignorer les modifications' }))
+    expect(await screen.findByRole('button', { name: 'Afficher la réponse' })).toBeTruthy()
+    expect(depth()).toBe(1)
+
+    // Plus de saisie en cours : le retour redevient immédiat.
+    act(() => { window.history.back() })
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await waitFor(() => expect(depth()).toBe(0))
+  })
+})
+
+describe('SignedInApp : retour sans modification depuis « Modifier la carte » du menu ⋯ (#88)', () => {
+  const depth = () => (window.history.state as { vaultCardsDepth?: number } | null)?.vaultCardsDepth ?? 0
+  const settle = () => act(() => new Promise(r => setTimeout(r, 50)))
+
+  it('ferme seulement le formulaire (la révision reste), comme le ✕ ; un second retour quitte la révision', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    await user.click(screen.getByRole('button', { name: 'Actions de la carte' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+    expect(heading()).toBe('Modifier la carte')
+    act(() => { window.history.back() })
+    expect(await screen.findByRole('button', { name: 'Afficher la réponse' })).toBeTruthy()
+    await settle()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(depth()).toBe(1)
+    act(() => { window.history.back() })
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await waitFor(() => expect(depth()).toBe(0))
   })
 })
 
