@@ -69,45 +69,41 @@ function RoundButton({ label, children, ...rest }: { label: string; children: Re
  * testé seul, écran de connexion), la barre n'affiche pas ces boutons.
  */
 export interface BarActionsValue {
+  /** Loupe : ouvre « Mes cartes » (#80), un niveau de navigation. */
+  onSearch(): void
   /** Déconnexion sûre (#40) : synchro d'abord, confirmation si elle échoue. */
   onSignOut(): void
 }
 const BarActionsContext = createContext<BarActionsValue | null>(null)
 export const BarActionsProvider = BarActionsContext.Provider
 
-type Panel = 'search' | 'profile'
-
 /**
- * Recherche et Profil, à droite de la barre. Tant que « Mes cartes » (#80) et le Profil (#83) n'existent pas :
- * Recherche ouvre une petite fenêtre « bientôt » ; Profil ouvre une petite fenêtre avec « Se déconnecter »
- * (la déconnexion n'est plus dans la barre).
+ * Recherche et Profil, à droite de la barre. La loupe ouvre « Mes cartes » (#80) ; absente de « Mes cartes » même
+ * (`search` faux). Tant que le Profil (#83) n'existe pas : petite fenêtre avec « Se déconnecter ».
  */
-function BarActions({ onSignOut }: BarActionsValue) {
-  const [open, setOpen] = useState<Panel | null>(null)
+function BarActions({ onSearch, onSignOut, search }: BarActionsValue & { search: boolean }) {
+  const [open, setOpen] = useState(false)
   // Bouton qui a ouvert la fenêtre, pour lui rendre le focus (Safari/iOS : un tap ne donne pas le focus au bouton,
   // `document.activeElement` serait <body>).
   const opener = useRef<HTMLElement | null>(null)
-  const toggle = (p: Panel, e: MouseEvent<HTMLButtonElement>) => {
+  const toggle = (e: MouseEvent<HTMLButtonElement>) => {
     opener.current = e.currentTarget
-    setOpen(o => (o === p ? null : p))
+    setOpen(o => !o)
   }
-  const close = () => setOpen(null)
+  const close = () => setOpen(false)
   return (
     <>
-      <RoundButton label="Rechercher" aria-haspopup="dialog" aria-expanded={open === 'search'} onClick={e => toggle('search', e)}>
-        <circle cx="11" cy="11" r="7" />
-        <path d="M20 20l-3.5-3.5" />
-      </RoundButton>
-      <RoundButton label="Profil" aria-haspopup="dialog" aria-expanded={open === 'profile'} onClick={e => toggle('profile', e)}>
+      {search && (
+        <RoundButton label="Rechercher" onClick={onSearch}>
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </RoundButton>
+      )}
+      <RoundButton label="Profil" aria-haspopup="dialog" aria-expanded={open} onClick={toggle}>
         <circle cx="12" cy="8" r="4" />
         <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
       </RoundButton>
-      {open === 'search' && (
-        <BarPopover label="Rechercher" onClose={close} opener={opener}>
-          <p className="px-[18px] py-3.5 text-[15px] leading-5 text-label-2">La recherche dans tes cartes arrive bientôt.</p>
-        </BarPopover>
-      )}
-      {open === 'profile' && (
+      {open && (
         <BarPopover label="Profil" onClose={close} opener={opener}>
           <p className="px-[18px] pt-3.5 pb-3 text-[13px] leading-[18px] text-label-2">Le profil arrive bientôt.</p>
           <button
@@ -188,6 +184,8 @@ interface TopBarProps {
   children: ReactNode
   /** Sous la ligne : barre de progression de la révision. */
   extra?: ReactNode
+  /** Loupe (« Mes cartes ») : masquée sur « Mes cartes » même. */
+  search?: boolean
 }
 
 /**
@@ -196,7 +194,7 @@ interface TopBarProps {
  * son propre verre. `sticky` sur un fondu de la couleur du fond (`.bar-fade`, effet de bord iOS 26) : le contenu
  * qui défile s'efface dessous au lieu de passer sous le titre.
  */
-export function TopBar({ onBack, backLabel = 'Accueil', children, extra }: TopBarProps) {
+export function TopBar({ onBack, backLabel = 'Accueil', children, extra, search = true }: TopBarProps) {
   const actions = useContext(BarActionsContext)
   return (
     <header className={`bar-fade sticky top-0 z-20 shrink-0 pt-[max(12px,var(--k-safe-area-top))] pb-3 ${EDGES}`}>
@@ -204,7 +202,7 @@ export function TopBar({ onBack, backLabel = 'Accueil', children, extra }: TopBa
         <div className="flex min-h-14 items-center gap-2.5">
           {onBack && <BackButton onClick={onBack} label={backLabel} />}
           {children}
-          {actions && <BarActions onSignOut={actions.onSignOut} />}
+          {actions && <BarActions onSearch={actions.onSearch} onSignOut={actions.onSignOut} search={search} />}
         </div>
         {extra}
       </div>

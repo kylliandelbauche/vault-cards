@@ -26,7 +26,7 @@ function renderHome(data: HomeData = ready(), handlers: Handlers = {}) {
   const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onOpenTags: vi.fn(), ...handlers }
   const r = render(
     <KApp theme="ios">
-      <BarActionsProvider value={{ onSignOut }}><HomeScreen data={data} now={now} sync="synced" {...props} /></BarActionsProvider>
+      <BarActionsProvider value={{ onSignOut, onSearch: vi.fn() }}><HomeScreen data={data} now={now} sync="synced" {...props} /></BarActionsProvider>
     </KApp>,
   )
   return { ...r, ...props, onSignOut }

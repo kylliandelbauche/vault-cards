@@ -13,11 +13,16 @@ import { EditCardScreen, NewCardScreen } from '../inbox/EditCardScreen'
 import { NewCardsBlock } from '../inbox/NewCardsBlock'
 import { SourceTextScreen } from '../inbox/SourceTextScreen'
 import { sourceName } from '../inbox/sourceName'
+import { MyCardsScreen } from '../cards/MyCardsScreen'
 import { HomeScreen } from './HomeScreen'
 import { TagsScreen } from './TagsScreen'
 import { useHomeData } from './useHomeData'
 import { LeaveGuardContext } from './useLeaveGuard'
-import { useNavigation } from './useNavigation'
+import { useNavigation, type Screen } from './useNavigation'
+
+/** Nom accessible de la flèche retour : l'écran de destination. */
+const backLabel = (to: Screen | null) =>
+  to?.name === 'tags' ? 'Mes tags' : to?.name === 'review' ? to.scope.tag ?? DAY_TITLE : 'Accueil'
 
 interface Props {
   db: VaultDB
@@ -37,13 +42,16 @@ interface Props {
  */
 export function SignedInApp(props: Props) {
   const { db, runSync, onSignOut } = props
-  // Jamais de révisions perdues : synchro d'abord, confirmation si elle échoue. Accessible depuis Profil (barre du haut).
+  const { registerGuard, ...nav } = useNavigation()
+  const { openCards } = nav
+  // Loupe → « Mes cartes » (#80). Déconnexion : jamais de révisions perdues, synchro d'abord, confirmation si elle
+  // échoue ; accessible depuis Profil (barre du haut).
   const barActions = useMemo(() => ({
+    onSearch: openCards,
     onSignOut: () => {
       void safeSignOut({ pending: () => pendingCount(db), sync: runSync, confirm: m => window.confirm(m), signOut: onSignOut })
     },
-  }), [db, runSync, onSignOut])
-  const { registerGuard, ...nav } = useNavigation()
+  }), [db, runSync, onSignOut, openCards])
   return (
     <BarActionsProvider value={barActions}>
       <LeaveGuardContext.Provider value={registerGuard}><SignedInScreens {...props} nav={nav} /></LeaveGuardContext.Provider>
@@ -106,6 +114,9 @@ function SignedInScreens({ db, runSync, now, inbox, nav }: Props & { nav: Omit<R
         onDone={goHome}
       />
     )
+  }
+  if (screen.name === 'cards') {
+    return <MyCardsScreen db={db} onBack={back} backLabel={backLabel(previous)} onWrite={syncNow} />
   }
   if (screen.name === 'new-card') {
     return <NewCardScreen db={db} onClose={back} onWrite={syncNow} />

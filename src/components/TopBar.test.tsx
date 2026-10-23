@@ -5,13 +5,14 @@ import { BarActionsProvider, BarTitle, TopBar } from './TopBar'
 
 afterEach(cleanup)
 
-const withActions = (onSignOut = vi.fn()) => {
+const withActions = (onSignOut = vi.fn(), search = true) => {
+  const onSearch = vi.fn()
   const r = render(
-    <BarActionsProvider value={{ onSignOut }}>
-      <TopBar onBack={vi.fn()} backLabel="Accueil"><BarTitle title="Mes tags" subtitle="10 cartes à revoir" /></TopBar>
+    <BarActionsProvider value={{ onSignOut, onSearch }}>
+      <TopBar onBack={vi.fn()} backLabel="Accueil" search={search}><BarTitle title="Mes tags" subtitle="10 cartes à revoir" /></TopBar>
     </BarActionsProvider>,
   )
-  return { ...r, onSignOut, user: userEvent.setup() }
+  return { ...r, onSignOut, onSearch, user: userEvent.setup() }
 }
 
 describe('TopBar (#82)', () => {
@@ -57,18 +58,19 @@ describe('TopBar (#82)', () => {
     expect(screen.queryByRole('button', { name: /Déconnexion|Se déconnecter/ })).toBeNull()
   })
 
-  it('Recherche : petite fenêtre « bientôt », aucun autre effet ; Échap ferme et rend le focus', async () => {
-    const { user } = withActions()
+  it('Recherche (#80) : la loupe ouvre « Mes cartes » (onSearch), sans fenêtre', async () => {
+    const { user, onSearch } = withActions()
     const search = screen.getByRole('button', { name: 'Rechercher' })
+    expect(search.hasAttribute('aria-haspopup')).toBe(false)
     await user.click(search)
-    expect(search.getAttribute('aria-expanded')).toBe('true')
-    const dialog = screen.getByRole('dialog', { name: 'Rechercher' })
-    expect(dialog.getAttribute('aria-modal')).toBe('true')
-    expect(dialog.textContent).toBe('La recherche dans tes cartes arrive bientôt.')
-    expect(within(dialog).queryAllByRole('button')).toHaveLength(0)
-    await user.keyboard('{Escape}')
+    expect(onSearch).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('dialog')).toBeNull()
-    expect(document.activeElement).toBe(search)
+  })
+
+  it('search={false} (« Mes cartes ») : pas de loupe, Profil reste', () => {
+    const { container } = withActions(vi.fn(), false)
+    const buttons = within(container.querySelector('header')!).getAllByRole('button')
+    expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Accueil', 'Profil'])
   })
 
   it('Profil : petite fenêtre avec « Se déconnecter » (déconnexion sûre) ; le focus y est posé', async () => {
