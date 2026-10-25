@@ -22,14 +22,14 @@ const ready = (over: Partial<HomeStats> = {}): HomeData => ({ status: 'ready', s
 interface Handlers { onStudy?: () => void; onReviewAll?: () => void }
 
 function renderHome(data: HomeData = ready(), handlers: Handlers = {}) {
-  const onSignOut = vi.fn()
+  const onProfile = vi.fn()
   const props = { onStudy: vi.fn(), onReviewAll: vi.fn(), onOpenTags: vi.fn(), ...handlers }
   const r = render(
     <KApp theme="ios">
-      <BarActionsProvider value={{ onSignOut, onSearch: vi.fn() }}><HomeScreen data={data} now={now} sync="synced" {...props} /></BarActionsProvider>
+      <BarActionsProvider value={{ onProfile, onSearch: vi.fn() }}><HomeScreen data={data} now={now} sync="synced" {...props} /></BarActionsProvider>
     </KApp>,
   )
-  return { ...r, ...props, onSignOut }
+  return { ...r, ...props, onProfile }
 }
 
 const chipRow = () => screen.getByRole('list', { name: 'Réviser un tag' })
@@ -154,8 +154,8 @@ describe('HomeScreen', () => {
     for (const b of screen.getAllByRole('button')) expect(b.className).toMatch(/\b(min-h-11|size-12|h-14)\b/)
   })
 
-  it('barre du haut (#82) : « Vault Cards » + synchro à gauche, Recherche et Profil à droite ; déconnexion via Profil', async () => {
-    const { container, onSignOut } = renderHome()
+  it('barre du haut (#82) : « Vault Cards » + synchro à gauche, Recherche et Profil à droite ; Profil ouvre l’écran (#83)', async () => {
+    const { container, onProfile } = renderHome()
     const header = container.querySelector('header')!
     expect(header.querySelector('.glass, .glass-card')).toBeNull()
     expect(within(header).getByText('Vault Cards').className).toContain('text-[22px]')
@@ -164,8 +164,8 @@ describe('HomeScreen', () => {
     expect(screen.queryByRole('button', { name: /Déconnexion|Créer/ })).toBeNull()
     const user = userEvent.setup()
     await user.click(within(header).getByRole('button', { name: 'Profil' }))
-    await user.click(screen.getByRole('button', { name: 'Se déconnecter' }))
-    expect(onSignOut).toHaveBeenCalledTimes(1)
+    expect(onProfile).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('button', { name: 'Se déconnecter' })).toBeNull()
   })
   it('aucune carte : message habituel, pas de bouton d’étude, aucun raccourci de tag', () => {
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true)

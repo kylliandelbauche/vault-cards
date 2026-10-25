@@ -1,17 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { List, ListInput, Page, Preloader } from 'konsta/react'
+import { EyeToggle } from '../../components/EyeToggle'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
-
-function EyeIcon({ crossed }: { crossed: boolean }) {
-  return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" />
-      <circle cx="12" cy="12" r="3" />
-      {crossed && <path d="M4 4l16 16" />}
-    </svg>
-  )
-}
 
 interface Props {
   signIn(email: string, password: string): Promise<{ error: string | null }>
@@ -79,15 +70,7 @@ export function LoginScreen({ signIn }: Props) {
                 onChange={e => setPassword(e.target.value)}
               >
                 {/* Œil (#84) : type="button" (ne soumet pas), cible 44 px, le mot de passe reste dans le champ. */}
-                <button
-                  type="button"
-                  aria-pressed={showPassword}
-                  aria-label={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
-                  onClick={() => setShowPassword(v => !v)}
-                  className="password-toggle absolute right-1 bottom-0 flex h-11 w-11 items-center justify-center rounded-full text-label-2"
-                >
-                  <EyeIcon crossed={showPassword} />
-                </button>
+                <EyeToggle shown={showPassword} onToggle={() => setShowPassword(v => !v)} className="absolute right-1 bottom-0" />
               </ListInput>
             </List>
           </div>

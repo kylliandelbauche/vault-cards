@@ -11,14 +11,15 @@ export interface DraftsTarget {
 
 /**
  * Écran affiché : l'accueil, « Mes tags », « Mes cartes » (#80, éventuellement filtré sur un document), « Nouvelles
- * cartes » (hub, #86), une session de révision, ou la boîte de réception (#81) : saisie d'un texte, brouillons d'une
- * source, modification d'un brouillon.
+ * cartes » (hub, #86), le Profil (#83, avec ses deux formulaires : e-mail, mot de passe), une session de révision, ou
+ * la boîte de réception (#81) : saisie d'un texte, brouillons d'une source, modification d'un brouillon.
  */
 export type Screen =
   | { name: 'home' }
   | { name: 'tags' }
   | { name: 'cards'; documentId?: string }
   | { name: 'hub' }
+  | { name: 'profile'; view?: 'email' | 'password' }
   | { name: 'review'; scope: SessionScope }
   | { name: 'source-text' }
   | { name: 'new-card' }
@@ -99,8 +100,8 @@ export function useNavigation() {
   }, [])
 
   const push = useCallback((screen: Screen) => {
-    // Jamais deux sessions empilées : une révision remplace la révision courante.
-    const base = live.current.at(-1)?.name === 'review' ? live.current.slice(0, -1) : live.current
+    // Jamais deux sessions empilées : une révision remplace la révision courante (un autre écran, Profil #83, se pose dessus).
+    const base = screen.name === 'review' && live.current.at(-1)?.name === 'review' ? live.current.slice(0, -1) : live.current
     commit([...base, screen])
     reconcile()
   }, [commit, reconcile])
@@ -112,6 +113,11 @@ export function useNavigation() {
   /** Ouvre « Mes cartes » (#80, loupe de la barre). Déjà affichée : rien (jamais deux « Mes cartes » empilées). */
   const openCards = useCallback(() => {
     if (live.current.at(-1)?.name !== 'cards') push({ name: 'cards' })
+  }, [push])
+
+  /** Ouvre le Profil (#83, bouton de la barre). Déjà affiché : rien (jamais deux Profils empilés). */
+  const openProfile = useCallback(() => {
+    if (live.current.at(-1)?.name !== 'profile') push({ name: 'profile' })
   }, [push])
 
   /** Ouvre un écran de la boîte de réception (Source · Texte, Brouillons, Modifier). */
@@ -133,5 +139,5 @@ export function useNavigation() {
 
   const screen = stack[stack.length - 1]
   const previous = stack.length > 1 ? stack[stack.length - 2] : null
-  return { screen, previous, openReview, openTags, openCards, open, replace, back, goHome, registerGuard }
+  return { screen, previous, stack, openReview, openTags, openCards, openProfile, open, replace, back, goHome, registerGuard }
 }

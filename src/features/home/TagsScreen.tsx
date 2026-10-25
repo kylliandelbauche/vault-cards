@@ -10,6 +10,8 @@ interface Props {
   /** Tap sur un tag : session du jour limitée au tag. */
   onStudy(tag: string): void
   onBack(): void
+  /** Nom accessible de la flèche : l'écran de destination (Accueil, Profil). */
+  backLabel?: string
 }
 
 /**
@@ -18,14 +20,14 @@ interface Props {
  * l'accueil) et « À jour » (pastilles grises, tags vides compris). Pas de carte en verre autour : chaque tag dû est
  * son propre verre ; les tags à jour n'ont pas de flou. Tap → session du tag.
  */
-export function TagsScreen({ data, onStudy, onBack }: Props) {
+export function TagsScreen({ data, onStudy, onBack, backLabel = 'Accueil' }: Props) {
   const ready = data.status === 'ready' ? data.stats : null
   const sorted = ready ? sortTags(ready.tags) : []
   const due = sorted.filter(t => t.today > 0)
   const upToDate = sorted.filter(t => t.today === 0)
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
-      <TopBar onBack={onBack} backLabel="Accueil">
+      <TopBar onBack={onBack} backLabel={backLabel}>
         <BarTitle title="Mes tags" subtitle={ready ? tagsSubtitle(ready.today) : undefined} heading />
       </TopBar>
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col gap-5 pt-2 pb-4 ${EDGES}`}>

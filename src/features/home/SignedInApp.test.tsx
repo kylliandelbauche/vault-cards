@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { LEGACY_TAG_NAMES } from '../../../shared/tags'
+import type { ProfileClient } from '../../lib/account'
 import { VaultDB } from '../../lib/db'
 import type { Card } from '../../lib/types'
 import { SignedInApp } from './SignedInApp'
@@ -15,6 +16,18 @@ const card = (id: string, tags: string[]): Card => ({
 // Horloge qui avance d'une seconde à chaque lecture : chaque tap tombe après la garde anti double tap.
 let t = Date.parse('2026-10-13T10:00:00Z')
 const now = () => new Date((t += 1000))
+
+// Profil (#83) : client d'authentification simulé (le bouton Profil de la barre en dépend ; l'écran est testé dans features/profile).
+const profile = {
+  client: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      updateUser: vi.fn(),
+      signInWithPassword: vi.fn(),
+      onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
+    },
+  } as unknown as ProfileClient,
+}
 
 let db: VaultDB
 const NOTHING = { pushed: 0, pulledCards: 0, pulledReviews: 0 }
@@ -29,7 +42,7 @@ beforeEach(async () => {
 afterEach(async () => { cleanup(); db.close(); await db.delete() })
 
 function renderApp(runSync = vi.fn().mockResolvedValue(NOTHING)) {
-  render(<KApp theme="ios"><SignedInApp db={db} runSync={runSync} now={now} onSignOut={vi.fn()} /></KApp>)
+  render(<KApp theme="ios"><SignedInApp db={db} runSync={runSync} now={now} onSignOut={vi.fn()} profile={profile} /></KApp>)
   return { runSync, user: userEvent.setup() }
 }
 const heading = () => screen.getByRole('heading', { level: 1 }).textContent
@@ -257,8 +270,13 @@ describe('SignedInApp : barre commune (#82)', () => {
     await user.click(screen.getByRole('button', { name: /^Dev & outils, 2 cartes/ }))
     await screen.findByRole('button', { name: 'Afficher la réponse' })
     expect(actions()).toEqual(['Mes tags', 'Profil']) // #80 : pas de loupe en révision
+    // #83 : Profil est un écran (déconnexion comprise), posé sur la révision sans la remettre à zéro.
     await user.click(screen.getByRole('button', { name: 'Profil' }))
-    expect(within(screen.getByRole('dialog', { name: 'Profil' })).getByRole('button', { name: 'Se déconnecter' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'Se déconnecter' })).toBeTruthy()
+    expect(heading()).toBe('Profil')
+    await user.click(document.querySelector('header button') as HTMLElement)
+    expect(await screen.findByRole('button', { name: 'Afficher la réponse' })).toBeTruthy()
+    expect([...document.querySelectorAll('header p')].map(p => p.textContent)).toEqual(['Dev & outils', 'Carte 1 sur 2'])
   })
 })
 

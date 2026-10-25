@@ -1,5 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState, type ButtonHTMLAttributes, type MouseEvent, type ReactNode, type RefObject } from 'react'
-import { createPortal } from 'react-dom'
+import { createContext, useContext, type ButtonHTMLAttributes, type ReactNode } from 'react'
 import { GlassButton } from './GlassButton'
 
 /** État de la synchro affiché dans la barre du haut. */
@@ -71,26 +70,18 @@ function RoundButton({ label, children, ...rest }: { label: string; children: Re
 export interface BarActionsValue {
   /** Loupe : ouvre « Mes cartes » (#80), un niveau de navigation. */
   onSearch(): void
-  /** Déconnexion sûre (#40) : synchro d'abord, confirmation si elle échoue. */
-  onSignOut(): void
+  /** Profil (#83) : ouvre l'écran Profil, un niveau de navigation. Absent : pas de bouton Profil. */
+  onProfile?(): void
 }
 const BarActionsContext = createContext<BarActionsValue | null>(null)
 export const BarActionsProvider = BarActionsContext.Provider
 
 /**
  * Recherche et Profil, à droite de la barre. La loupe ouvre « Mes cartes » (#80) ; absente de « Mes cartes » même
- * (`search` faux). Tant que le Profil (#83) n'existe pas : petite fenêtre avec « Se déconnecter ».
+ * (`search` faux). Le bouton Profil ouvre l'écran Profil (#83, déconnexion comprise) ; absent de cet écran même
+ * (`profile` faux).
  */
-function BarActions({ onSearch, onSignOut, search }: BarActionsValue & { search: boolean }) {
-  const [open, setOpen] = useState(false)
-  // Bouton qui a ouvert la fenêtre, pour lui rendre le focus (Safari/iOS : un tap ne donne pas le focus au bouton,
-  // `document.activeElement` serait <body>).
-  const opener = useRef<HTMLElement | null>(null)
-  const toggle = (e: MouseEvent<HTMLButtonElement>) => {
-    opener.current = e.currentTarget
-    setOpen(o => !o)
-  }
-  const close = () => setOpen(false)
+function BarActions({ onSearch, onProfile, search, profile }: BarActionsValue & { search: boolean; profile: boolean }) {
   return (
     <>
       {search && (
@@ -99,70 +90,13 @@ function BarActions({ onSearch, onSignOut, search }: BarActionsValue & { search:
           <path d="M20 20l-3.5-3.5" />
         </RoundButton>
       )}
-      <RoundButton label="Profil" aria-haspopup="dialog" aria-expanded={open} onClick={toggle}>
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
-      </RoundButton>
-      {open && (
-        <BarPopover label="Profil" onClose={close} opener={opener}>
-          <p className="px-[18px] pt-3.5 pb-3 text-[13px] leading-[18px] text-label-2">Le profil arrive bientôt.</p>
-          <button
-            type="button"
-            onClick={() => { close(); onSignOut() }}
-            className="flex h-[50px] w-full items-center border-t border-black/10 px-[18px] text-start text-[17px] leading-[22px] font-medium text-again hover:bg-black/5 active:bg-black/10 dark:border-white/12 dark:hover:bg-white/8 dark:active:bg-white/12"
-          >
-            Se déconnecter
-          </button>
-        </BarPopover>
+      {profile && onProfile && (
+        <RoundButton label="Profil" onClick={onProfile}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
+        </RoundButton>
       )}
     </>
-  )
-}
-
-/**
- * Petite fenêtre sous les boutons de droite (style menu iOS 26) : fond presque opaque (`--glass-solid`, texte et
- * rouge ≥ 4,5:1), aucun voile. Échap ou tap à côté = fermer ; focus posé dans la fenêtre, gardé dedans (Tab),
- * puis rendu au bouton d'origine (`opener`). Modale pour les lecteurs d'écran (`aria-modal`). Surface floutée
- * transitoire : l'accueil passe à 4 surfaces tant qu'elle est ouverte.
- */
-function BarPopover({ label, onClose, opener, children }: { label: string; onClose(): void; opener: RefObject<HTMLElement | null>; children: ReactNode }) {
-  const box = useRef<HTMLDivElement>(null)
-  const latest = useRef(onClose)
-  useEffect(() => { latest.current = onClose })
-  useEffect(() => {
-    const back = opener.current
-    const first = box.current?.querySelector<HTMLElement>('button')
-    ;(first ?? box.current)?.focus()
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { latest.current(); return }
-      if (e.key !== 'Tab' || !box.current) return
-      const items = [...box.current.querySelectorAll<HTMLElement>('button')]
-      e.preventDefault()
-      if (items.length === 0) return
-      const i = items.indexOf(document.activeElement as HTMLElement)
-      items[(i + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey); back?.focus() }
-  }, [opener])
-  // Rendue dans <body> : au-dessus des barres `sticky` (la zone d'action du bas comprise), un tap à côté ne
-  // déclenche jamais un bouton dessous. Hors de `.safe-areas` : zones sûres lues directement (env()).
-  return createPortal(
-    <div className="fixed inset-0 z-40">
-      <div aria-hidden="true" className="absolute inset-0" onClick={onClose} />
-      <div
-        ref={box}
-        role="dialog"
-        aria-modal="true"
-        aria-label={label}
-        tabIndex={-1}
-        style={{ backgroundColor: 'var(--glass-solid)' }}
-        className="glass absolute end-[max(12px,env(safe-area-inset-right))] top-[calc(max(12px,env(safe-area-inset-top))+60px)] w-[260px] overflow-hidden rounded-[22px] text-black outline-none dark:text-white"
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
   )
 }
 
@@ -186,6 +120,8 @@ interface TopBarProps {
   extra?: ReactNode
   /** Loupe (« Mes cartes ») : masquée sur « Mes cartes » même. */
   search?: boolean
+  /** Bouton Profil : masqué sur l'écran Profil même. */
+  profile?: boolean
 }
 
 /**
@@ -194,7 +130,7 @@ interface TopBarProps {
  * son propre verre. `sticky` sur un fondu de la couleur du fond (`.bar-fade`, effet de bord iOS 26) : le contenu
  * qui défile s'efface dessous au lieu de passer sous le titre.
  */
-export function TopBar({ onBack, backLabel = 'Accueil', children, extra, search = true }: TopBarProps) {
+export function TopBar({ onBack, backLabel = 'Accueil', children, extra, search = true, profile = true }: TopBarProps) {
   const actions = useContext(BarActionsContext)
   return (
     <header className={`bar-fade sticky top-0 z-20 shrink-0 pt-[max(12px,var(--k-safe-area-top))] pb-3 ${EDGES}`}>
@@ -202,7 +138,7 @@ export function TopBar({ onBack, backLabel = 'Accueil', children, extra, search 
         <div className="flex min-h-14 items-center gap-2.5">
           {onBack && <BackButton onClick={onBack} label={backLabel} />}
           {children}
-          {actions && <BarActions onSearch={actions.onSearch} onSignOut={actions.onSignOut} search={search} />}
+          {actions && <BarActions onSearch={actions.onSearch} onProfile={actions.onProfile} search={search} profile={profile} />}
         </div>
         {extra}
       </div>
