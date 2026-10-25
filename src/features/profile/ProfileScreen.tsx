@@ -1,11 +1,13 @@
 import { Page, Preloader } from 'konsta/react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
+import { DiscardDialog } from '../../components/SheetBar'
 import { BarTitle, EDGES, TopBar, type SyncIndicator } from '../../components/TopBar'
 import { AccountError, changePseudo, OFFLINE_MESSAGE, type ProfileDeps } from '../../lib/account'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { useOnline } from '../../lib/useOnline'
 import type { HomeData } from '../home/useHomeData'
+import { useLeaveGuard } from '../home/useLeaveGuard'
 import { EmailForm, PasswordForm } from './ProfileForms'
 import { useProfileUser } from './useProfileUser'
 
@@ -67,17 +69,25 @@ export function ProfileScreen({ deps, data, sync, view, backLabel = 'Accueil', o
   const [draft, setDraft] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  // Pseudo en cours de modification (#88) : retour du navigateur / geste iOS = même confirmation que la flèche.
+  // Inactif sous un formulaire (celui-ci a son propre garde).
+  const dirty = editing && !view && draft.trim() !== (user?.pseudo ?? '')
+  useLeaveGuard(dirty, () => setConfirming(true))
 
   // Formulaires : état (message de succès) gardé ici, le formulaire se ferme par un retour de navigation.
   const done = (message: string) => { setNotice(message); onBack() }
-  if (user && view === 'email') return <EmailForm deps={deps} email={user.email} onClose={onBack} onDone={done} />
-  if (user && view === 'password') return <PasswordForm deps={deps} email={user.email} onClose={onBack} onDone={done} />
+  if (user && view === 'email') return <EmailForm deps={deps} user={user} onClose={onBack} onDone={done} />
+  if (user && view === 'password') return <PasswordForm deps={deps} user={user} onClose={onBack} onDone={done} />
 
   const stats = data.status === 'ready' ? data.stats : null
   const count = (n: number | undefined) => (n === undefined ? '–' : String(n))
+  // Tags portés par au moins une carte active (ni brouillon ni supprimée), comme « Mes tags ».
+  const tagCount = stats?.tags.filter(t => t.total > 0).length
 
   const startEdit = () => { setDraft(user?.pseudo ?? ''); setError(null); setNotice(null); setEditing(true) }
-  const stopEdit = () => { setEditing(false); setError(null) }
+  const stopEdit = () => { setEditing(false); setError(null); setConfirming(false) }
+  const leave = () => (dirty ? setConfirming(true) : onBack())
   const savePseudo = async (e?: FormEvent) => {
     e?.preventDefault()
     if (saving) return
@@ -97,7 +107,7 @@ export function ProfileScreen({ deps, data, sync, view, backLabel = 'Accueil', o
   const row = 'flex h-14 w-full items-center gap-2.5 px-[18px] text-start text-[17px] leading-[22px] font-medium text-black hover:bg-black/5 active:bg-black/10 dark:text-white dark:hover:bg-white/8 dark:active:bg-white/12'
   return (
     <Page colors={TRANSPARENT_PAGE} className="flex flex-col overscroll-none">
-      <TopBar onBack={onBack} backLabel={backLabel} search={false} profile={false}>
+      <TopBar onBack={leave} backLabel={backLabel} search={false} profile={false}>
         <BarTitle title="Profil" sync={sync} heading />
       </TopBar>
       <main className={`mx-auto flex w-full max-w-xl flex-1 flex-col gap-5 pt-1 pb-4 ${EDGES}`}>
@@ -149,7 +159,7 @@ export function ProfileScreen({ deps, data, sync, view, backLabel = 'Accueil', o
               <div className="flex w-full gap-2">
                 <Tile value={count(stats?.total)} label="Cartes" onOpen={onOpenCards} />
                 <Tile value={count(stats?.mastered)} label="Maîtrisées" />
-                <Tile value={count(stats?.tags.length)} label="Tags" onOpen={onOpenTags} />
+                <Tile value={count(tagCount)} label="Tags" onOpen={onOpenTags} />
               </div>
             </section>
             <div className="glass-card flex flex-col overflow-hidden rounded-[22px]">
@@ -172,6 +182,7 @@ export function ProfileScreen({ deps, data, sync, view, backLabel = 'Accueil', o
           Se déconnecter
         </GlassButton>
       </div>
+      {confirming && <DiscardDialog onDiscard={() => { stopEdit(); onBack() }} onContinue={() => setConfirming(false)} />}
     </Page>
   )
 }

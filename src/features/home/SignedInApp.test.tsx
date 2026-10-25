@@ -280,6 +280,27 @@ describe('SignedInApp : barre commune (#82)', () => {
   })
 })
 
+describe('SignedInApp : Profil sur la révision (#83)', () => {
+  it('Profil › Cartes › retour › retour : la session de révision est conservée (carte courante, compteur)', async () => {
+    const { user } = renderApp()
+    await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))
+    await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+    await user.click(await screen.findByRole('button', { name: 'Afficher la réponse' }))
+    await user.click(await screen.findByRole('button', { name: /Très bien/ }))
+    await screen.findByText('Carte 2 sur 3')
+    const question = document.querySelector('article p.mt-3')!.textContent
+    await user.click(screen.getByRole('button', { name: 'Profil' }))
+    await user.click(await screen.findByRole('button', { name: /Cartes/ }))
+    await waitFor(() => expect(heading()).toBe('Mes cartes'))
+    await user.click(document.querySelector('header button') as HTMLElement)
+    await waitFor(() => expect(heading()).toBe('Profil'))
+    await user.click(document.querySelector('header button') as HTMLElement)
+    await screen.findByRole('button', { name: 'Afficher la réponse' })
+    expect(screen.getByText('Carte 2 sur 3')).toBeTruthy()
+    expect(document.querySelector('article p.mt-3')!.textContent).toBe(question)
+  })
+})
+
 describe('SignedInApp : Mes cartes (#80)', () => {
   const depth = () => (window.history.state as { vaultCardsDepth?: number } | null)?.vaultCardsDepth ?? 0
   const actions = () => within(document.querySelector('header')!).getAllByRole('button').map(b => b.getAttribute('aria-label'))

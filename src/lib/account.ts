@@ -2,7 +2,7 @@ import { isAuthRetryableFetchError, type SupabaseClient } from '@supabase/supaba
 
 /** Le compte, vu du client : uniquement l'API d'authentification (clé publishable), aucune table. */
 export interface ProfileClient {
-  auth: Pick<SupabaseClient['auth'], 'getSession' | 'updateUser' | 'signInWithPassword' | 'onAuthStateChange'>
+  auth: Pick<SupabaseClient['auth'], 'getSession' | 'updateUser' | 'signInWithPassword' | 'signOut' | 'onAuthStateChange'>
 }
 
 export interface ProfileDeps {
@@ -76,20 +76,37 @@ export async function requestEmailChange({ client, online }: ProfileDeps, curren
   }
 }
 
+/** Compte courant : l'id sert à vérifier que la reconnexion ouvre bien ce compte. */
+export interface AccountIdentity { id: string; email: string }
+
 /**
  * Change le mot de passe : contrôle local (8 caractères, confirmation, différent de l'actuel), vérification de l'actuel
- * par une reconnexion avec l'e-mail courant, puis `updateUser`. Aucun mot de passe n'est journalisé ni gardé.
+ * par une reconnexion avec l'e-mail du compte (qui doit ouvrir le même compte : sinon on se déconnecte de la session
+ * étrangère et on s'arrête avant tout changement), puis `updateUser`, puis déconnexion des autres appareils.
+ * Aucun mot de passe n'est journalisé ni gardé.
  */
-export async function changePassword({ client, online }: ProfileDeps, email: string, current: string, next: string, confirm: string): Promise<void> {
+export async function changePassword({ client, online }: ProfileDeps, who: AccountIdentity, current: string, next: string, confirm: string): Promise<void> {
   if (next.length < MIN_PASSWORD) throw new AccountError(`Le nouveau mot de passe doit faire au moins ${MIN_PASSWORD} caractères.`)
   if (next !== confirm) throw new AccountError('Les deux mots de passe ne correspondent pas.')
   if (next === current) throw new AccountError("Le nouveau mot de passe doit être différent de l'actuel.")
   requireOnline(online)
+  let reopened: string | undefined
   try {
-    const { error } = await client.auth.signInWithPassword({ email, password: current })
+    const { data, error } = await client.auth.signInWithPassword({ email: who.email, password: current })
     if (error) throw error
+    reopened = data?.user?.id
   } catch (e) {
-    throw new AccountError(isNetwork(e) ? OFFLINE_MESSAGE : isRateLimited(e) ? 'Trop de tentatives. Réessaie dans quelques minutes.' : 'Mot de passe actuel incorrect.')
+    throw new AccountError(
+      isNetwork(e) ? OFFLINE_MESSAGE
+        : isRateLimited(e) ? 'Trop de tentatives. Réessaie dans quelques minutes.'
+          : failure(e).code === 'invalid_credentials' ? 'Mot de passe actuel incorrect.'
+            : "Le mot de passe actuel n'a pas pu être vérifié. Réessaie.",
+    )
+  }
+  if (reopened !== who.id) {
+    // La reconnexion a ouvert un autre compte (e-mail changé ailleurs) : cette session étrangère ne reste pas ouverte.
+    try { await client.auth.signOut({ scope: 'local' }) } catch { /* session locale effacée par l'écran de connexion */ }
+    throw new AccountError('Ce mot de passe ouvre un autre compte que celui-ci. Par sécurité, tu es déconnecté : reconnecte-toi.')
   }
   try {
     const { error } = await client.auth.updateUser({ password: next })
@@ -104,4 +121,6 @@ export async function changePassword({ client, online }: ProfileDeps, email: str
               : "Le mot de passe n'a pas pu être modifié. Réessaie.",
     )
   }
+  // Mot de passe changé : les autres appareils doivent se reconnecter. Un échec ici ne défait pas le changement.
+  try { await client.auth.signOut({ scope: 'others' }) } catch { /* sans effet sur ce appareil */ }
 }

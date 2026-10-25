@@ -29,12 +29,14 @@ function masteredStreak(id: string): Review[] {
   return out
 }
 
-interface FakeUser { email: string; user_metadata: Record<string, unknown> }
-function fakeClient(user: FakeUser | null = { email: EMAIL, user_metadata: { pseudo: 'Kyllian' } }) {
+interface FakeUser { id: string; email: string; user_metadata: Record<string, unknown> }
+const USER_ID = 'user-1'
+function fakeClient(user: FakeUser | null = { id: USER_ID, email: EMAIL, user_metadata: { pseudo: 'Kyllian' } }) {
   const auth = {
     getSession: vi.fn().mockResolvedValue({ data: { session: user && { user } }, error: null }),
     updateUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
-    signInWithPassword: vi.fn().mockResolvedValue({ data: {}, error: null }),
+    signInWithPassword: vi.fn().mockResolvedValue({ data: { user: { id: USER_ID } }, error: null }),
+    signOut: vi.fn().mockResolvedValue({ error: null }),
     onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
   }
   return { auth, client: { auth } as unknown as ProfileClient }
@@ -96,9 +98,9 @@ describe('Profil : affichage (#83)', () => {
     expect(identity.querySelector('img')).toBeNull()
     expect(within(identity).getByText('Kyllian')).toBeTruthy()
     expect(within(identity).getByText(EMAIL)).toBeTruthy()
-    // Cartes actives (ni brouillon ni supprimée), maîtrisées (stabilité ≥ 21 j), tags connus (registre de 8).
+    // Cartes actives (ni brouillon ni supprimée), maîtrisées (stabilité ≥ 21 j), tags portés par une carte active (2 sur les 8 du registre).
     await waitFor(() => expect(screen.getByRole('button', { name: '4 Cartes' })).toBeTruthy())
-    expect(screen.getByRole('button', { name: '8 Tags' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '2 Tags' })).toBeTruthy()
     expect(screen.getByText('Maîtrisées').previousElementSibling?.textContent).toBe('1')
     // Sur le Profil, la barre n'a plus de bouton Profil (ni de loupe).
     const header = document.querySelector('header')!
@@ -108,7 +110,7 @@ describe('Profil : affichage (#83)', () => {
   })
 
   it('sans pseudo : l’avatar prend l’initiale de l’e-mail et le pseudo est à ajouter', async () => {
-    const { user } = renderApp(fakeClient({ email: 'zoe@exemple.com', user_metadata: {} }).client)
+    const { user } = renderApp(fakeClient({ id: USER_ID, email: 'zoe@exemple.com', user_metadata: {} }).client)
     await user.click(await screen.findByRole('button', { name: 'Profil' }))
     await screen.findByText('zoe@exemple.com')
     expect(within(screen.getByRole('region', { name: 'Identité' })).getByText('Z')).toBeTruthy()
@@ -153,7 +155,7 @@ describe('Profil : navigation (#83)', () => {
     await waitFor(() => expect(heading()).toBe('Mes cartes'))
     await user.click(backArrow()) // flèche nommée par l'écran de destination (« Profil »)
     await waitFor(() => expect(heading()).toBe('Profil'))
-    await user.click(screen.getByRole('button', { name: '8 Tags' }))
+    await user.click(screen.getByRole('button', { name: '2 Tags' }))
     await waitFor(() => expect(heading()).toBe('Mes tags'))
     await user.click(backArrow())
     await waitFor(() => expect(heading()).toBe('Profil'))
@@ -323,6 +325,7 @@ describe('Profil : changer le mot de passe (#83)', () => {
     expect(fake.auth.signInWithPassword.mock.invocationCallOrder[0]).toBeLessThan(fake.auth.updateUser.mock.invocationCallOrder[0]!)
     await waitFor(() => expect(heading()).toBe('Profil'))
     expect(within(screen.getByRole('main')).getByRole('status').textContent).toBe('Mot de passe modifié.')
+    expect(fake.auth.signOut).toHaveBeenCalledWith({ scope: 'others' }) // les autres appareils se reconnectent
   })
 
   it('mauvais mot de passe actuel : message, le nouveau n’est jamais envoyé', async () => {
@@ -387,6 +390,47 @@ describe('Profil : changer le mot de passe (#83)', () => {
     await user.click(confirmButton('Enregistrer'))
     await screen.findByRole('alert')
     for (const s of spies) for (const call of s.mock.calls) expect(JSON.stringify(call)).not.toMatch(new RegExp(`${CURRENT}|${NEXT}`))
+  })
+})
+
+describe('Profil : garde du pseudo et compte étranger (#83)', () => {
+  it('pseudo modifié puis retour (geste ou flèche) : confirmation, « Continuer » garde la saisie, « Ignorer » revient', async () => {
+    const { user } = renderApp(fakeClient().client)
+    await openProfile(user)
+    await user.click(screen.getByRole('button', { name: 'Modifier le pseudo' }))
+    await user.type(screen.getByLabelText('Pseudo'), 'x')
+    goBack()
+    expect((await screen.findByRole('alertdialog')).textContent).toMatch('Tes modifications ne seront pas enregistrées.')
+    await settle()
+    expect(heading()).toBe('Profil')
+    await user.click(screen.getByRole('button', { name: 'Continuer à modifier' }))
+    expect((screen.getByLabelText('Pseudo') as HTMLInputElement).value).toBe('Kyllianx')
+    await user.click(backArrow()) // la flèche passe par la même confirmation
+    await user.click(await screen.findByRole('button', { name: 'Ignorer les modifications' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Se déconnecter' })).toBeNull())
+  })
+
+  it('pseudo ouvert sans modification : le retour est immédiat', async () => {
+    const { user } = renderApp(fakeClient().client)
+    await openProfile(user)
+    await user.click(screen.getByRole('button', { name: 'Modifier le pseudo' }))
+    goBack()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Se déconnecter' })).toBeNull())
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+  })
+
+  it('la reconnexion ouvre un autre compte : déconnexion de cette session, message clair, mot de passe jamais changé', async () => {
+    const fake = fakeClient()
+    fake.auth.signInWithPassword.mockResolvedValueOnce({ data: { user: { id: 'autre-compte' } }, error: null })
+    const { user } = renderApp(fake.client)
+    await openPasswordForm(user)
+    await user.type(screen.getByLabelText('Mot de passe actuel'), CURRENT)
+    await user.type(screen.getByLabelText('Nouveau mot de passe'), NEXT)
+    await user.type(screen.getByLabelText('Confirmer le nouveau mot de passe'), NEXT)
+    await user.click(confirmButton('Enregistrer'))
+    expect((await screen.findByRole('alert')).textContent).toMatch('autre compte')
+    expect(fake.auth.signOut).toHaveBeenCalledWith({ scope: 'local' })
+    expect(fake.auth.updateUser).not.toHaveBeenCalled()
   })
 })
 

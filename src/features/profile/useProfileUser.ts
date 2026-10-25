@@ -3,6 +3,7 @@ import type { User } from '@supabase/supabase-js'
 import type { ProfileClient } from '../../lib/account'
 
 export interface ProfileUser {
+  id: string
   email: string
   /** Pseudo choisi (métadonnées de l'utilisateur), ou chaîne vide. */
   pseudo: string
@@ -11,7 +12,7 @@ export interface ProfileUser {
 const toUser = (u: User | null | undefined): ProfileUser | null => {
   if (!u) return null
   const pseudo: unknown = u.user_metadata?.pseudo
-  return { email: u.email ?? '', pseudo: typeof pseudo === 'string' ? pseudo : '' }
+  return { id: u.id, email: u.email ?? '', pseudo: typeof pseudo === 'string' ? pseudo : '' }
 }
 
 /**

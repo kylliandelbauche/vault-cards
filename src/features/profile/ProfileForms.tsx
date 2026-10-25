@@ -14,8 +14,8 @@ const HINT = 'px-1.5 text-[13px] leading-4 text-label-2'
 
 interface FormProps {
   deps: ProfileDeps
-  /** Adresse actuelle du compte. */
-  email: string
+  /** Compte courant (id pour la vérification de la reconnexion, adresse actuelle). */
+  user: { id: string; email: string }
   /** Ferme le formulaire (retour au Profil). */
   onClose(): void
   /** Succès : le Profil affiche ce message, puis le formulaire se ferme. */
@@ -58,11 +58,11 @@ function Feedback({ error, online }: { error: string | null; online: boolean }) 
 }
 
 /** « Profil · Adresse e-mail » (Paper) : nouvelle adresse, rappel de l'actuelle, lien de confirmation Supabase. */
-export function EmailForm({ deps, email, onClose, onDone }: FormProps) {
+export function EmailForm({ deps, user, onClose, onDone }: FormProps) {
   const [value, setValue] = useState('')
   const f = useAccountForm(value !== '', deps, onClose)
   const submit = () => f.run(async () => {
-    const asked = await requestEmailChange(deps, email, value)
+    const asked = await requestEmailChange(deps, user.email, value)
     onDone(`Un lien de confirmation a été envoyé à ${asked}. Ton adresse actuelle reste active jusqu'à la confirmation.`)
   })
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void submit() }
@@ -91,7 +91,7 @@ export function EmailForm({ deps, email, onClose, onDone }: FormProps) {
         </form>
         <div className="flex flex-col gap-1 px-1.5 pt-3.5">
           <span className="text-[13px] leading-4 text-label-2">Adresse actuelle</span>
-          <p className="text-[15px] leading-5 font-medium break-all text-label-2">{email}</p>
+          <p className="text-[15px] leading-5 font-medium break-all text-label-2">{user.email}</p>
           <p className="pt-3 text-[15px] leading-5 font-medium text-label-2">Un lien de confirmation sera envoyé à la nouvelle adresse. L'ancienne reste active jusqu'à la confirmation.</p>
         </div>
       </main>
@@ -136,13 +136,13 @@ function PasswordField({ id, label, value, onChange, autoComplete, autoFocus }: 
  * « Profil · Mot de passe » (Paper) : actuel, nouveau, confirmer, un œil par champ. L'actuel est vérifié par une
  * reconnexion avec l'e-mail du compte (`changePassword`), puis le nouveau est enregistré.
  */
-export function PasswordForm({ deps, email, onClose, onDone }: FormProps) {
+export function PasswordForm({ deps, user, onClose, onDone }: FormProps) {
   const [current, setCurrent] = useState('')
   const [next, setNext] = useState('')
   const [confirm, setConfirm] = useState('')
   const f = useAccountForm(current !== '' || next !== '' || confirm !== '', deps, onClose)
   const submit = () => f.run(async () => {
-    await changePassword(deps, email, current, next, confirm)
+    await changePassword(deps, user, current, next, confirm)
     onDone('Mot de passe modifié.')
   })
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void submit() }
@@ -154,7 +154,7 @@ export function PasswordForm({ deps, email, onClose, onDone }: FormProps) {
         <Feedback error={f.error} online={f.online} />
         <form onSubmit={onSubmit} noValidate className="flex flex-col gap-3.5">
           {/* Identifiant du compte pour le gestionnaire de mots de passe d'iOS (invisible, hors tabulation). */}
-          <input type="text" name="username" autoComplete="username" value={email} readOnly tabIndex={-1} aria-hidden="true" className="sr-only" />
+          <input type="text" name="username" autoComplete="username" value={user.email} readOnly tabIndex={-1} aria-hidden="true" className="sr-only" />
           <PasswordField id="profile-current-password" label="Mot de passe actuel" value={current} onChange={setCurrent} autoComplete="current-password" autoFocus />
           <PasswordField id="profile-new-password" label="Nouveau mot de passe" value={next} onChange={setNext} autoComplete="new-password" />
           <PasswordField id="profile-confirm-password" label="Confirmer le nouveau mot de passe" value={confirm} onChange={setConfirm} autoComplete="new-password" />

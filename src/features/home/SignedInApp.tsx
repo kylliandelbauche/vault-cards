@@ -65,9 +65,9 @@ export function SignedInApp(props: Props) {
 function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe }: Props & { nav: Omit<ReturnType<typeof useNavigation>, 'registerGuard'>; onSignOutSafe(): void }) {
   const store = useMemo(() => dexieStore(db), [db])
   const { screen, previous, stack, openReview, openTags, openCards, open, replace, back, goHome } = nav
-  // Le Profil (#83) se pose sur une révision sans la remettre à zéro : la session garde son périmètre tant qu'on y est.
-  const underneath = screen.name === 'profile' ? stack.find((s): s is Extract<Screen, { name: 'review' }> => s.name === 'review') : undefined
-  const scope = screen.name === 'review' ? screen.scope : underneath?.scope ?? null
+  // Une révision en cours garde sa session sous tout écran posé dessus (Profil #83, puis Mes cartes ou Mes tags) :
+  // le périmètre reste celui de la révision de la pile, il n'y en a jamais deux.
+  const scope = stack.find((s): s is Extract<Screen, { name: 'review' }> => s.name === 'review')?.scope ?? null
   const session = useReviewSession(store, now, scope)
   const autoSyncOptions = useMemo(() => ({ pending: () => pendingCount(db) }), [db])
   const { syncNow, ...syncState } = useAutoSync(session, runSync, autoSyncOptions)
