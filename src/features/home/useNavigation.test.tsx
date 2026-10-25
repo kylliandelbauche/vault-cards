@@ -49,6 +49,36 @@ describe('useNavigation', () => {
     await waitFor(() => expect(depth()).toBe(0))
   })
 
+  it('Profil (#83) se pose sur la révision sans la remplacer : pile, profondeur d’historique, retours', async () => {
+    const { result } = renderHook(() => useNavigation())
+    act(() => result.current.openReview({ mode: 'due', tag: 'dev' }))
+    act(() => result.current.openProfile())
+    expect(result.current.screen).toEqual({ name: 'profile' })
+    expect(result.current.previous).toEqual({ name: 'review', scope: { mode: 'due', tag: 'dev' } })
+    expect(result.current.stack.map(s => s.name)).toEqual(['home', 'review', 'profile'])
+    expect(depth()).toBe(2)
+    act(() => result.current.openProfile()) // déjà affiché : rien
+    expect(result.current.stack).toHaveLength(3)
+    act(() => result.current.openCards()) // Profil › Cartes : la révision reste dans la pile
+    act(() => result.current.openTags())
+    expect(result.current.stack.map(s => s.name)).toEqual(['home', 'review', 'profile', 'cards', 'tags'])
+    expect(depth()).toBe(4)
+    act(() => result.current.back())
+    act(() => result.current.back())
+    expect(result.current.screen).toEqual({ name: 'profile' })
+    act(() => result.current.back())
+    expect(result.current.screen).toMatchObject({ name: 'review', scope: { mode: 'due', tag: 'dev' } })
+    await waitFor(() => expect(depth()).toBe(1))
+  })
+
+  it('une nouvelle révision remplace la précédente, mais pas quand un autre écran se pose sur elle', () => {
+    const { result } = renderHook(() => useNavigation())
+    act(() => result.current.openReview({ mode: 'due', tag: 'ia' }))
+    act(() => result.current.openReview({ mode: 'due', tag: 'dev' }))
+    expect(result.current.stack.map(s => s.name)).toEqual(['home', 'review'])
+    expect(result.current.screen).toMatchObject({ scope: { tag: 'dev' } })
+  })
+
   it('goHome depuis une révision ouverte via Mes tags : accueil, historique ramené à l’accueil', async () => {
     const { result } = renderHook(() => useNavigation())
     act(() => result.current.openTags())

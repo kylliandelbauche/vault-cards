@@ -5,14 +5,15 @@ import { BarActionsProvider, BarTitle, TopBar } from './TopBar'
 
 afterEach(cleanup)
 
-const withActions = (onSignOut = vi.fn(), search = true) => {
+const withActions = (search = true, profile = true) => {
   const onSearch = vi.fn()
+  const onProfile = vi.fn()
   const r = render(
-    <BarActionsProvider value={{ onSignOut, onSearch }}>
-      <TopBar onBack={vi.fn()} backLabel="Accueil" search={search}><BarTitle title="Mes tags" subtitle="10 cartes à revoir" /></TopBar>
+    <BarActionsProvider value={{ onProfile, onSearch }}>
+      <TopBar onBack={vi.fn()} backLabel="Accueil" search={search} profile={profile}><BarTitle title="Mes tags" subtitle="10 cartes à revoir" /></TopBar>
     </BarActionsProvider>,
   )
-  return { ...r, onSignOut, onSearch, user: userEvent.setup() }
+  return { ...r, onProfile, onSearch, user: userEvent.setup() }
 }
 
 describe('TopBar (#82)', () => {
@@ -50,7 +51,7 @@ describe('TopBar (#82)', () => {
     expect(screen.queryByRole('button', { name: 'Profil' })).toBeNull()
   })
 
-  it('Recherche et Profil à droite, ronds 48 px ; plus de bouton Déconnexion dans la barre', () => {
+  it('Recherche et Profil à droite, ronds 48 px ; aucun bouton Déconnexion dans la barre', () => {
     const { container } = withActions()
     const buttons = within(container.querySelector('header')!).getAllByRole('button')
     expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Accueil', 'Rechercher', 'Profil'])
@@ -68,38 +69,26 @@ describe('TopBar (#82)', () => {
   })
 
   it('search={false} (« Mes cartes ») : pas de loupe, Profil reste', () => {
-    const { container } = withActions(vi.fn(), false)
+    const { container } = withActions(false)
     const buttons = within(container.querySelector('header')!).getAllByRole('button')
     expect(buttons.map(b => b.getAttribute('aria-label'))).toEqual(['Accueil', 'Profil'])
   })
 
-  it('Profil : petite fenêtre avec « Se déconnecter » (déconnexion sûre) ; le focus y est posé', async () => {
-    const { user, onSignOut } = withActions()
-    await user.click(screen.getByRole('button', { name: 'Profil' }))
-    const dialog = screen.getByRole('dialog', { name: 'Profil' })
-    expect(dialog.textContent).toContain('Le profil arrive bientôt.')
-    const out = within(dialog).getByRole('button', { name: 'Se déconnecter' })
-    expect(document.activeElement).toBe(out)
-    await user.click(out)
-    expect(onSignOut).toHaveBeenCalledTimes(1)
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('focus rendu au bouton d’ouverture même s’il n’avait pas le focus (Safari/iOS)', async () => {
-    const { user } = withActions()
+  it('Profil (#83) : le bouton ouvre l’écran Profil (onProfile), sans petite fenêtre', async () => {
+    const { user, onProfile } = withActions()
     const profile = screen.getByRole('button', { name: 'Profil' })
-    profile.dispatchEvent(new MouseEvent('click', { bubbles: true })) // clic sans focus, comme un tap sur iOS
-    expect(document.activeElement).not.toBe(profile)
-    await user.keyboard('{Escape}')
-    expect(document.activeElement).toBe(profile)
+    expect(profile.hasAttribute('aria-haspopup')).toBe(false)
+    await user.click(profile)
+    expect(onProfile).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it('Profil : tap à côté ferme sans se déconnecter', async () => {
-    const { user, onSignOut } = withActions()
-    await user.click(screen.getByRole('button', { name: 'Profil' }))
-    await user.click(screen.getByRole('dialog').previousElementSibling as HTMLElement)
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(onSignOut).not.toHaveBeenCalled()
+  it('profile={false} (écran Profil) ou sans onProfile : pas de bouton Profil', () => {
+    const { container, unmount } = withActions(false, false)
+    expect(within(container.querySelector('header')!).queryByRole('button', { name: 'Profil' })).toBeNull()
+    unmount()
+    render(<BarActionsProvider value={{ onSearch: vi.fn() }}><TopBar><BarTitle title="Vault Cards" /></TopBar></BarActionsProvider>)
+    expect(screen.queryByRole('button', { name: 'Profil' })).toBeNull()
   })
 })
 

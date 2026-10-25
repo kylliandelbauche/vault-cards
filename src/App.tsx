@@ -13,6 +13,7 @@ const remote = supabaseRemote(supabase)
 const runSync = () => sync(db, remote)
 const clock = () => new Date()
 const inbox = { client: supabase }
+const profile = { client: supabase }
 
 export default function App() {
   const { status, signIn, signOut } = useAuth()
@@ -24,7 +25,7 @@ export default function App() {
       <div aria-hidden="true" className="app-backdrop" />
       {status === 'loading' && <Page colors={TRANSPARENT_PAGE} />}
       {status === 'signed-out' && <LoginScreen signIn={signIn} />}
-      {status === 'signed-in' && <SignedInApp db={db} runSync={runSync} now={clock} onSignOut={signOut} inbox={inbox} />}
+      {status === 'signed-in' && <SignedInApp db={db} runSync={runSync} now={clock} onSignOut={signOut} inbox={inbox} profile={profile} />}
     </KApp>
   )
 }
