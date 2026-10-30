@@ -15,7 +15,8 @@ export interface ProfileDeps {
 export class AccountError extends Error {}
 
 export const OFFLINE_MESSAGE = 'Pas de connexion. Réessaie quand tu as du réseau.'
-export const MIN_PASSWORD = 8
+/** Minimum imposé par le réglage Supabase du projet (12) : un mot de passe plus court est refusé côté serveur. */
+export const MIN_PASSWORD = 12
 export const MAX_PSEUDO = 40
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine
@@ -51,7 +52,8 @@ export async function changePseudo({ client, online }: ProfileDeps, raw: string)
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 /**
- * Demande le changement d'adresse : Supabase envoie un lien de confirmation (l'ancienne adresse reste active jusque-là).
+ * Demande le changement d'adresse. « Secure email change » est activé : Supabase envoie un lien à l'ancienne adresse et un
+ * à la nouvelle, et les deux doivent être validés. L'ancienne adresse reste active jusque-là.
  * `emailRedirectTo` : l'origine de l'app. Renvoie l'adresse demandée, nettoyée.
  */
 export async function requestEmailChange({ client, online }: ProfileDeps, current: string, raw: string): Promise<string> {
@@ -80,7 +82,7 @@ export async function requestEmailChange({ client, online }: ProfileDeps, curren
 export interface AccountIdentity { id: string; email: string }
 
 /**
- * Change le mot de passe : contrôle local (8 caractères, confirmation, différent de l'actuel), vérification de l'actuel
+ * Change le mot de passe : contrôle local (`MIN_PASSWORD` caractères, confirmation, différent de l'actuel), vérification de l'actuel
  * par une reconnexion avec l'e-mail du compte (qui doit ouvrir le même compte : sinon on se déconnecte de la session
  * étrangère et on s'arrête avant tout changement), puis `updateUser`, puis déconnexion des autres appareils.
  * Aucun mot de passe n'est journalisé ni gardé.

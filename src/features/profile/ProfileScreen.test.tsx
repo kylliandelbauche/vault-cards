@@ -14,6 +14,7 @@ import { SignedInApp } from '../home/SignedInApp'
 const EMAIL = 'kyllian@exemple.com'
 const CURRENT = 'ancien-mdp-test'
 const NEXT = 'nouveau-mdp-test'
+const SHORT = 'onze-car-aa' // 11 caractères : refusé
 const NOW = new Date('2026-10-19T10:00:00Z')
 
 const card = (id: string, tags: string[], extra: Partial<Card> = {}): Card => ({
@@ -229,7 +230,7 @@ describe('Profil : changer l’e-mail (#83)', () => {
     await user.click(confirmButton('Envoyer le lien'))
     await waitFor(() => expect(fake.auth.updateUser).toHaveBeenCalledWith({ email: 'nouveau@exemple.com' }, { emailRedirectTo: window.location.origin }))
     await waitFor(() => expect(heading()).toBe('Profil'))
-    expect(within(screen.getByRole('main')).getByRole('status').textContent).toMatch(/^Un lien de confirmation a été envoyé à nouveau@exemple\.com/)
+    expect(within(screen.getByRole('main')).getByRole('status').textContent).toBe("Un lien a été envoyé à ton adresse actuelle et un autre à nouveau@exemple.com. Valide les deux pour changer d'adresse. L'actuelle reste active jusque-là.")
     await settle()
     expect(depth()).toBe(1)
   })
@@ -310,7 +311,7 @@ describe('Profil : changer le mot de passe (#83)', () => {
     expect(fields[1]!.getAttribute('type')).toBe('password') // les autres champs restent masqués
     expect(screen.getByRole('button', { name: 'Masquer le mot de passe actuel' }).getAttribute('aria-pressed')).toBe('true')
     expect((fields[0] as HTMLInputElement).value).toBe('abc')
-    expect(screen.getByText('8 caractères minimum.')).toBeTruthy()
+    expect(screen.getByText('12 caractères minimum.')).toBeTruthy()
   })
 
   it('succès : l’actuel est vérifié par une reconnexion avec l’e-mail courant, puis le nouveau est enregistré', async () => {
@@ -340,7 +341,7 @@ describe('Profil : changer le mot de passe (#83)', () => {
     expect(heading()).toBe('Mot de passe')
   })
 
-  it('confirmation différente, moins de 8 caractères, identique à l’actuel : message, aucun appel', async () => {
+  it('confirmation différente, moins de 12 caractères, identique à l’actuel : message, aucun appel', async () => {
     const fake = fakeClient()
     const { user } = renderApp(fake.client)
     await openPasswordForm(user)
@@ -349,10 +350,10 @@ describe('Profil : changer le mot de passe (#83)', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('Les deux mots de passe ne correspondent pas.')
     await user.clear(screen.getByLabelText('Nouveau mot de passe'))
     await user.clear(screen.getByLabelText('Confirmer le nouveau mot de passe'))
-    await user.type(screen.getByLabelText('Nouveau mot de passe'), 'court')
-    await user.type(screen.getByLabelText('Confirmer le nouveau mot de passe'), 'court')
+    await user.type(screen.getByLabelText('Nouveau mot de passe'), SHORT)
+    await user.type(screen.getByLabelText('Confirmer le nouveau mot de passe'), SHORT)
     await user.click(confirmButton('Enregistrer'))
-    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Le nouveau mot de passe doit faire au moins 8 caractères.'))
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Le nouveau mot de passe doit faire au moins 12 caractères.'))
     await user.clear(screen.getByLabelText('Nouveau mot de passe'))
     await user.clear(screen.getByLabelText('Confirmer le nouveau mot de passe'))
     await user.type(screen.getByLabelText('Nouveau mot de passe'), CURRENT)
