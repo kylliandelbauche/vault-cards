@@ -114,6 +114,22 @@ describe('Source · Vocal (#48) : enregistrer', () => {
     expect(upload).toHaveBeenCalledTimes(1)
   })
 
+  it('✕ pendant l’envoi sans effet : l’écran Brouillons s’ouvre ensuite (#103)', async () => {
+    const { user, upload } = await openVoice()
+    let finish: (value: unknown) => void = () => {}
+    upload.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await record(user)
+    await user.click(button('Arrêter l’enregistrement'))
+    await screen.findByText('Enregistrement prêt à envoyer')
+    await user.click(send())
+    await waitFor(() => expect(upload).toHaveBeenCalled())
+    await user.click(button('Fermer'))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(title()).toBe('Vocal')
+    finish({ data: {}, error: null })
+    expect(await screen.findByText(/^Depuis « Vocal du 19-10\.m4a »/)).toBeTruthy()
+  })
+
   it('après un échec, un nouvel appui renvoie', async () => {
     const { user, upload } = await openVoice()
     await record(user)

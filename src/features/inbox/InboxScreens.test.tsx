@@ -87,6 +87,22 @@ describe('Boîte de réception : écrans (#81)', () => {
     expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
   })
 
+  it('Source · Texte : ✕ pendant l’envoi sans effet ; la pile garde l’accueil (#103)', async () => {
+    const { user, rpc } = renderApp()
+    let finish: (value: unknown) => void = () => {}
+    rpc.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    await user.click(await screen.findByRole('button', { name: 'Texte' }))
+    await user.type(screen.getByLabelText('Texte dont tirer des cartes'), 'abc')
+    await user.click(screen.getByRole('button', { name: 'Créer les brouillons' }))
+    await user.click(screen.getByRole('button', { name: 'Fermer' }))
+    expect(screen.queryByRole('alertdialog')).toBeNull()
+    expect(title()).toBe('Texte')
+    finish({ data: item(), error: null })
+    expect(await screen.findByText('En attente de traitement sur ton Mac')).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: 'Accueil' }))
+    expect(await screen.findByRole('heading', { name: 'Nouvelles cartes' })).toBeTruthy()
+  })
+
   it('Fichier puis Photo : envoi direct puis écran Brouillons de la source', async () => {
     const file = item({ kind: 'file', filename: 'cours.pdf' })
     const { user, upload, rpc } = renderApp({ items: [file], created: file })
