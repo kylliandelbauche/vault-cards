@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AuthRetryableFetchError } from '@supabase/supabase-js'
-import { AccountError, changePassword, changePseudo, requestEmailChange, type ProfileClient, type ProfileDeps } from './account'
+import { AccountError, changePassword, MIN_PASSWORD, changePseudo, requestEmailChange, type ProfileClient, type ProfileDeps } from './account'
 
 // Client d'authentification entièrement simulé : aucun réseau, aucun vrai identifiant.
 const WHO = { id: 'user-1', email: 'kyllian@exemple.com' }
@@ -25,7 +25,7 @@ const message = async (p: Promise<unknown>) => {
 }
 
 describe('changePassword (#83)', () => {
-  it('succès : reconnexion avec l’e-mail courant, puis nouveau mot de passe, puis autres appareils déconnectés', async () => {
+  it('succès (12 caractères, le minimum) : reconnexion avec l’e-mail courant, puis nouveau mot de passe, puis autres appareils déconnectés', async () => {
     const { auth, d } = deps()
     await changePassword(d, WHO, 'ancien-test', 'nouveau-test', 'nouveau-test')
     expect(auth.signInWithPassword).toHaveBeenCalledWith({ email: WHO.email, password: 'ancien-test' })
@@ -92,7 +92,8 @@ describe('changePassword (#83)', () => {
 
   it('contrôles locaux et hors ligne : rien ne part', async () => {
     const { auth, d } = deps()
-    expect(await message(changePassword(d, WHO, 'ancien-test', 'court', 'court'))).toMatch('au moins 8')
+    expect(await message(changePassword(d, WHO, 'ancien-test', 'onze-car-aa', 'onze-car-aa'))).toMatch('au moins 12') // 11 caractères
+    expect(MIN_PASSWORD).toBe(12)
     expect(await message(changePassword(d, WHO, 'ancien-test', 'nouveau-test', 'autre-test'))).toMatch('ne correspondent pas')
     expect(await message(changePassword(d, WHO, 'meme-mdp-test', 'meme-mdp-test', 'meme-mdp-test'))).toMatch('différent')
     const off = deps(false)
