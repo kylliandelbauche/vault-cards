@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { addFile, addText, canvasCompressor, checkFile, checkText, cleanFilename, fitWithin, InboxError, INBOX_LIMITS, listInbox, prepareFile, type InboxClient } from './inbox'
+import { uploadErrorMessage, addAudio, addFile, addText, canvasCompressor, checkAudio, checkFile, checkText, cleanFilename, fitWithin, InboxError, INBOX_LIMITS, listInbox, normalizeAudioType, prepareFile, type InboxClient } from './inbox'
 
 const MB = 1024 * 1024
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -18,7 +18,7 @@ const row = (extra: object = {}) => ({
   created_at: '2026-10-15T10:00:00Z', processed_at: null, ...extra,
 })
 
-function fakeClient({ session = true, uploadError = null as null | { message: string }, rpcError = null as null | { message: string; code?: string } } = {}) {
+function fakeClient({ session = true, uploadError = null as null | { message: string }, rpcError = null as null | { message: string; code?: string }, listed = [row()], listError = null as null | { message: string } } = {}) {
   const calls: unknown[][] = []
   const types: string[] = []
   const client = {
@@ -40,7 +40,7 @@ function fakeClient({ session = true, uploadError = null as null | { message: st
       const q = {
         select: (cols: string) => { calls.push(['select', table, cols]); return q },
         order: (col: string, o: object) => { calls.push(['order', col, o]); return q },
-        limit: (n: number) => { calls.push(['limit', n]); return Promise.resolve({ data: [row()], error: null }) },
+        limit: (n: number) => { calls.push(['limit', n]); return Promise.resolve({ data: listError ? null : listed, error: listError }) },
       }
       return q
     },
@@ -204,5 +204,89 @@ describe('dépôt dans la boîte de réception', () => {
       ['limit', 50],
     ])
     expect(items[0].status).toBe('pending')
+  })
+})
+
+describe('audio (#48)', () => {
+  it.each([
+    ['audio/mp4', 'audio/mp4'],
+    ['audio/mp4;codecs=mp4a.40.2', 'audio/mp4'],
+    ['audio/x-m4a', 'audio/x-m4a'],
+    ['audio/m4a', 'audio/m4a'],
+    ['audio/webm;codecs=opus', 'audio/webm'],
+    ['AUDIO/WEBM ; codecs=opus', 'audio/webm'],
+    ['audio/wav', 'audio/wav'],
+    ['audio/x-wav', 'audio/x-wav'],
+    ['audio/wave', 'audio/wav'],
+    ['audio/mpeg', 'audio/mpeg'],
+    ['audio/mp3', 'audio/mpeg'],
+  ])('%s → %s', (type, expected) => {
+    expect(normalizeAudioType(type)).toBe(expected)
+  })
+
+  it.each(['', 'audio/ogg', 'video/mp4', 'application/pdf'])('« %s » : hors liste', type => {
+    expect(normalizeAudioType(type)).toBeNull()
+  })
+
+  it('checkAudio : l’extension fait foi, sinon le type annoncé ; format, vide et taille refusés', () => {
+    expect(checkAudio(fakeFile('note.m4a', 10, 'audio/x-m4a'))).toBe('audio/mp4')
+    expect(checkAudio(fakeFile('video.MP4', 10, 'video/mp4'))).toBe('audio/mp4')
+    expect(checkAudio(fakeFile('note.webm', 10))).toBe('audio/webm')
+    expect(checkAudio(fakeFile('note.wav', 10))).toBe('audio/wav')
+    expect(checkAudio(fakeFile('note.mp3', 10))).toBe('audio/mpeg')
+    expect(checkAudio(fakeFile('sans-extension', 10, 'audio/webm;codecs=opus'))).toBe('audio/webm')
+    expect(() => checkAudio(fakeFile('photo.png', 10, 'image/png'))).toThrow(/Format non pris en charge/)
+    expect(() => checkAudio(fakeFile('note.ogg', 10, 'audio/ogg'))).toThrow(/Format non pris en charge/)
+    expect(() => checkAudio(fakeFile('note.m4a', 0))).toThrow(/vide/)
+    expect(checkAudio(fakeFile('note.m4a', INBOX_LIMITS.FILE_MAX))).toBe('audio/mp4') // 30 Mo pile : la limite de 10 Mo est réservée aux images
+    expect(() => checkAudio(fakeFile('note.m4a', INBOX_LIMITS.FILE_MAX + 1))).toThrow(/30 Mo/)
+  })
+
+  it('addAudio : envoi sans compression, type sans paramètre, puis création de l’élément', async () => {
+    const { client, calls, types } = fakeClient()
+    const compress = vi.fn()
+    const file = fakeFile('Vocal du 30-10.webm', 100, 'audio/webm;codecs=opus')
+    await addAudio({ client, online: () => true, uuid: () => ID, compress }, file)
+    expect(compress).not.toHaveBeenCalled()
+    expect(types).toEqual(['audio/webm'])
+    const writes = calls.filter(c => c[0] === 'upload' || c[0] === 'rpc')
+    expect(writes[0]).toEqual(['upload', 'inbox', `${UID}/${ID}`, 100, { contentType: 'audio/webm', upsert: false }])
+    expect(writes[1]).toEqual(['rpc', 'create_inbox_item', { p_id: ID, p_kind: 'file', p_filename: 'Vocal du 30-10.webm' }])
+  })
+
+  it('addAudio : file pleine, refus avant l’envoi ; 9 en attente ou éléments terminés, envoi', async () => {
+    const pending = (n: number, status = 'pending') => Array.from({ length: n }, () => row({ status }))
+    const full = fakeClient({ listed: [...pending(6), ...pending(4, 'processing')] })
+    await expect(addAudio({ client: full.client, online: () => true, uuid: () => ID }, fakeFile('a.m4a', 5))).rejects.toMatchObject({ code: 'full' })
+    expect(full.calls.filter(c => c[0] === 'upload' || c[0] === 'rpc')).toEqual([])
+    const room = fakeClient({ listed: [...pending(9), ...pending(5, 'done')] })
+    await addAudio({ client: room.client, online: () => true, uuid: () => ID }, fakeFile('a.m4a', 5))
+    expect(room.calls.filter(c => c[0] === 'upload')).toHaveLength(1)
+  })
+
+  it('addAudio : lecture de la file impossible, l’envoi continue (la RPC reste juge)', async () => {
+    const { client, calls } = fakeClient({ listError: { message: 'réseau' } })
+    await addAudio({ client, online: () => true, uuid: () => ID }, fakeFile('a.m4a', 5))
+    expect(calls.filter(c => c[0] === 'upload')).toHaveLength(1)
+  })
+
+  it('addAudio : hors ligne, session expirée et format refusé ne déposent rien', async () => {
+    const off = fakeClient()
+    await expect(addAudio({ client: off.client, online: () => false }, fakeFile('a.m4a', 5))).rejects.toMatchObject({ code: 'offline' })
+    expect(off.calls).toEqual([])
+    const noSession = fakeClient({ session: false })
+    await expect(addAudio({ client: noSession.client, online: () => true }, fakeFile('a.m4a', 5))).rejects.toMatchObject({ code: 'session' })
+    expect(noSession.calls).toEqual([])
+    const bad = fakeClient()
+    await expect(addAudio({ client: bad.client, online: () => true }, fakeFile('a.ogg', 5))).rejects.toBeInstanceOf(InboxError)
+    expect(bad.calls).toEqual([])
+  })
+})
+
+describe('uploadErrorMessage', () => {
+  it('traduit les refus de Storage sans recopier le texte anglais', () => {
+    expect(uploadErrorMessage('mime type audio/webm is not supported')).toBe('Envoi du fichier refusé : format non accepté par le serveur')
+    expect(uploadErrorMessage('The object exceeded the maximum allowed size')).toBe('Envoi du fichier refusé : fichier trop gros (30 Mo au maximum)')
+    expect(uploadErrorMessage('Internal Server Error')).toBe('Envoi du fichier refusé : réessaie plus tard')
   })
 })

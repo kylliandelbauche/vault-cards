@@ -101,10 +101,12 @@ describe('Boîte de réception : écrans (#81)', () => {
     expect(await screen.findByText('En attente de traitement sur ton Mac')).toBeTruthy()
   })
 
-  it('Vocal : message « bientôt », aucun envoi', async () => {
+  it('Vocal : tuile active (#48), ouvre Source · Vocal, aucun envoi', async () => {
     const { user, rpc } = renderApp()
-    await user.click(await screen.findByRole('button', { name: 'Vocal, bientôt disponible' }))
-    expect(screen.getByText('Le vocal arrive bientôt.').getAttribute('role')).toBe('status')
+    const voice = await screen.findByRole('button', { name: 'Vocal' })
+    expect(voice.getAttribute('aria-disabled')).toBeNull()
+    await user.click(voice)
+    expect(title()).toBe('Vocal')
     expect(rpc).not.toHaveBeenCalled()
   })
 

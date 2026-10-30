@@ -25,7 +25,18 @@ from generate_series(1, 8 - (select count(*)::int from public.inbox where status
 -- Objets « déjà envoyés » par l'app (métadonnées posées par Storage), dans le dossier de l'utilisateur simulé.
 insert into storage.objects (bucket_id, name, metadata) values
   ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000201', '{"size": 1234, "mimetype": "text/plain"}'),
-  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000202', '{"size": 12000000, "mimetype": "image/png"}');
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000202', '{"size": 12000000, "mimetype": "image/png"}'),
+  -- Audio (#48) : les 7 types acceptés (le 2e fait 20 Mo : la limite de 10 Mo des images ne s'applique pas), puis les refus.
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000211', '{"size": 1000, "mimetype": "audio/mp4"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000212', '{"size": 20000000, "mimetype": "audio/x-m4a"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000213', '{"size": 1000, "mimetype": "audio/m4a"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000214', '{"size": 1000, "mimetype": "audio/webm"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000215', '{"size": 1000, "mimetype": "audio/wav"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000216', '{"size": 1000, "mimetype": "audio/x-wav"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000217', '{"size": 1000, "mimetype": "audio/mpeg"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000221', '{"size": 31457281, "mimetype": "audio/mp4"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000222', '{"size": 1000, "mimetype": "audio/ogg"}'),
+  ('inbox', '00000000-0000-0000-0000-000000000000/00000000-0000-4000-8000-000000000223', '{"size": 1000, "mimetype": "audio/webm;codecs=opus"}');
 
 set local role authenticated;
 set local request.jwt.claims = '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000000000"}';
@@ -265,16 +276,92 @@ end $$;
 
 reset role;
 
--- Bucket : privé, limites posées.
+-- Audio (#48) : file libérée (annulé par le rollback final), sinon le quota de 10 bloquerait les 7 dépôts ci-dessous.
+update public.inbox set status = 'done' where status in ('pending', 'processing');
+
+set local role authenticated;
+set local request.jwt.claims = '{"role":"authenticated","sub":"00000000-0000-0000-0000-000000000000"}';
+
+do $$
+declare
+  r public.inbox;
+  m text;
+  i int := 0;
+  ok text := '';
+begin
+  if current_user <> 'authenticated' then raise exception 'ÉCHEC: rôle courant % au lieu de authenticated', current_user; end if;
+  foreach m in array array['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/webm', 'audio/wav', 'audio/x-wav', 'audio/mpeg'] loop
+    i := i + 1;
+    r := public.create_inbox_item(('00000000-0000-4000-8000-00000000021' || i)::uuid, 'file', null, 'vocal');
+    if r.status <> 'pending' or r.mime <> m then raise exception 'ÉCHEC: audio % : % / %', m, r.status, r.mime; end if;
+  end loop;
+  ok := ok || E'\nOK: 7 types audio acceptés par la RPC (pending, type lu sur l''objet stocké)';
+  select * into r from public.inbox where id = '00000000-0000-4000-8000-000000000212';
+  if r.size <> 20000000 then raise exception 'ÉCHEC: taille de l''audio de 20 Mo : %', r.size; end if;
+  ok := ok || E'\nOK: audio de 20 Mo accepté (la limite de 10 Mo reste réservée aux images)';
+  begin
+    perform public.create_inbox_item('00000000-0000-4000-8000-000000000221', 'file', null, 'long.m4a');
+    raise exception 'ÉCHEC: audio > 30 Mo accepté';
+  exception when invalid_parameter_value then
+    ok := ok || E'\nOK: audio > 30 Mo refusé par la RPC (' || sqlstate || ' ' || sqlerrm || ')';
+  end;
+  begin
+    perform public.create_inbox_item('00000000-0000-4000-8000-000000000222', 'file', null, 'son.ogg');
+    raise exception 'ÉCHEC: audio/ogg accepté';
+  exception when invalid_parameter_value then
+    ok := ok || E'\nOK: audio/ogg refusé par la RPC (' || sqlstate || ')';
+  end;
+  begin
+    perform public.create_inbox_item('00000000-0000-4000-8000-000000000223', 'file', null, 'son.webm');
+    raise exception 'ÉCHEC: type avec ;codecs accepté';
+  exception when invalid_parameter_value then
+    ok := ok || E'\nOK: type avec paramètre ;codecs refusé par la RPC (' || sqlstate || ')';
+  end;
+  -- Droits inchangés : dépôt seul, aucun accès aux objets audio.
+  if (select count(*) from storage.objects where bucket_id = 'inbox') <> 0 then raise exception 'ÉCHEC: authenticated voit des objets du bucket'; end if;
+  ok := ok || E'\nOK: authenticated ne voit toujours aucun objet du bucket (audio compris)';
+  perform set_config('vc.log', current_setting('vc.log') || ok, true);
+end $$;
+
+reset role;
+
+-- Bucket : privé, limites posées ; table : RLS, droits d'anon.
 do $$
 declare
   b record;
+  ok text := '';
 begin
   select public, file_size_limit, allowed_mime_types into b from storage.buckets where id = 'inbox';
-  if not found or b.public or b.file_size_limit <> 31457280 or cardinality(b.allowed_mime_types) <> 6 then
+  if not found or b.public or b.file_size_limit <> 31457280 or cardinality(b.allowed_mime_types) <> 13 then
     raise exception 'ÉCHEC: bucket inbox absent, public ou mal limité';
   end if;
-  perform set_config('vc.log', current_setting('vc.log') || E'\nOK: bucket inbox privé, 30 Mo, 6 types autorisés', true);
+  if not b.allowed_mime_types @> array['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/webm', 'audio/wav', 'audio/x-wav', 'audio/mpeg']
+    or b.allowed_mime_types @> array['audio/ogg'] then
+    raise exception 'ÉCHEC: types audio du bucket incorrects';
+  end if;
+  ok := ok || E'\nOK: bucket inbox privé, 30 Mo, 13 types autorisés (dont 7 audio)';
+  begin
+    insert into public.inbox (kind, storage_path, filename, mime, size) values ('file', 'x/y', 'son.ogg', 'audio/ogg', 10);
+    raise exception 'ÉCHEC: audio/ogg accepté par la table';
+  exception when check_violation then
+    ok := ok || E'\nOK: table inbox : audio/ogg refusé (' || sqlstate || ')';
+  end;
+  begin
+    insert into public.inbox (kind, storage_path, filename, mime, size) values ('file', 'x/y', 'long.m4a', 'audio/mp4', 31457281);
+    raise exception 'ÉCHEC: audio > 30 Mo accepté par la table';
+  exception when check_violation then
+    ok := ok || E'\nOK: table inbox : audio > 30 Mo refusé (' || sqlstate || ')';
+  end;
+  if not (select relrowsecurity from pg_class where oid = 'public.inbox'::regclass) then raise exception 'ÉCHEC: RLS désactivée sur inbox'; end if;
+  if has_table_privilege('anon', 'public.inbox', 'select, insert, update, delete')
+    or has_function_privilege('anon', 'public.create_inbox_item(uuid, text, text, text)', 'execute') then
+    raise exception 'ÉCHEC: anon a un droit sur inbox ou create_inbox_item';
+  end if;
+  if not has_function_privilege('authenticated', 'public.create_inbox_item(uuid, text, text, text)', 'execute') then
+    raise exception 'ÉCHEC: authenticated ne peut plus appeler create_inbox_item';
+  end if;
+  ok := ok || E'\nOK: RLS active, anon sans droit sur inbox ni create_inbox_item, authenticated garde la RPC';
+  perform set_config('vc.log', current_setting('vc.log') || ok, true);
 end $$;
 
 select line as resultat from regexp_split_to_table(current_setting('vc.log'), E'\n') as line where line <> '';

@@ -22,6 +22,7 @@ export type Screen =
   | { name: 'profile'; view?: 'email' | 'password' }
   | { name: 'review'; scope: SessionScope }
   | { name: 'source-text' }
+  | { name: 'source-voice' }
   | { name: 'new-card' }
   | ({ name: 'drafts' } & DraftsTarget)
   | ({ name: 'edit'; cardId: string } & DraftsTarget)

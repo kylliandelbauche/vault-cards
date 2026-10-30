@@ -3,15 +3,14 @@ import { ACCEPT_ATTR, addFile, type InboxDeps, type InboxItem } from '../../lib/
 import { inboxErrorMessage } from './sourceName'
 import type { SourceKind } from './sources'
 
-/** Nom accessible de la source Vocal tant qu'elle n'existe pas (#48). */
-export const VOICE_LABEL = 'Vocal, bientôt disponible'
-
 interface SourcesOptions {
   deps: InboxDeps
   /** « À la main » : fenêtre Nouvelle carte. */
   onManual(): void
   /** « Texte » : écran Source · Texte. */
   onText(): void
+  /** « Vocal » : écran Source · Vocal (#48). */
+  onVoice(): void
   /** Fichier ou photo envoyé : écran Brouillons de la source. */
   onSent(item: InboxItem): void
 }
@@ -20,10 +19,10 @@ interface Message { text: string; alert: boolean }
 
 /**
  * Actions des sources de nouvelles cartes, une seule fois pour l'accueil et le hub : Fichier et Photo ouvrent le
- * sélecteur natif puis envoient tout de suite (inbox.ts) ; Vocal n'existe pas encore (#48) et le dit. `inputs`
+ * sélecteur natif puis envoient tout de suite (inbox.ts) ; Texte et Vocal ouvrent leur écran. `inputs`
  * (les deux champs fichier cachés) est à rendre une fois par écran.
  */
-export function useSources({ deps, onManual, onText, onSent }: SourcesOptions) {
+export function useSources({ deps, onManual, onText, onVoice, onSent }: SourcesOptions) {
   const fileInput = useRef<HTMLInputElement>(null)
   const photoInput = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState<'file' | 'photo' | null>(null)
@@ -49,7 +48,7 @@ export function useSources({ deps, onManual, onText, onSent }: SourcesOptions) {
     text: onText,
     file: () => fileInput.current?.click(),
     photo: () => photoInput.current?.click(),
-    voice: () => setMessage({ text: 'Le vocal arrive bientôt.', alert: false }),
+    voice: onVoice,
   }
   /** Libellé d'une source qui envoie : « Envoi… » pendant le dépôt. */
   const label = (which: SourceKind, text: string) => (busy !== null && busy === which ? 'Envoi…' : text)

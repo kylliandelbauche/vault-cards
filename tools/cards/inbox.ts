@@ -1,5 +1,5 @@
 // Boîte de réception (#55), partie pure (testée) : signatures d'octets, validation du JSON de l'IA, arguments.
-// Les accès base/Storage sont dans inbox-cli.ts. Limites alignées sur la migration 20261015010000_inbox et src/lib/inbox.ts.
+// Les accès base/Storage sont dans inbox-cli.ts. Limites alignées sur les migrations 20261015010000_inbox, 20261030000000_inbox_audio et src/lib/inbox.ts.
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -16,6 +16,13 @@ export const MIME_EXT: Readonly<Record<string, string>> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
+  'audio/mp4': 'm4a',
+  'audio/x-m4a': 'm4a',
+  'audio/m4a': 'm4a',
+  'audio/webm': 'webm',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/mpeg': 'mp3',
 }
 
 export const FILE_MAX = 30 * 1024 * 1024
@@ -28,9 +35,28 @@ export const ERROR_MAX = 300
 const startsWith = (bytes: Uint8Array, sig: readonly number[], at = 0) => sig.every((b, i) => bytes[at + i] === b)
 const ascii = (s: string) => [...s].map(c => c.charCodeAt(0))
 
+export type AudioFormat = 'mov' | 'matroska' | 'wav' | 'mp3'
+
+/**
+ * Format d'un audio d'après ses octets (démuxeur ffmpeg), ou null. MP3 : `ID3`, ou un en-tête de trame : synchro sur
+ * 11 bits, version connue, couche II ou III, débit et fréquence valides. Refuse donc `FF FE` (BOM UTF-16) et `FF FF`.
+ */
+export function audioFormat(bytes: Uint8Array): AudioFormat | null {
+  if (startsWith(bytes, ascii('ftyp'), 4)) return 'mov'
+  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return 'matroska'
+  if (startsWith(bytes, ascii('RIFF')) && startsWith(bytes, ascii('WAVE'), 8)) return 'wav'
+  if (startsWith(bytes, ascii('ID3'))) return 'mp3'
+  if (bytes.length < 3 || bytes[0] !== 0xff || (bytes[1] & 0xe0) !== 0xe0) return null
+  const version = (bytes[1] >> 3) & 3
+  const layer = (bytes[1] >> 1) & 3
+  const bitrate = bytes[2] >> 4
+  const sampleRate = (bytes[2] >> 2) & 3
+  return version !== 1 && (layer === 1 || layer === 2) && bitrate !== 0xf && sampleRate !== 3 ? 'mp3' : null
+}
+
 /**
  * Les octets correspondent-ils au type déclaré ? PDF `%PDF-`, PNG, JPEG `FF D8 FF`, WebP `RIFF….WEBP`, texte = UTF-8
- * valide sans octet nul. Un fichier dont le contenu ne correspond pas (exécutable renommé, archive…) est refusé.
+ * valide sans octet nul, audio : voir audioFormat. Un fichier dont le contenu ne correspond pas (exécutable renommé, archive…) est refusé.
  */
 export function matchesSignature(bytes: Uint8Array, mime: string): boolean {
   switch (mime) {
@@ -42,6 +68,17 @@ export function matchesSignature(bytes: Uint8Array, mime: string): boolean {
       return startsWith(bytes, [0xff, 0xd8, 0xff])
     case 'image/webp':
       return startsWith(bytes, ascii('RIFF')) && startsWith(bytes, ascii('WEBP'), 8)
+    case 'audio/mp4':
+    case 'audio/x-m4a':
+    case 'audio/m4a':
+      return audioFormat(bytes) === 'mov'
+    case 'audio/webm':
+      return audioFormat(bytes) === 'matroska'
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return audioFormat(bytes) === 'wav'
+    case 'audio/mpeg':
+      return audioFormat(bytes) === 'mp3'
     case 'text/plain':
     case 'text/markdown':
       if (bytes.includes(0)) return false
@@ -134,12 +171,13 @@ export function validateInboxPayload(p: unknown): InboxPayload {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 export const INBOX_USAGE =
-  'usage : node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge'
+  'usage : node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | transcribe <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge'
 
 export type InboxCommand =
   | { action: 'list' }
   | { action: 'purge' }
   | { action: 'claim'; id: string; dir: string }
+  | { action: 'transcribe'; id: string; dir: string }
   | { action: 'complete'; id: string; dir: string }
   | { action: 'fail'; id: string; message: string }
 
@@ -154,7 +192,7 @@ export function parseInboxArgs(argv: string[]): InboxCommand {
     if (id !== undefined) throw new Error(INBOX_USAGE)
     return { action }
   }
-  if (action === 'claim' || action === 'complete') {
+  if (action === 'claim' || action === 'transcribe' || action === 'complete') {
     const valid = needId()
     if (!arg || !path.isAbsolute(arg) || extra.length) throw new Error(`dossier absolu attendu (RUN_DIR)\n${INBOX_USAGE}`)
     return { action, id: valid, dir: arg }

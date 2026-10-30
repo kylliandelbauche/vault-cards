@@ -185,6 +185,8 @@ Correctif (issue #51, 2026-10-13) : `vercel.json` ajoute à toutes les routes un
 
 Vérification : `dist/` servi en local avec ces en-têtes, ouvert dans Chrome headless : page de connexion rendue, aucune violation CSP en console, service worker activé et précache de 12 entrées, page contrôlée au second chargement ; un `fetch` vers un domaine tiers est bloqué, un `fetch` vers Supabase passe. Les écrans connectés (étiquettes colorées, etc.) n'ont pas pu être exercés sans identifiants : à regarder sur la preview.
 
+Micro (issue #48, 2026-10-30) : `Permissions-Policy` passe à `microphone=(self)` pour l'enregistrement de la source Vocal ; aucun autre en-tête ne change. La CSP n'a pas à bouger : `MediaRecorder` et `getUserMedia` ne dépendent d'aucune directive, et l'envoi passe par `connect-src`, déjà ouvert vers Supabase.
+
 Pourquoi c'est utile ici : la session Supabase est dans `localStorage`, donc une faille XSS permettrait de la lire. La CSP réduit ce risque (le code n'a aucun sink XSS aujourd'hui, c'est une défense en profondeur).
 
 ## Actions pour Kyllian

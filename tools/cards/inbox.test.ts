@@ -16,6 +16,15 @@ describe('signature des octets', () => {
     ['image/webp', bytes('RIFF', [1, 2, 3, 4], 'WEBPVP8 ')],
     ['text/plain', new TextEncoder().encode('Bonjour, ça va ? 😀')],
     ['text/markdown', new TextEncoder().encode('# Titre\n- point')],
+    ['audio/mp4', bytes([0, 0, 0, 24], 'ftypM4A ')],
+    ['audio/x-m4a', bytes([0, 0, 0, 32], 'ftypmp42')],
+    ['audio/m4a', bytes([0, 0, 0, 24], 'ftypisom')],
+    ['audio/webm', bytes([0x1a, 0x45, 0xdf, 0xa3, 1, 2])],
+    ['audio/wav', bytes('RIFF', [1, 2, 3, 4], 'WAVEfmt ')],
+    ['audio/x-wav', bytes('RIFF', [1, 2, 3, 4], 'WAVEfmt ')],
+    ['audio/mpeg', bytes('ID3', [4, 0])],
+    ['audio/mpeg', bytes([0xff, 0xfb, 0x90, 0x00])],
+    ['audio/mpeg', bytes([0xff, 0xe3, 0x18, 0x00])],
   ])('%s reconnu', (mime, b) => {
     expect(matchesSignature(b, mime)).toBe(true)
     expect(fileProblem(b, mime, b.length)).toBeNull()
@@ -29,6 +38,20 @@ describe('signature des octets', () => {
     ['text/plain', bytes([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00])], // zip (octet nul)
     ['text/plain', bytes([0xc3, 0x28])], // UTF-8 invalide
     ['application/zip', bytes('PK')],
+    ['audio/mp4', bytes('MZ\x90\x00 exécutable renommé')],
+    ['audio/mp4', bytes('ftypM4A ')], // `ftyp` attendu après la taille de la boîte
+    ['audio/webm', bytes('%PDF-1.4')],
+    ['audio/wav', bytes('RIFF', [1, 2, 3, 4], 'WEBPVP8 ')],
+    ['audio/mpeg', bytes([0xff, 0xd8, 0xff, 0xe0])], // JPEG : 0xD8 n'a pas les bits de synchro
+    ['audio/mpeg', bytes('ID')],
+    ['audio/mpeg', bytes([0xff])],
+    ['audio/mpeg', bytes([0xff, 0xfe, 0x41, 0x00])], // BOM UTF-16 : un texte
+    ['audio/mpeg', bytes([0xff, 0xff, 0x90, 0x00])],
+    ['audio/mpeg', bytes([0xff, 0xeb, 0x90, 0x00])], // version réservée
+    ['audio/mpeg', bytes([0xff, 0xf9, 0x90, 0x00])], // couche réservée
+    ['audio/mpeg', bytes([0xff, 0xfb, 0xf0, 0x00])], // débit invalide
+    ['audio/mpeg', bytes([0xff, 0xfb, 0x9c, 0x00])], // fréquence réservée
+    ['audio/ogg', bytes('OggS')],
   ])('%s refusé quand le contenu ne correspond pas', (mime, b) => {
     expect(matchesSignature(b, mime)).toBe(false)
   })
@@ -39,6 +62,12 @@ describe('signature des octets', () => {
     expect(fileProblem(new Uint8Array(IMAGE_MAX + 1), 'image/png', null)).toBe('fichier trop gros')
     expect(fileProblem(bytes('x'), 'application/zip', 1)).toBe('format refusé')
     expect(fileProblem(bytes('MZ'), 'application/pdf', 2)).toBe('contenu ne correspondant pas au format déclaré')
+    expect(fileProblem(bytes('MZ'), 'audio/mp4', 2)).toBe('contenu ne correspondant pas au format déclaré')
+    expect(fileProblem(bytes('OggS'), 'audio/ogg', 4)).toBe('format refusé')
+    // Audio : 30 Mo, pas la limite de 10 Mo des images.
+    const big = new Uint8Array(IMAGE_MAX + 1)
+    big.set([0x1a, 0x45, 0xdf, 0xa3])
+    expect(fileProblem(big, 'audio/webm', big.length)).toBeNull()
   })
 })
 
@@ -85,6 +114,9 @@ describe('arguments et chemins', () => {
     expect(parseInboxArgs(['purge'])).toEqual({ action: 'purge' })
     expect(parseInboxArgs(['claim', ID, '/tmp/run'])).toEqual({ action: 'claim', id: ID, dir: '/tmp/run' })
     expect(parseInboxArgs(['complete', ID, '/tmp/run'])).toEqual({ action: 'complete', id: ID, dir: '/tmp/run' })
+    expect(parseInboxArgs(['transcribe', ID, '/tmp/run'])).toEqual({ action: 'transcribe', id: ID, dir: '/tmp/run' })
+    expect(() => parseInboxArgs(['transcribe', ID, 'relatif'])).toThrow('dossier absolu')
+    expect(() => parseInboxArgs(['transcribe', '../x', '/tmp/run'])).toThrow('id invalide')
     expect(() => parseInboxArgs(['complete', ID, 'c.json'])).toThrow('dossier absolu')
     expect(parseInboxArgs(['fail', ID, 'PDF', 'illisible'])).toEqual({ action: 'fail', id: ID, message: 'PDF illisible' })
     expect(() => parseInboxArgs(['claim', 'pas-un-uuid', '/tmp'])).toThrow('id invalide')
@@ -97,6 +129,8 @@ describe('arguments et chemins', () => {
   it('claimPath : nommé par id et type, jamais par le nom de fichier de l’utilisateur', () => {
     expect(claimPath('/tmp/run', ID, 'file', 'application/pdf')).toBe(`/tmp/run/${ID}.pdf`)
     expect(claimPath('/tmp/run', ID, 'text', null)).toBe(`/tmp/run/${ID}.txt`)
+    expect(claimPath('/tmp/run', ID, 'file', 'audio/x-m4a')).toBe(`/tmp/run/${ID}.m4a`)
+    expect(claimPath('/tmp/run', ID, 'file', 'audio/mpeg')).toBe(`/tmp/run/${ID}.mp3`)
     expect(() => claimPath('/tmp/run', ID, 'file', 'application/zip')).toThrow('format refusé')
   })
 

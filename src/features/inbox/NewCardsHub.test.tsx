@@ -90,7 +90,7 @@ describe('Hub « Nouvelles cartes » (#86) : sources', () => {
     await openHub(user)
     const sources = screen.getByRole('region', { name: 'Sources' })
     const names = within(sources).getAllByRole('button').map(b => b.getAttribute('aria-label') ?? b.querySelector('span span')?.textContent)
-    expect(names).toEqual(['À la main', 'Fichier', 'Photo', 'Texte', 'Vocal, bientôt disponible'])
+    expect(names).toEqual(['À la main', 'Fichier', 'Photo', 'Texte', 'Vocal'])
     const manual = within(sources).getByRole('button', { name: /^À la main/ })
     expect(manual.parentElement?.className).not.toContain('grid')
     expect(within(sources).getByRole('button', { name: /^Fichier/ }).parentElement?.className).toContain('grid-cols-2')
@@ -121,16 +121,16 @@ describe('Hub « Nouvelles cartes » (#86) : sources', () => {
     expect(await screen.findByText('Choisis comment créer')).toBeTruthy()
   })
 
-  it('Vocal : grisé, indisponible (#48) ; un tap dit « bientôt » et n’envoie rien', async () => {
+  it('Vocal : tuile active (#48), légende « Enregistrer, importer », ouvre Source · Vocal sans rien envoyer', async () => {
     const { user, rpc } = renderApp()
     await openHub(user)
-    const voice = screen.getByRole('button', { name: 'Vocal, bientôt disponible' })
-    expect(voice.getAttribute('aria-disabled')).toBe('true')
-    expect(voice.className).toContain('tag-chip-empty')
+    const voice = screen.getByRole('button', { name: /^Vocal/ })
+    expect(voice.getAttribute('aria-disabled')).toBeNull()
+    expect(voice.className).not.toContain('tag-chip-empty')
+    expect(voice.textContent).toContain('Enregistrer, importer')
     await user.click(voice)
-    expect(screen.getByText('Le vocal arrive bientôt.').getAttribute('role')).toBe('status')
+    expect(title()).toBe('Vocal')
     expect(rpc).not.toHaveBeenCalled()
-    expect(title()).toBe('Nouvelles cartes')
   })
 })
 
