@@ -241,6 +241,13 @@ async function requireUserId(client: InboxClient): Promise<string> {
   return session.user.id
 }
 
+/** Message en français pour un refus de Storage, dont le texte brut est en anglais. */
+export function uploadErrorMessage(message: string): string {
+  if (/mime type/i.test(message)) return 'Envoi du fichier refusé : format non accepté par le serveur'
+  if (/exceeded|too large|maximum/i.test(message)) return 'Envoi du fichier refusé : fichier trop gros (30 Mo au maximum)'
+  return 'Envoi du fichier refusé : réessaie plus tard'
+}
+
 /** Envoi vers `inbox/<uid>/<id>` (sans écrasement) puis création de l'élément. */
 async function deposit({ client, uuid = () => crypto.randomUUID() }: InboxDeps, uid: string, { blob, filename, mime }: PreparedFile): Promise<InboxItem> {
   const id = uuid()
@@ -248,7 +255,7 @@ async function deposit({ client, uuid = () => crypto.randomUUID() }: InboxDeps, 
   // sur Safari/iOS : le corps est réemballé avec le type déduit (sans copie du contenu).
   const body = new Blob([blob], { type: mime })
   const up = await client.storage.from('inbox').upload(`${uid}/${id}`, body, { contentType: mime, upsert: false })
-  if (up.error) throw new InboxError('server', `Envoi du fichier refusé : ${up.error.message}`)
+  if (up.error) throw new InboxError('server', uploadErrorMessage(up.error.message))
   const { data, error } = await client.rpc('create_inbox_item', { p_id: id, p_kind: 'file', p_filename: filename })
   if (error) throw rpcError(error)
   return toItem(data)

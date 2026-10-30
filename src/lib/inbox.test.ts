@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { addAudio, addFile, addText, canvasCompressor, checkAudio, checkFile, checkText, cleanFilename, fitWithin, InboxError, INBOX_LIMITS, listInbox, normalizeAudioType, prepareFile, type InboxClient } from './inbox'
+import { uploadErrorMessage, addAudio, addFile, addText, canvasCompressor, checkAudio, checkFile, checkText, cleanFilename, fitWithin, InboxError, INBOX_LIMITS, listInbox, normalizeAudioType, prepareFile, type InboxClient } from './inbox'
 
 const MB = 1024 * 1024
 const ID = '11111111-1111-4111-8111-111111111111'
@@ -280,5 +280,13 @@ describe('audio (#48)', () => {
     const bad = fakeClient()
     await expect(addAudio({ client: bad.client, online: () => true }, fakeFile('a.ogg', 5))).rejects.toBeInstanceOf(InboxError)
     expect(bad.calls).toEqual([])
+  })
+})
+
+describe('uploadErrorMessage', () => {
+  it('traduit les refus de Storage sans recopier le texte anglais', () => {
+    expect(uploadErrorMessage('mime type audio/webm is not supported')).toBe('Envoi du fichier refusé : format non accepté par le serveur')
+    expect(uploadErrorMessage('The object exceeded the maximum allowed size')).toBe('Envoi du fichier refusé : fichier trop gros (30 Mo au maximum)')
+    expect(uploadErrorMessage('Internal Server Error')).toBe('Envoi du fichier refusé : réessaie plus tard')
   })
 })
