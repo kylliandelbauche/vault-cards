@@ -134,7 +134,7 @@
   --new: #6cb2ff;
   --new-tint: #132a45;
   --sys-gray: #8e8e93;
-  --muted: #aeaeb2;
+  --muted: #b8b8bd; /* AA (4,5:1) y compris sous le reflet de .glass-card (#45) */
   --label-2: #dcdce0;
 
   --bg-base: #06080f; /* = theme-color sombre (index.html) */
