@@ -8,6 +8,12 @@ updates:
       all:
         patterns:
           - "*"
+    # #111 : typescript-eslint n'accepte pas encore TypeScript 7 ; @types/node suit le Node de la CI (24).
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
