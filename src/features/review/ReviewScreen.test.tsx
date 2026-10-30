@@ -192,6 +192,17 @@ describe('ReviewScreen', () => {
     expect(container.querySelectorAll(NESTED)).toHaveLength(0)
   })
 
+  it('fin de session : bilan ✕ ~ ✓ seulement s’il y a eu des notes (jamais « 0 0 0 » après des suppressions)', () => {
+    const { container } = render(<KApp theme="ios"><ReviewScreen db={db} session={session({ status: 'done' })} now={now} onBack={vi.fn()} /></KApp>)
+    const card = () => container.querySelector('main .glass-card')!
+    expect(card().textContent).toContain('Session terminée')
+    expect(card().textContent).not.toMatch(/[✕~✓]/)
+    expect(card().textContent).toContain('Aucune carte en attente.')
+    cleanup()
+    const noted = render(<KApp theme="ios"><ReviewScreen db={db} session={session({ status: 'done', stats: { again: 1, hard: 0, good: 2 } })} now={now} onBack={vi.fn()} /></KApp>)
+    expect(noted.container.querySelector('main .glass-card')!.textContent).toMatch(/✕ 1.*~ 0.*✓ 2/)
+  })
+
   it('fin de session : « Retour à l’accueil » appelle onBack', async () => {
     const onBack = vi.fn()
     render(<KApp theme="ios"><ReviewScreen db={db} session={session({ status: 'done' })} now={now} onBack={onBack} /></KApp>)
@@ -246,6 +257,37 @@ describe('ReviewScreen', () => {
       await user.keyboard('{ArrowDown}')
       expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Supprimer' }))
       await user.keyboard('{Escape}')
+      expect(screen.queryByRole('menu')).toBeNull()
+      expect(document.activeElement).toBe(menuButton())
+    })
+
+    it('Safari ne focalise pas le bouton cliqué : le ⋯ le reçoit à l’ouverture, et le retrouve à la fermeture', async () => {
+      renderScreen(reviewing())
+      expect(document.activeElement).toBe(document.body)
+      fireEvent.click(menuButton()) // fireEvent ne donne pas le focus, comme Safari
+      expect(screen.getByRole('menu')).toBeTruthy()
+      fireEvent.keyDown(window, { key: 'Escape' })
+      await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+      expect(document.activeElement).toBe(menuButton())
+    })
+
+    it('clavier : flèches, Début et Fin parcourent les choix en boucle ; Tab ferme le menu', async () => {
+      renderScreen(reviewing())
+      const user = userEvent.setup()
+      await user.click(menuButton())
+      const menu = screen.getByRole('menu')
+      const edit = within(menu).getByRole('menuitem', { name: 'Modifier' })
+      const remove = within(menu).getByRole('menuitem', { name: 'Supprimer' })
+      expect(document.activeElement).toBe(edit)
+      await user.keyboard('{ArrowUp}')
+      expect(document.activeElement).toBe(remove) // boucle vers la fin
+      await user.keyboard('{ArrowDown}')
+      expect(document.activeElement).toBe(edit) // boucle vers le début
+      await user.keyboard('{End}')
+      expect(document.activeElement).toBe(remove)
+      await user.keyboard('{Home}')
+      expect(document.activeElement).toBe(edit)
+      await user.keyboard('{Tab}')
       expect(screen.queryByRole('menu')).toBeNull()
       expect(document.activeElement).toBe(menuButton())
     })
@@ -340,6 +382,56 @@ describe('ReviewScreen', () => {
         await user.click(screen.getByRole('button', { name: 'Fermer' }))
         expect(await screen.findByText('Question a ?')).toBeTruthy()
         expect(update).not.toHaveBeenCalled()
+      })
+
+      it('Modifier puis ✕ avec modification : confirmation ; « Continuer à modifier » reste, « Ignorer » revient à la carte intacte', async () => {
+        const store = memoryStore(cards)
+        const update = vi.spyOn(store, 'updateCard')
+        renderLive(store)
+        const user = userEvent.setup()
+        await screen.findByText('Question a ?')
+        await user.click(menuButton())
+        await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+        await user.type(screen.getByLabelText('QUESTION'), ' (modifiée)')
+        await user.click(screen.getByRole('button', { name: 'Fermer' }))
+        let dialog = screen.getByRole('alertdialog', { name: 'Tes modifications ne seront pas enregistrées.' })
+        expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: 'Continuer à modifier' }))
+        await user.click(within(dialog).getByRole('button', { name: 'Continuer à modifier' }))
+        expect(screen.queryByRole('alertdialog')).toBeNull()
+        expect(screen.getByRole('heading', { name: 'Modifier la carte' })).toBeTruthy()
+        await user.click(screen.getByRole('button', { name: 'Fermer' }))
+        dialog = screen.getByRole('alertdialog')
+        await user.click(within(dialog).getByRole('button', { name: 'Ignorer les modifications' }))
+        expect(await screen.findByText('Question a ?')).toBeTruthy()
+        expect(screen.queryByRole('alertdialog')).toBeNull()
+        expect(update).not.toHaveBeenCalled()
+      })
+
+      it('légende des tags dans « Modifier la carte » : « 5 au plus » pour une carte du vault, « 1 à 5 » pour une carte perso', async () => {
+        const open = async (store: ReviewStore) => {
+          renderLive(store)
+          const user = userEvent.setup()
+          await screen.findByText('Question a ?')
+          await user.click(menuButton())
+          await user.click(screen.getByRole('menuitem', { name: 'Modifier' }))
+          return screen.getByText('TAGS').closest('legend')!.textContent
+        }
+        expect(await open(memoryStore(cards))).toBe('TAGS · 5 au plus')
+        cleanup()
+        expect(await open(memoryStore(cards.map(c => ({ ...c, source: 'manual' as const }))))).toBe('TAGS · 1 à 5')
+      })
+
+      it('Supprimer la dernière carte : écran vide, le focus ne revient pas sur un ⋯ disparu', async () => {
+        renderLive(memoryStore([cards[0]]))
+        const user = userEvent.setup()
+        await screen.findByText('Question a ?')
+        await user.click(menuButton())
+        await user.click(screen.getByRole('menuitem', { name: 'Supprimer' }))
+        await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Supprimer' }))
+        expect(await screen.findByText(/Aucune carte pour l'instant/)).toBeTruthy()
+        expect(screen.queryByRole('button', { name: 'Actions de la carte' })).toBeNull()
+        expect(screen.queryByRole('alertdialog')).toBeNull()
+        expect(document.activeElement).toBe(document.body)
       })
 
       it('Supprimer → confirmer : carte suivante, « Carte 1 sur 1 », aucune note', async () => {

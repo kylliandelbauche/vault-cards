@@ -69,7 +69,12 @@ function MenuButton({ open, onOpen }: { open: boolean; onOpen(button: HTMLButton
       aria-label="Actions de la carte"
       aria-haspopup="menu"
       aria-expanded={open}
-      onClick={e => { e.stopPropagation(); onOpen(e.currentTarget) }}
+      onClick={e => {
+        e.stopPropagation()
+        // Safari ne donne pas le focus à un bouton cliqué : sans lui, le menu ne saurait pas où rendre le focus.
+        e.currentTarget.focus()
+        onOpen(e.currentTarget)
+      }}
       onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation() }}
       className="group -my-1.5 -me-1.5 flex size-11 shrink-0 items-center justify-center rounded-full outline-none"
     >

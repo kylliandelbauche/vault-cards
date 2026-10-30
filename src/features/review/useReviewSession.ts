@@ -75,7 +75,8 @@ export interface ReviewSession {
   edit(patch: ManualCardInput): Promise<void>
   /**
    * Menu ⋯ (#73) : suppression douce de la carte affichée, puis carte suivante. Aucune note comptée ; la carte sort
-   * de « Carte n sur N » si elle n'avait pas encore été notée. Rejette si l'écriture échoue (rien ne change).
+   * de « Carte n sur N » si elle n'avait pas encore été notée. Une note en cours d'écriture est attendue d'abord.
+   * Rejette si l'écriture échoue (rien ne change).
    */
   remove(): Promise<void>
 }
@@ -124,6 +125,9 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   const reviews = useRef<Review[]>([])
   // Verrou d'écriture (note ou suppression) : posé avant tout await, un double tap n'écrit qu'une fois.
   const rating = useRef(false)
+  // Se résout à la fin de la note en cours : une suppression demandée pendant la notation l'attend.
+  const ratingDone = useRef<Promise<void>>(Promise.resolve())
+  const removing = useRef(false)
   // Cartes déjà notées pendant cette session (une suppression ne retire du « sur N » qu'une carte jamais notée).
   const rated = useRef(new Set<string>())
   // Numéro du dernier chargement lancé : un chargement plus ancien qui se termine après est ignoré.
@@ -182,10 +186,12 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   const rate = useCallback(async (r: Rating) => {
     const s = live.current
     const item = s.queue[0]
-    if (rating.current || s.scope !== io.current.scope || s.status !== 'reviewing' || !s.revealed || !item) return
+    if (rating.current || removing.current || s.scope !== io.current.scope || s.status !== 'reviewing' || !s.revealed || !item) return
     const { store, now } = io.current
     if (now().getTime() - s.shownAt < SCREEN_CHANGE_GUARD_MS) return
     rating.current = true // posé avant tout await : un double tap n'enregistre qu'une review
+    let release = () => {}
+    ratingDone.current = new Promise<void>(resolve => { release = resolve })
     try {
       const review: Review = {
         id: crypto.randomUUID(),
@@ -221,6 +227,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
       })
     } finally {
       rating.current = false
+      release()
     }
   }, [commit])
 
@@ -244,10 +251,14 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   const remove = useCallback(async () => {
     const s = live.current
     const item = s.queue[0]
-    if (rating.current || s.scope !== io.current.scope || s.status !== 'reviewing' || !item) return
+    if (removing.current || s.scope !== io.current.scope || s.status !== 'reviewing' || !item) return
     const { store, now } = io.current
-    rating.current = true
+    removing.current = true // aucune autre note pendant l'attente
     try {
+      // Note en cours d'écriture : on l'attend, puis on supprime la carte qui était affichée (pas la suivante).
+      await ratingDone.current
+      if (live.current.scope !== s.scope) return
+      rating.current = true
       const id = item.card.id
       await store.deleteCard(id)
       const t = now()
@@ -268,6 +279,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
       })
     } finally {
       rating.current = false
+      removing.current = false
     }
   }, [commit])
 

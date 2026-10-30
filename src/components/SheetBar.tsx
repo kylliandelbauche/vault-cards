@@ -98,7 +98,7 @@ export function ConfirmDialog({ message, confirmLabel, cancelLabel, onConfirm, o
       items[(i + (e.shiftKey ? items.length - 1 : 1)) % items.length]?.focus()
     }
     window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey); opener?.focus() }
+    return () => { window.removeEventListener('keydown', onKey); if (opener?.isConnected) opener.focus() }
   }, [])
   const id = useId()
   const row = 'flex h-[50px] w-full cursor-pointer items-center border-t border-black/10 px-[18px] text-start text-[17px] leading-[22px] hover:bg-black/5 active:bg-black/10 dark:border-white/12 dark:hover:bg-white/8 dark:active:bg-white/12'
