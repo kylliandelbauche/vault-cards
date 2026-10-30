@@ -6,6 +6,7 @@ import { EDGES } from '../../components/TopBar'
 import { addAudio, AUDIO_ACCEPT_ATTR, checkAudio, type InboxDeps, type InboxItem } from '../../lib/inbox'
 import { createRecorder, IDLE_RECORDER, isRecordingSupported, NOT_SUPPORTED } from '../../lib/recorder'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
+import { useReducedMotion } from '../../lib/useReducedMotion'
 import { useLeaveGuard } from '../home/useLeaveGuard'
 import { inboxErrorMessage } from './sourceName'
 
@@ -16,23 +17,34 @@ interface Props {
   onSent(item: InboxItem): void
 }
 
-const BARS = 16
+/** Hauteurs des barres de Paper. Les 4 dernières restent grises, comme dans la maquette. */
+const WAVE = [14, 28, 44, 22, 52, 36, 18, 40, 26, 48, 16, 30]
+const REST = 4
 const RED = 'bg-[#FF453A]' // rouge de Paper : barres et bouton d'enregistrement, jamais derrière du texte
 const SECONDARY = 'flex min-h-11 items-center rounded-full bg-black/4 px-4 text-[14px] font-medium text-label-2 hover:bg-black/8 dark:bg-white/7 dark:hover:bg-white/12'
+
+const DONE_CAPTION = {
+  asked: 'Enregistrement prêt à envoyer',
+  limit: 'Limite atteinte : enregistrement arrêté, prêt à envoyer',
+  interrupted: 'Micro coupé par un appel ou le verrouillage. Ce qui a été capté est prêt à envoyer.',
+}
 
 const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 const megabytes = (bytes: number) => `${(bytes / (1024 * 1024)).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo`
 
-/** Barres du niveau du micro : décoratives. Grises tant qu'aucun niveau n'est arrivé. */
-function Levels({ levels }: { levels: readonly number[] }) {
+/**
+ * Barres de Paper, décoratives : elles suivent le chrono, pas la voix. Mesurer le micro demanderait un AudioContext,
+ * qui modifie la session audio sur iOS pendant la capture. Grises avant l'enregistrement.
+ */
+function Wave({ on, shift }: { on: boolean; shift: number }) {
   return (
     <div aria-hidden="true" className="flex h-14 shrink-0 items-center gap-1">
-      {Array.from({ length: BARS }, (_, i) => {
-        const level = levels[i]
-        if (level === undefined) return <span key={i} className="h-2.5 w-1 rounded-[2px] bg-black/15 dark:bg-white/20" />
-        const opacity = level > 0.6 ? 'opacity-100' : level > 0.3 ? 'opacity-70' : 'opacity-55'
-        return <span key={i} className={`w-1 rounded-[2px] ${RED} ${opacity}`} style={{ height: `${10 + Math.round(level * 42)}px` }} />
+      {on && WAVE.map((_, i) => {
+        const height = WAVE[(i + shift) % WAVE.length]
+        const opacity = height >= 36 ? 'opacity-100' : height >= 18 ? 'opacity-70' : 'opacity-55'
+        return <span key={i} className={`w-1 rounded-[2px] ${RED} ${opacity}`} style={{ height: `${height}px` }} />
       })}
+      {Array.from({ length: on ? REST : WAVE.length + REST }, (_, i) => <span key={i} className="h-2.5 w-1 rounded-[2px] bg-black/15 dark:bg-white/20" />)}
     </div>
   )
 }
@@ -52,10 +64,12 @@ export function SourceVoiceScreen({ deps, onClose, onSent }: Props) {
   const [confirming, setConfirming] = useState<'close' | 'remove' | null>(null)
   const [supported] = useState(isRecordingSupported)
   const input = useRef<HTMLInputElement>(null)
+  const sendingNow = useRef(false) // double appui impossible, même avant le rendu suivant
+  const reducedMotion = useReducedMotion()
 
   useEffect(() => () => recorder.cancel(), [recorder]) // démontage : micro libéré, enregistrement abandonné
 
-  const { phase, seconds, levels, limited, file: recorded } = recording
+  const { phase, seconds, stopReason, file: recorded } = recording
   const active = phase === 'starting' || phase === 'recording'
   const pending = imported ?? recorded
   const dirty = active || pending !== null
@@ -89,13 +103,15 @@ export function SourceVoiceScreen({ deps, onClose, onSent }: Props) {
   }
 
   const submit = async () => {
-    if (sending || !pending) return
+    if (sendingNow.current || !pending) return
+    sendingNow.current = true
     setSending(true)
     setError(null)
     try {
       onSent(await addAudio(deps, pending))
     } catch (e) {
       setError(inboxErrorMessage(e))
+      sendingNow.current = false
       setSending(false)
     }
   }
@@ -103,7 +119,7 @@ export function SourceVoiceScreen({ deps, onClose, onSent }: Props) {
   const shownError = error ?? recording.error ?? (supported ? null : NOT_SUPPORTED)
   const caption = phase === 'recording' ? 'Enregistrement… touche pour arrêter'
     : phase === 'starting' ? 'Accès au micro…'
-      : phase === 'done' ? limited ? 'Limite atteinte : enregistrement arrêté, prêt à envoyer' : 'Enregistrement prêt à envoyer'
+      : phase === 'done' ? DONE_CAPTION[stopReason ?? 'asked']
         : 'Touche pour enregistrer'
 
   return (
@@ -121,7 +137,7 @@ export function SourceVoiceScreen({ deps, onClose, onSent }: Props) {
             : (
               <>
                 <p role="timer" className="text-[56px] leading-[60px] font-light tracking-[-0.02em] tabular-nums">{clock(seconds)}</p>
-                <Levels levels={levels} />
+                <Wave on={phase === 'recording' || phase === 'done'} shift={reducedMotion ? 0 : seconds} />
                 {phase !== 'done' && supported && (
                   <button
                     type="button"

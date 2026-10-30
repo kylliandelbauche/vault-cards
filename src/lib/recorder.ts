@@ -1,8 +1,10 @@
 import { audioExtension, INBOX_LIMITS, normalizeAudioType } from './inbox'
 
 /**
- * Enregistrement du micro (#48), sans React : MediaRecorder + getUserMedia, testable avec des faux. Les pistes du micro
- * sont libérées dès l'arrêt, l'annulation, l'erreur ou le démontage. Deux garde-fous évitent de dépasser les 30 Mo du
+ * Enregistrement du micro (#48), sans React : MediaRecorder + getUserMedia, testable avec des faux. Pas d'AudioContext :
+ * sur iOS il modifie la session audio pendant la capture, et les barres de l'écran sont décoratives. Le micro est libéré
+ * après le dernier morceau (arrêt) ou tout de suite (annulation, erreur, démontage). Un appel ou un verrouillage arrête
+ * l'enregistrement proprement : ce qui a été capté reste envoyable. Deux garde-fous évitent de dépasser les 30 Mo du
  * bucket : la taille réelle reçue, et une durée maximale qui couvre un navigateur qui ne livrerait les données qu'à
  * l'arrêt ou ignorerait le débit demandé.
  */
@@ -12,25 +14,25 @@ export const RECORD_TYPES = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'
 export const RECORD_BITRATE = 64_000
 /** Arrêt avant la limite : il reste de la marge pour le dernier morceau, livré après l'arrêt. */
 export const RECORD_STOP_BYTES = INBOX_LIMITS.FILE_MAX - 1024 * 1024
-/** 30 min à 128 kbit/s (double du débit demandé) = 29 Mo environ. */
-export const RECORD_MAX_SECONDS = 30 * 60
-const LEVELS = 16
+/** 20 min à 192 kbit/s (trois fois le débit demandé) = 29 Mo environ. */
+export const RECORD_MAX_SECONDS = 20 * 60
+/** Si le navigateur ne confirme jamais la fin, on termine quand même avec ce qui a été reçu, micro libéré. */
+export const STOP_GUARD_MS = 2000
 
 export type RecorderPhase = 'idle' | 'starting' | 'recording' | 'done'
+/** Arrêt que l'utilisateur n'a pas demandé : limite de taille ou de durée, ou micro coupé par le système. */
+export type StopReason = 'limit' | 'interrupted'
 
 export interface RecorderSnapshot {
   phase: RecorderPhase
   seconds: number
-  /** Niveaux récents du micro (0 à 1), du plus ancien au plus récent ; vide si le navigateur ne les donne pas. */
-  levels: readonly number[]
-  /** Arrêt automatique : limite de taille ou de durée atteinte. */
-  limited: boolean
+  stopReason: StopReason | null
   error: string | null
   /** Enregistrement terminé, prêt à envoyer. */
   file: File | null
 }
 
-export const IDLE_RECORDER: RecorderSnapshot = { phase: 'idle', seconds: 0, levels: [], limited: false, error: null, file: null }
+export const IDLE_RECORDER: RecorderSnapshot = { phase: 'idle', seconds: 0, stopReason: null, error: null, file: null }
 
 export const NOT_SUPPORTED = 'Ton navigateur ne permet pas d’enregistrer. Tu peux importer un fichier audio.'
 
@@ -60,29 +62,6 @@ export function recordingName(date: Date, ext: string): string {
   return `Vocal du ${pad(date.getDate())}-${pad(date.getMonth() + 1)}.${ext}`
 }
 
-/** Niveau du micro pour les barres de l'écran : décoratif, un échec n'empêche jamais d'enregistrer. */
-function startMeter(stream: MediaStream, onLevel: (level: number) => void): () => void {
-  if (typeof AudioContext === 'undefined') return () => {}
-  try {
-    const context = new AudioContext()
-    void context.resume().catch(() => {})
-    const analyser = context.createAnalyser()
-    analyser.fftSize = 256
-    context.createMediaStreamSource(stream).connect(analyser)
-    const data = new Uint8Array(analyser.fftSize)
-    const timer = setInterval(() => {
-      analyser.getByteTimeDomainData(data)
-      onLevel(Math.min(1, data.reduce((peak, v) => Math.max(peak, Math.abs(v - 128)), 0) / 64))
-    }, 150)
-    return () => {
-      clearInterval(timer)
-      void context.close().catch(() => {})
-    }
-  } catch {
-    return () => {}
-  }
-}
-
 export interface Recorder {
   start(): Promise<void>
   stop(): void
@@ -97,26 +76,43 @@ export function createRecorder(onChange: (snapshot: RecorderSnapshot) => void, n
   let session = 0
   let recorder: MediaRecorder | null = null
   let stream: MediaStream | null = null
-  let stopMeter = () => {}
   let timer: ReturnType<typeof setInterval> | undefined
+  let guard: ReturnType<typeof setTimeout> | undefined
+  let unlisten = () => {}
+  let finishNow = () => {}
 
   const update = (patch: Partial<RecorderSnapshot>) => {
     snapshot = { ...snapshot, ...patch }
     onChange(snapshot)
   }
 
+  /** Plus de chrono ni d'écoute des interruptions : l'arrêt est lancé. */
+  const settle = () => {
+    clearInterval(timer)
+    unlisten()
+    unlisten = () => {}
+  }
+
   /** Libère le micro : idempotent, appelé par tous les chemins de sortie. */
   const release = () => {
-    clearInterval(timer)
-    stopMeter()
-    stopMeter = () => {}
+    settle()
+    clearTimeout(guard)
+    guard = undefined
     stream?.getTracks().forEach(t => t.stop())
     stream = null
   }
 
+  /** Le micro reste ouvert jusqu'au dernier morceau (`onstop`), sous la protection du délai de garde. */
   const stop = () => {
-    if (recorder && recorder.state !== 'inactive') recorder.stop()
-    release()
+    if (!recorder) return
+    settle()
+    if (recorder.state !== 'inactive') recorder.stop()
+    guard ??= setTimeout(() => finishNow(), STOP_GUARD_MS)
+  }
+
+  const stopFor = (stopReason: StopReason) => {
+    update({ stopReason })
+    stop()
   }
 
   const finish = (chunks: Blob[], type: string) => {
@@ -129,6 +125,24 @@ export function createRecorder(onChange: (snapshot: RecorderSnapshot) => void, n
       return
     }
     update({ phase: 'done', file: new File(chunks, recordingName(now(), audioExtension(mime)), { type: mime }) })
+  }
+
+  /** Appel, verrouillage, micro débranché : piste muette ou terminée, ou page cachée. */
+  const watchInterruptions = (tracks: MediaStreamTrack[]) => {
+    const interrupted = () => stopFor('interrupted')
+    const onVisibility = () => { if (document.visibilityState === 'hidden') interrupted() }
+    tracks.forEach(t => {
+      t.addEventListener('mute', interrupted)
+      t.addEventListener('ended', interrupted)
+    })
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      tracks.forEach(t => {
+        t.removeEventListener('mute', interrupted)
+        t.removeEventListener('ended', interrupted)
+      })
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
   }
 
   const start = async () => {
@@ -154,20 +168,28 @@ export function createRecorder(onChange: (snapshot: RecorderSnapshot) => void, n
     const type = pickRecordType(t => MediaRecorder.isTypeSupported(t))!
     const chunks: Blob[] = []
     let bytes = 0
+    let finished = false
     try {
       const rec = new MediaRecorder(media, { mimeType: type, audioBitsPerSecond: RECORD_BITRATE })
       recorder = rec
+      const done = () => {
+        if (mine !== session || finished) return
+        finished = true
+        finish(chunks, rec.mimeType || type)
+      }
+      finishNow = done
       rec.ondataavailable = e => {
-        if (mine !== session || e.data.size === 0) return
+        if (mine !== session || finished || e.data.size === 0) return
         chunks.push(e.data)
         bytes += e.data.size
-        if (bytes >= RECORD_STOP_BYTES && rec.state !== 'inactive') {
-          update({ limited: true })
-          stop()
-        }
+        if (bytes >= RECORD_STOP_BYTES && rec.state !== 'inactive') stopFor('limit')
       }
-      // Fin réelle, quelle qu'en soit la cause : arrêt demandé, piste coupée (appel, verrouillage), erreur du navigateur.
-      rec.onstop = () => { if (mine === session) finish(chunks, rec.mimeType || type) }
+      rec.onstop = done // fin réelle, quelle qu'en soit la cause
+      rec.onerror = () => {
+        if (mine !== session || finished) return
+        update({ error: 'Enregistrement interrompu par une erreur du navigateur.' })
+        stop()
+      }
       rec.start(1000) // un morceau par seconde : la taille reste connue pendant l'enregistrement
     } catch (e) {
       release()
@@ -176,14 +198,11 @@ export function createRecorder(onChange: (snapshot: RecorderSnapshot) => void, n
       return
     }
     const startedAt = now().getTime()
-    stopMeter = startMeter(media, level => update({ levels: [...snapshot.levels, level].slice(-LEVELS) }))
+    unlisten = watchInterruptions(media.getTracks())
     timer = setInterval(() => {
       const seconds = Math.floor((now().getTime() - startedAt) / 1000)
       if (seconds !== snapshot.seconds) update({ seconds })
-      if (seconds >= RECORD_MAX_SECONDS) {
-        update({ limited: true })
-        stop()
-      }
+      if (seconds >= RECORD_MAX_SECONDS) stopFor('limit')
     }, 250)
     update({ phase: 'recording' })
   }

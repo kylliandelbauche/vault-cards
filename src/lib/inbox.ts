@@ -272,6 +272,11 @@ export async function addAudio(deps: InboxDeps, file: File): Promise<InboxItem> 
   const mime = checkAudio(file)
   requireOnline(online)
   const uid = await requireUserId(client)
+  // File pleine : on l'annonce avant d'envoyer jusqu'à 30 Mo pour rien. La RPC reste juge ; une lecture ratée ne bloque pas.
+  const items = await listInbox(client).catch(() => [])
+  if (items.filter(i => i.status === 'pending' || i.status === 'processing').length >= INBOX_LIMITS.PENDING_MAX) {
+    throw new InboxError('full', `Boîte de réception pleine (${INBOX_LIMITS.PENDING_MAX} éléments en attente au maximum)`)
+  }
   return deposit(deps, uid, { blob: file, filename: cleanFilename(file.name), mime })
 }
 

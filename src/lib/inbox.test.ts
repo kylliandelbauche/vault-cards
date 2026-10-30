@@ -18,7 +18,7 @@ const row = (extra: object = {}) => ({
   created_at: '2026-10-15T10:00:00Z', processed_at: null, ...extra,
 })
 
-function fakeClient({ session = true, uploadError = null as null | { message: string }, rpcError = null as null | { message: string; code?: string } } = {}) {
+function fakeClient({ session = true, uploadError = null as null | { message: string }, rpcError = null as null | { message: string; code?: string }, listed = [row()], listError = null as null | { message: string } } = {}) {
   const calls: unknown[][] = []
   const types: string[] = []
   const client = {
@@ -40,7 +40,7 @@ function fakeClient({ session = true, uploadError = null as null | { message: st
       const q = {
         select: (cols: string) => { calls.push(['select', table, cols]); return q },
         order: (col: string, o: object) => { calls.push(['order', col, o]); return q },
-        limit: (n: number) => { calls.push(['limit', n]); return Promise.resolve({ data: [row()], error: null }) },
+        limit: (n: number) => { calls.push(['limit', n]); return Promise.resolve({ data: listError ? null : listed, error: listError }) },
       }
       return q
     },
@@ -249,8 +249,25 @@ describe('audio (#48)', () => {
     await addAudio({ client, online: () => true, uuid: () => ID, compress }, file)
     expect(compress).not.toHaveBeenCalled()
     expect(types).toEqual(['audio/webm'])
-    expect(calls[0]).toEqual(['upload', 'inbox', `${UID}/${ID}`, 100, { contentType: 'audio/webm', upsert: false }])
-    expect(calls[1]).toEqual(['rpc', 'create_inbox_item', { p_id: ID, p_kind: 'file', p_filename: 'Vocal du 30-10.webm' }])
+    const writes = calls.filter(c => c[0] === 'upload' || c[0] === 'rpc')
+    expect(writes[0]).toEqual(['upload', 'inbox', `${UID}/${ID}`, 100, { contentType: 'audio/webm', upsert: false }])
+    expect(writes[1]).toEqual(['rpc', 'create_inbox_item', { p_id: ID, p_kind: 'file', p_filename: 'Vocal du 30-10.webm' }])
+  })
+
+  it('addAudio : file pleine, refus avant l’envoi ; 9 en attente ou éléments terminés, envoi', async () => {
+    const pending = (n: number, status = 'pending') => Array.from({ length: n }, () => row({ status }))
+    const full = fakeClient({ listed: [...pending(6), ...pending(4, 'processing')] })
+    await expect(addAudio({ client: full.client, online: () => true, uuid: () => ID }, fakeFile('a.m4a', 5))).rejects.toMatchObject({ code: 'full' })
+    expect(full.calls.filter(c => c[0] === 'upload' || c[0] === 'rpc')).toEqual([])
+    const room = fakeClient({ listed: [...pending(9), ...pending(5, 'done')] })
+    await addAudio({ client: room.client, online: () => true, uuid: () => ID }, fakeFile('a.m4a', 5))
+    expect(room.calls.filter(c => c[0] === 'upload')).toHaveLength(1)
+  })
+
+  it('addAudio : lecture de la file impossible, l’envoi continue (la RPC reste juge)', async () => {
+    const { client, calls } = fakeClient({ listError: { message: 'réseau' } })
+    await addAudio({ client, online: () => true, uuid: () => ID }, fakeFile('a.m4a', 5))
+    expect(calls.filter(c => c[0] === 'upload')).toHaveLength(1)
   })
 
   it('addAudio : hors ligne, session expirée et format refusé ne déposent rien', async () => {

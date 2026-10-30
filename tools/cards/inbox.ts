@@ -35,9 +35,28 @@ export const ERROR_MAX = 300
 const startsWith = (bytes: Uint8Array, sig: readonly number[], at = 0) => sig.every((b, i) => bytes[at + i] === b)
 const ascii = (s: string) => [...s].map(c => c.charCodeAt(0))
 
+export type AudioFormat = 'mov' | 'matroska' | 'wav' | 'mp3'
+
+/**
+ * Format d'un audio d'après ses octets (démuxeur ffmpeg), ou null. MP3 : `ID3`, ou un en-tête de trame : synchro sur
+ * 11 bits, version connue, couche II ou III, débit et fréquence valides. Refuse donc `FF FE` (BOM UTF-16) et `FF FF`.
+ */
+export function audioFormat(bytes: Uint8Array): AudioFormat | null {
+  if (startsWith(bytes, ascii('ftyp'), 4)) return 'mov'
+  if (startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])) return 'matroska'
+  if (startsWith(bytes, ascii('RIFF')) && startsWith(bytes, ascii('WAVE'), 8)) return 'wav'
+  if (startsWith(bytes, ascii('ID3'))) return 'mp3'
+  if (bytes.length < 3 || bytes[0] !== 0xff || (bytes[1] & 0xe0) !== 0xe0) return null
+  const version = (bytes[1] >> 3) & 3
+  const layer = (bytes[1] >> 1) & 3
+  const bitrate = bytes[2] >> 4
+  const sampleRate = (bytes[2] >> 2) & 3
+  return version !== 1 && (layer === 1 || layer === 2) && bitrate !== 0xf && sampleRate !== 3 ? 'mp3' : null
+}
+
 /**
  * Les octets correspondent-ils au type déclaré ? PDF `%PDF-`, PNG, JPEG `FF D8 FF`, WebP `RIFF….WEBP`, texte = UTF-8
- * valide sans octet nul, MP4/M4A `ftyp` (après la taille de la boîte), WebM EBML, WAV `RIFF….WAVE`, MP3 `ID3` ou synchro `FF Ex/Fx`. Un fichier dont le contenu ne correspond pas (exécutable renommé, archive…) est refusé.
+ * valide sans octet nul, audio : voir audioFormat. Un fichier dont le contenu ne correspond pas (exécutable renommé, archive…) est refusé.
  */
 export function matchesSignature(bytes: Uint8Array, mime: string): boolean {
   switch (mime) {
@@ -52,14 +71,14 @@ export function matchesSignature(bytes: Uint8Array, mime: string): boolean {
     case 'audio/mp4':
     case 'audio/x-m4a':
     case 'audio/m4a':
-      return startsWith(bytes, ascii('ftyp'), 4)
+      return audioFormat(bytes) === 'mov'
     case 'audio/webm':
-      return startsWith(bytes, [0x1a, 0x45, 0xdf, 0xa3])
+      return audioFormat(bytes) === 'matroska'
     case 'audio/wav':
     case 'audio/x-wav':
-      return startsWith(bytes, ascii('RIFF')) && startsWith(bytes, ascii('WAVE'), 8)
+      return audioFormat(bytes) === 'wav'
     case 'audio/mpeg':
-      return startsWith(bytes, ascii('ID3')) || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0)
+      return audioFormat(bytes) === 'mp3'
     case 'text/plain':
     case 'text/markdown':
       if (bytes.includes(0)) return false

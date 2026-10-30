@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { App as KApp } from 'konsta/react'
 import { VaultDB } from '../../lib/db'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
-import { FakeMediaRecorder, fakeStream, setMediaDevices } from '../../lib/recorder.fixture'
+import { FakeMediaRecorder, fakeStream, setMediaDevices, setPageVisibility } from '../../lib/recorder.fixture'
 import { SignedInApp } from '../home/SignedInApp'
 
 const item = (over: Partial<InboxItem> = {}): InboxItem => ({
@@ -23,6 +23,7 @@ afterEach(async () => {
   cleanup()
   vi.unstubAllGlobals()
   setMediaDevices(undefined)
+  delete (document as unknown as Record<string, unknown>).visibilityState
   db.close()
   await db.delete()
 })
@@ -76,8 +77,8 @@ describe('Source · Vocal (#48) : enregistrer', () => {
     expect(track.stopped).toBe(false)
     FakeMediaRecorder.instances[0].mimeType = 'audio/mp4;codecs=mp4a.40.2'
     await user.click(button('Arrêter l’enregistrement'))
-    expect(track.stopped).toBe(true)
     await screen.findByText('Enregistrement prêt à envoyer')
+    expect(track.stopped).toBe(true)
     expect(screen.queryByRole('button', { name: 'Démarrer l’enregistrement' })).toBeNull()
     await user.click(send())
     const [path, body, options] = upload.mock.calls[0] as [string, Blob, { contentType: string; upsert: boolean }]
@@ -97,6 +98,46 @@ describe('Source · Vocal (#48) : enregistrer', () => {
     await user.click(send())
     await waitFor(() => expect(upload).toHaveBeenCalled())
     expect((upload.mock.calls[0][1] as Blob).type).toBe('audio/webm')
+  })
+
+  it('double appui sur « Créer les brouillons » : un seul envoi', async () => {
+    const { user, upload } = await openVoice()
+    await record(user)
+    await user.click(button('Arrêter l’enregistrement'))
+    await screen.findByText('Enregistrement prêt à envoyer')
+    const target = send()
+    act(() => {
+      target.click()
+      target.click()
+    })
+    await waitFor(() => expect(upload).toHaveBeenCalled())
+    expect(upload).toHaveBeenCalledTimes(1)
+  })
+
+  it('après un échec, un nouvel appui renvoie', async () => {
+    const { user, upload } = await openVoice()
+    await record(user)
+    await user.click(button('Arrêter l’enregistrement'))
+    await screen.findByText('Enregistrement prêt à envoyer')
+    upload.mockResolvedValueOnce({ data: null, error: { message: 'réseau' } })
+    await user.click(send())
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Envoi du fichier refusé/)
+    await user.click(send())
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2))
+  })
+
+  it.each([
+    ['piste muette', (t: EventTarget) => t.dispatchEvent(new Event('mute'))],
+    ['piste terminée', (t: EventTarget) => t.dispatchEvent(new Event('ended'))],
+    ['page cachée', () => setPageVisibility('hidden')],
+  ])('appel ou verrouillage (%s) : arrêt, message clair, envoi possible', async (_, interrupt) => {
+    const { user, track } = await openVoice()
+    await record(user)
+    act(() => { FakeMediaRecorder.instances[0].emit(new Blob(['son'])) })
+    act(() => { interrupt(track) })
+    expect(await screen.findByText(/^Micro coupé par un appel ou le verrouillage/)).toBeTruthy()
+    expect(track.stopped).toBe(true)
+    expect(send().disabled).toBe(false)
   })
 
   it('« Recommencer » demande confirmation, puis revient à l’écran vide', async () => {

@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bigBlob, FakeMediaRecorder, fakeStream, setMediaDevices } from './recorder.fixture'
-import { createRecorder, isRecordingSupported, micErrorMessage, pickRecordType, RECORD_MAX_SECONDS, RECORD_STOP_BYTES, recordingName, type RecorderSnapshot } from './recorder'
+import { bigBlob, FakeMediaRecorder, fakeStream, setMediaDevices, setPageVisibility } from './recorder.fixture'
+import { createRecorder, isRecordingSupported, micErrorMessage, pickRecordType, RECORD_MAX_SECONDS, RECORD_STOP_BYTES, recordingName, STOP_GUARD_MS, type RecorderSnapshot } from './recorder'
 import { INBOX_LIMITS } from './inbox'
 
-const flush = () => new Promise<void>(resolve => { queueMicrotask(resolve) })
+const flush = async () => {
+  await new Promise<void>(resolve => { queueMicrotask(resolve) })
+  await new Promise<void>(resolve => { queueMicrotask(resolve) })
+}
 
 function setup(now?: () => Date) {
   const { track, stream } = fakeStream()
@@ -21,6 +24,7 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   setMediaDevices(undefined)
+  delete (document as unknown as Record<string, unknown>).visibilityState
 })
 
 describe('choix du format', () => {
@@ -59,40 +63,60 @@ describe('messages et nom', () => {
 })
 
 describe('enregistrement', () => {
-  it('démarre avec le format choisi, un débit modéré et des morceaux réguliers', async () => {
+  it('démarre avec le format choisi, un débit modéré et des morceaux réguliers, sans AudioContext', async () => {
+    const context = vi.fn()
+    vi.stubGlobal('AudioContext', context)
     const { recorder, state, rec } = setup()
     await recorder.start()
     expect(state()?.phase).toBe('recording')
     expect(rec().options.mimeType).toBe('audio/mp4')
     expect(rec().options.audioBitsPerSecond).toBe(64_000)
     expect(rec().timeslice).toBe(1000)
+    expect(context).not.toHaveBeenCalled()
     recorder.cancel()
   })
 
-  it('arrêt : pistes libérées, fichier prêt, type sans paramètre', async () => {
+  it('arrêt : micro libéré après le dernier morceau, fichier prêt, type sans paramètre', async () => {
     const { recorder, state, rec, track } = setup(() => new Date(2026, 9, 30))
     await recorder.start()
     rec().mimeType = 'audio/mp4;codecs=mp4a.40.2'
     rec().emit(new Blob(['son']))
     recorder.stop()
-    expect(track.stopped).toBe(true) // immédiat, sans attendre la fin du recorder
+    expect(track.stopped).toBe(false)
     await flush()
-    await flush()
+    expect(track.stopped).toBe(true)
+    expect(rec().deliveredWhileOpen).toEqual([true, true])
     const s = state()!
     expect(s.phase).toBe('done')
-    expect(s.limited).toBe(false)
+    expect(s.stopReason).toBeNull()
     expect(s.file?.type).toBe('audio/mp4')
     expect(s.file?.name).toBe('Vocal du 30-10.m4a')
     expect(s.file?.size).toBe(3 + 'dernier morceau'.length)
   })
 
-  it('annulation : pistes libérées, retour à l’état initial, données jetées', async () => {
+  it('le navigateur ne confirme jamais la fin : après le délai de garde, micro libéré et données gardées', async () => {
+    vi.useFakeTimers()
+    const { recorder, state, rec, track } = setup()
+    await recorder.start()
+    rec().silentStop = true
+    rec().emit(new Blob(['son']))
+    recorder.stop()
+    vi.advanceTimersByTime(STOP_GUARD_MS - 1)
+    expect(track.stopped).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(track.stopped).toBe(true)
+    expect(state()).toMatchObject({ phase: 'done' })
+    expect(state()?.file?.size).toBe(3)
+    rec().onstop?.() // confirmation tardive : sans effet
+    expect(state()?.file?.size).toBe(3)
+  })
+
+  it('annulation : pistes libérées tout de suite, retour à l’état initial, données jetées', async () => {
     const { recorder, state, rec, track } = setup()
     await recorder.start()
     rec().emit(new Blob(['son']))
     recorder.cancel()
     expect(track.stopped).toBe(true)
-    await flush()
     await flush()
     expect(state()).toMatchObject({ phase: 'idle', file: null, seconds: 0 })
   })
@@ -110,20 +134,11 @@ describe('enregistrement', () => {
     expect(FakeMediaRecorder.instances).toHaveLength(0)
   })
 
-  it('piste coupée par le système (appel, verrouillage) : ce qui a été capté reste prêt à envoyer', async () => {
-    const { recorder, state, rec, track } = setup()
-    await recorder.start()
-    rec().emit(new Blob(['son']))
-    rec().state = 'inactive'
-    rec().onstop?.()
-    expect(track.stopped).toBe(true)
-    expect(state()?.phase).toBe('done')
-  })
-
   it('rien de capté : message clair, pas de fichier vide', async () => {
     const { recorder, state, rec, track } = setup()
     await recorder.start()
-    rec().state = 'inactive'
+    rec().silentStop = true
+    recorder.stop()
     rec().onstop?.()
     expect(track.stopped).toBe(true)
     expect(state()).toMatchObject({ phase: 'idle', file: null })
@@ -138,13 +153,13 @@ describe('enregistrement', () => {
     expect(rec().state).toBe('recording')
     rec().emit(bigBlob(10))
     expect(rec().state).toBe('inactive')
+    await flush()
     expect(track.stopped).toBe(true)
-    await flush()
-    await flush()
-    expect(state()).toMatchObject({ phase: 'done', limited: true })
+    expect(state()).toMatchObject({ phase: 'done', stopReason: 'limit' })
   })
 
   it('arrêt automatique à la durée maximale ; le chrono suit l’horloge', async () => {
+    expect(RECORD_MAX_SECONDS * (192_000 / 8)).toBeLessThan(RECORD_STOP_BYTES)
     vi.useFakeTimers()
     let t = 0
     const { recorder, state, rec, track } = setup(() => new Date(t))
@@ -156,9 +171,9 @@ describe('enregistrement', () => {
     t = RECORD_MAX_SECONDS * 1000
     vi.advanceTimersByTime(250)
     expect(rec().state).toBe('inactive')
+    await flush()
     expect(track.stopped).toBe(true)
-    expect(state()?.limited).toBe(true)
-    recorder.cancel()
+    expect(state()).toMatchObject({ phase: 'done', stopReason: 'limit' })
   })
 
   it('refus du micro : message, retour à l’état initial, aucun recorder', async () => {
@@ -180,5 +195,63 @@ describe('enregistrement', () => {
     expect(track.stopped).toBe(true)
     expect(state()?.phase).toBe('idle')
     expect(state()?.error).toMatch(/^Enregistrement impossible/)
+  })
+
+  it('erreur du navigateur pendant l’enregistrement : message, arrêt, données gardées', async () => {
+    const { recorder, state, rec, track } = setup()
+    await recorder.start()
+    rec().emit(new Blob(['son']))
+    rec().onerror?.()
+    expect(rec().state).toBe('inactive')
+    await flush()
+    expect(track.stopped).toBe(true)
+    expect(state()?.phase).toBe('done')
+    expect(state()?.error).toMatch(/^Enregistrement interrompu/)
+  })
+})
+
+describe('interruption par le système (appel, verrouillage)', () => {
+  it.each(['mute', 'ended'])('piste « %s » : arrêt, ce qui a été capté reste prêt à envoyer', async event => {
+    const { recorder, state, rec, track } = setup()
+    await recorder.start()
+    rec().emit(new Blob(['son']))
+    track.dispatchEvent(new Event(event))
+    expect(rec().state).toBe('inactive')
+    await flush()
+    expect(track.stopped).toBe(true)
+    expect(state()).toMatchObject({ phase: 'done', stopReason: 'interrupted' })
+    expect(state()?.file?.size).toBe(3 + 'dernier morceau'.length)
+  })
+
+  it('page cachée : arrêt ; page de nouveau visible : aucun effet', async () => {
+    const { recorder, state, rec } = setup()
+    await recorder.start()
+    rec().emit(new Blob(['son']))
+    setPageVisibility('visible')
+    expect(rec().state).toBe('recording')
+    setPageVisibility('hidden')
+    expect(rec().state).toBe('inactive')
+    await flush()
+    expect(state()).toMatchObject({ phase: 'done', stopReason: 'interrupted' })
+  })
+
+  it('arrêt demandé : une piste qui passe ensuite en « ended » ne change pas le motif', async () => {
+    const { recorder, state, rec, track } = setup()
+    await recorder.start()
+    rec().emit(new Blob(['son']))
+    recorder.stop()
+    track.dispatchEvent(new Event('ended'))
+    await flush()
+    expect(state()).toMatchObject({ phase: 'done', stopReason: null })
+  })
+
+  it('annulé : plus aucune écoute, un événement tardif n’a aucun effet', async () => {
+    const { recorder, state, track } = setup()
+    await recorder.start()
+    recorder.cancel()
+    track.dispatchEvent(new Event('mute'))
+    setPageVisibility('hidden')
+    await flush()
+    expect(state()).toMatchObject({ phase: 'idle', stopReason: null })
   })
 })

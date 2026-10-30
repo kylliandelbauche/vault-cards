@@ -45,6 +45,12 @@ describe('signature des octets', () => {
     ['audio/mpeg', bytes([0xff, 0xd8, 0xff, 0xe0])], // JPEG : 0xD8 n'a pas les bits de synchro
     ['audio/mpeg', bytes('ID')],
     ['audio/mpeg', bytes([0xff])],
+    ['audio/mpeg', bytes([0xff, 0xfe, 0x41, 0x00])], // BOM UTF-16 : un texte
+    ['audio/mpeg', bytes([0xff, 0xff, 0x90, 0x00])],
+    ['audio/mpeg', bytes([0xff, 0xeb, 0x90, 0x00])], // version réservée
+    ['audio/mpeg', bytes([0xff, 0xf9, 0x90, 0x00])], // couche réservée
+    ['audio/mpeg', bytes([0xff, 0xfb, 0xf0, 0x00])], // débit invalide
+    ['audio/mpeg', bytes([0xff, 0xfb, 0x9c, 0x00])], // fréquence réservée
     ['audio/ogg', bytes('OggS')],
   ])('%s refusé quand le contenu ne correspond pas', (mime, b) => {
     expect(matchesSignature(b, mime)).toBe(false)

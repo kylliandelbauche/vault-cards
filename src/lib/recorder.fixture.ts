@@ -14,8 +14,15 @@ export class FakeMediaRecorder {
   timeslice: number | undefined
   ondataavailable: ((e: { data: Blob }) => void) | null = null
   onstop: (() => void) | null = null
+  onerror: (() => void) | null = null
+  /** Faux : le navigateur ne confirme jamais la fin. */
+  silentStop = false
+  /** Morceaux pour lesquels le micro était encore ouvert à la livraison. */
+  deliveredWhileOpen: boolean[] = []
+  private stream: MediaStream
 
-  constructor(_stream: MediaStream, options: MediaRecorderOptions) {
+  constructor(stream: MediaStream, options: MediaRecorderOptions) {
+    this.stream = stream
     this.options = options
     this.mimeType = options.mimeType ?? ''
     FakeMediaRecorder.instances.push(this)
@@ -28,6 +35,7 @@ export class FakeMediaRecorder {
 
   stop() {
     this.state = 'inactive'
+    if (this.silentStop) return
     queueMicrotask(() => {
       this.emit(new Blob(['dernier morceau']))
       this.onstop?.()
@@ -35,15 +43,26 @@ export class FakeMediaRecorder {
   }
 
   emit(data: Blob) {
+    this.deliveredWhileOpen.push(this.stream.getTracks().every(t => !(t as unknown as FakeTrack).stopped))
     this.ondataavailable?.({ data })
   }
 }
 
-export interface FakeTrack { stop(): void; stopped: boolean }
+/** Fausse piste : de vrais événements (`mute`, `ended`), et seulement si quelqu'un les écoute. */
+export class FakeTrack extends EventTarget {
+  stopped = false
+  stop() { this.stopped = true }
+}
 
 export function fakeStream() {
-  const track: FakeTrack = { stopped: false, stop() { this.stopped = true } }
+  const track = new FakeTrack()
   return { track, stream: { getTracks: () => [track] } as unknown as MediaStream }
+}
+
+/** Page cachée (verrouillage, appel) ou de nouveau visible : déclenche le vrai événement. */
+export function setPageVisibility(state: 'hidden' | 'visible') {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, value: state })
+  document.dispatchEvent(new Event('visibilitychange'))
 }
 
 /** Blob de `size` octets annoncés, sans allouer la mémoire. */
