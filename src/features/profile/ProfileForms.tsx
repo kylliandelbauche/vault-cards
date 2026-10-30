@@ -57,13 +57,13 @@ function Feedback({ error, online }: { error: string | null; online: boolean }) 
   )
 }
 
-/** « Profil · Adresse e-mail » (Paper) : nouvelle adresse, rappel de l'actuelle, liens de confirmation Supabase (ancienne et nouvelle adresse). */
+/** « Profil · Adresse e-mail » (Paper) : nouvelle adresse, rappel de l'actuelle, lien de confirmation Supabase envoyé à la nouvelle adresse. */
 export function EmailForm({ deps, user, onClose, onDone }: FormProps) {
   const [value, setValue] = useState('')
   const f = useAccountForm(value !== '', deps, onClose)
   const submit = () => f.run(async () => {
     const asked = await requestEmailChange(deps, user.email, value)
-    onDone(`Un lien a été envoyé à ton adresse actuelle et un autre à ${asked}. Valide les deux pour changer d'adresse. L'actuelle reste active jusque-là.`)
+    onDone(`Un lien a été envoyé à ${asked}. Valide-le pour changer d'adresse. L'actuelle reste active jusque-là.`)
   })
   const onSubmit = (e: FormEvent) => { e.preventDefault(); void submit() }
   return (
@@ -92,7 +92,7 @@ export function EmailForm({ deps, user, onClose, onDone }: FormProps) {
         <div className="flex flex-col gap-1 px-1.5 pt-3.5">
           <span className="text-[13px] leading-4 text-label-2">Adresse actuelle</span>
           <p className="text-[15px] leading-5 font-medium break-all text-label-2">{user.email}</p>
-          <p className="pt-3 text-[15px] leading-5 font-medium text-label-2">Un lien sera envoyé à l'adresse actuelle et un autre à la nouvelle. Il faut valider les deux. L'adresse actuelle reste active jusque-là.</p>
+          <p className="pt-3 text-[15px] leading-5 font-medium text-label-2">Un lien sera envoyé à la nouvelle adresse. L'adresse actuelle reste active jusqu'à sa validation.</p>
         </div>
       </main>
       {f.confirming && <DiscardDialog onDiscard={onClose} onContinue={() => f.setConfirming(false)} />}
