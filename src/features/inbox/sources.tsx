@@ -19,7 +19,7 @@ export function SourceIcon({ kind, className }: { kind: SourceKind; className: s
   )
 }
 
-/** Message de la dernière action (envoi refusé en alerte, « bientôt » en statut). */
+/** Message de la dernière action (envoi refusé en alerte). */
 export function SourceMessage({ message, className }: { message: { text: string; alert: boolean } | null; className: string }) {
   if (!message) return null
   return (

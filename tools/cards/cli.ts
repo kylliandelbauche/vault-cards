@@ -1,7 +1,7 @@
 // Outil local (Mac) : lit les synthèses du vault (VAULT_NOTES_DIR, défaut 3-Resources/Second cerveau, `type: synthese`)
 // et écrit les cartes dans Supabase avec la clé secrète.
 // Usage : node tools/cards/cli.ts scan | tags | existing <source_path> | all | apply <fichier.json> [--confirm-delete=<n>] | retag <fichier.json> | titles | relink <fichier.json>
-//         node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge   (#55, inbox-cli.ts)
+//         node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | transcribe <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge   (#55, inbox-cli.ts)
 // Cartes : uniquement source = 'vault' (vaultOnly) ; les cartes créées à la main dans l'app (#54) ne sont jamais lues ni modifiées.
 // Les commandes `inbox` ne voient que les cartes source = 'inbox' (inboxOnly, inbox-cli.ts), créées en brouillon.
 // Sortie : JSON sur stdout uniquement. Erreurs sur stderr, code 1. Aucune valeur de variable d'environnement n'est jamais affichée.
@@ -16,6 +16,7 @@ import {
 import { extractTitle } from '../../shared/source-title.ts'
 import { parseInboxArgs } from './inbox.ts'
 import { fetchTagNames, runInbox } from './inbox-cli.ts'
+import { transcribe } from './transcribe.ts'
 import { fetchAll, fetchCardTags, fetchLiveCardPaths, fetchTitledCards } from './reads.ts'
 
 const ENV_FILE = path.join(import.meta.dirname, '..', '..', '.env.local')
@@ -259,6 +260,7 @@ async function relink(db: SupabaseClient, file: string) {
 async function main(argv: string[]): Promise<unknown> {
   if (argv[0] === 'inbox') {
     const cmd = parseInboxArgs(argv.slice(1)) // arguments vérifiés avant toute connexion
+    if (cmd.action === 'transcribe') return transcribe(cmd.id, cmd.dir) // local : ni base ni réseau
     return runInbox(connect(), cmd)
   }
   const { command, arg, confirmDelete } = parseArgs(argv)

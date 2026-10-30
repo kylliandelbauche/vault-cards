@@ -14,6 +14,7 @@ import { EditCardScreen, NewCardScreen } from '../inbox/EditCardScreen'
 import { NewCardsBlock } from '../inbox/NewCardsBlock'
 import { NewCardsHub } from '../inbox/NewCardsHub'
 import { SourceTextScreen } from '../inbox/SourceTextScreen'
+import { SourceVoiceScreen } from '../inbox/SourceVoiceScreen'
 import { sourceName } from '../inbox/sourceName'
 import { MyCardsScreen } from '../cards/MyCardsScreen'
 import { ProfileScreen } from '../profile/ProfileScreen'
@@ -41,7 +42,7 @@ interface Props {
 
 /**
  * App connectée : Accueil (→ Mes tags) → Révision (toutes les cartes ou un tag) → Fin de session → Accueil.
- * Boîte de réception (#81) : Accueil → Source · Texte (remplacé par Brouillons après l'envoi) ou Brouillons → Modifier.
+ * Boîte de réception (#81) : Accueil → Source · Texte ou Vocal (remplacé par Brouillons après l'envoi) ou Brouillons → Modifier.
  * La session et la synchro vivent ici, au-dessus des écrans : l'indicateur de synchro ne repart pas de zéro
  * à chaque changement d'écran, et une seule synchro tourne à la fois.
  */
@@ -106,6 +107,9 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
   if (inbox && screen.name === 'source-text') {
     return <SourceTextScreen deps={inbox} onClose={back} onSent={item => replace(draftsOf(item))} />
   }
+  if (inbox && screen.name === 'source-voice') {
+    return <SourceVoiceScreen deps={inbox} onClose={back} onSent={item => replace(draftsOf(item))} />
+  }
   if (inbox && screen.name === 'drafts') {
     return (
       <DraftsScreen
@@ -129,6 +133,7 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
         onBack={back}
         onManual={() => open({ name: 'new-card' })}
         onText={() => open({ name: 'source-text' })}
+        onVoice={() => open({ name: 'source-voice' })}
         onSent={item => open(draftsOf(item))}
         // Dernière génération : ses brouillons s'il en reste, sinon ses cartes dans « Mes cartes ».
         onOpenGeneration={last => open(last.drafts > 0
@@ -181,6 +186,7 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
           deps={inbox}
           onManual={() => open({ name: 'new-card' })}
           onText={() => open({ name: 'source-text' })}
+          onVoice={() => open({ name: 'source-voice' })}
           onSent={item => open(draftsOf(item))}
           onOpenDrafts={() => open({ name: 'drafts' })}
           onOpenHub={() => open({ name: 'hub' })}

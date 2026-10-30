@@ -195,7 +195,7 @@ async function purge(db: SupabaseClient) {
   return { files_removed: removed, stale_marked_error: stale.data.length, pending_expired: expired.data.length }
 }
 
-export function runInbox(db: SupabaseClient, cmd: InboxCommand): Promise<unknown> {
+export function runInbox(db: SupabaseClient, cmd: Exclude<InboxCommand, { action: 'transcribe' }>): Promise<unknown> {
   switch (cmd.action) {
     case 'list': return list(db)
     case 'claim': return claim(db, cmd.id, cmd.dir)

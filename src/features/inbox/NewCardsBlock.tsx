@@ -3,7 +3,7 @@ import type { VaultDB } from '../../lib/db'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
 import { drafts as draftsLabel } from './sourceName'
 import { SourceIcon, SourceMessage, type SourceKind } from './sources'
-import { useSources, VOICE_LABEL } from './useSources'
+import { useSources } from './useSources'
 import { useDrafts } from './useDrafts'
 
 interface Props {
@@ -13,6 +13,8 @@ interface Props {
   onManual(): void
   /** Tuile « Texte » : écran Source · Texte. */
   onText(): void
+  /** Tuile « Vocal » : écran Source · Vocal (#48). */
+  onVoice(): void
   /** Fichier ou photo envoyé : écran Brouillons de la source. */
   onSent(item: InboxItem): void
   /** Ligne « n brouillons à valider » : tous les brouillons en attente. */
@@ -26,16 +28,16 @@ const TILE = 'on-glass tag-chip flex h-[84px] w-[87px] flex-col items-center jus
 /**
  * Bloc « Nouvelles cartes » de l'accueil (#81, Paper « Accueil · v4 ») : rangée défilante de 5 tuiles (À la main → Nouvelle carte) en verre neutre posées sur la carte
  * (`on-glass`, pas de flou imbriqué). Fichier et Photo : sélecteur natif puis envoi direct (inbox.ts), puis écran
- * Brouillons ; Texte : écran Source · Texte ; Vocal : pas encore (#48), un message le dit (actions : `useSources`,
+ * Brouillons ; Texte et Vocal : leur écran source (actions : `useSources`,
  * partagées avec le hub). La ligne du titre (« › », ≥ 44 px) ouvre le hub (#86). Sous les tuiles, quand des
  * brouillons attendent : une ligne discrète qui y mène.
  */
-export function NewCardsBlock({ db, deps, onManual, onText, onSent, onOpenDrafts, onOpenHub }: Props) {
-  const { busy, message, actions, label, inputs } = useSources({ deps, onManual, onText, onSent })
+export function NewCardsBlock({ db, deps, onManual, onText, onVoice, onSent, onOpenDrafts, onOpenHub }: Props) {
+  const { busy, message, actions, label, inputs } = useSources({ deps, onManual, onText, onVoice, onSent })
   const { drafts } = useDrafts(db)
   const waiting = drafts?.length ?? 0
 
-  const tile = (kind: Exclude<SourceKind, 'voice'>, text: string) => (
+  const tile = (kind: SourceKind, text: string) => (
     <li className="shrink-0">
       <GlassButton
         tone="neutral"
@@ -65,11 +67,7 @@ export function NewCardsBlock({ db, deps, onManual, onText, onSent, onOpenDrafts
         {tile('file', 'Fichier')}
         {tile('photo', 'Photo')}
         {tile('text', 'Texte')}
-        <li className="shrink-0">
-          <GlassButton tone="neutral" className={`${TILE} tag-chip-empty`} aria-disabled="true" aria-label={VOICE_LABEL} onClick={actions.voice}>
-            <SourceIcon kind="voice" className="size-[26px]" /><span>Vocal</span>
-          </GlassButton>
-        </li>
+        {tile('voice', 'Vocal')}
       </ul>
       {inputs}
       <SourceMessage message={message} className="mx-[18px] mt-2" />

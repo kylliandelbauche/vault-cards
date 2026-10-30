@@ -2,7 +2,7 @@
 // Usage : node tools/dev/rest-check-inbox.ts   (dans un terminal interactif)
 // - Demande l'e-mail puis le mot de passe (saisie masquée, jamais stockée ni affichée).
 // - Clé PUBLISHABLE de l'app seulement (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY), jamais la clé secrète.
-// - Dépose un texte, un petit fichier texte et un .md marqués « [rest-check] » (restent en attente : l'app ne peut pas supprimer
+// - Dépose un texte, un petit fichier texte, un .md et un petit audio marqués « [rest-check] » (restent en attente : l'app ne peut pas supprimer
 //   d'élément ; voir docs/rest-check.md pour la purge), vérifie que le fichier ne peut être ni relu, ni listé, ni
 //   remplacé, ni supprimé, puis lit les statuts.
 // - Si un brouillon issu d'un texte [rest-check] existe (après un passage de /flashcards), l'accepte, vérifie qu'il ne
@@ -111,6 +111,15 @@ async function main(): Promise<number> {
     !mdUp.error && !mdItem?.error && mdItem?.data?.mime === 'text/markdown',
     mdUp.error ? `envoi refusé ${mdUp.error.message}` : mdItem?.error ? `erreur ${mdItem.error.message}` : `${mdItem?.data?.status} ${mdItem?.data?.mime}`, mdItem?.status ?? storageStatus(mdUp.error)))
 
+  // 2 ter. Audio (#48) : type sans paramètre, comme l'app l'envoie (le bucket compare le type exact). Contenu factice : `inbox fail` le purge.
+  const audioId = crypto.randomUUID()
+  const audio = new Blob([new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x4d, 0x34, 0x41, 0x20])], { type: 'audio/mp4' })
+  const audioUp = await client.storage.from('inbox').upload(`${uid}/${audioId}`, audio, { contentType: 'audio/mp4', upsert: false })
+  const audioItem = audioUp.error ? null : await client.rpc('create_inbox_item', { p_id: audioId, p_kind: 'file', p_filename: `rest-check-${stamp.slice(0, 10)}.m4a` })
+  results.push(step('envoyer un audio (type normalisé)', 'pending, audio/mp4',
+    !audioUp.error && !audioItem?.error && audioItem?.data?.mime === 'audio/mp4',
+    audioUp.error ? `envoi refusé ${audioUp.error.message}` : audioItem?.error ? `erreur ${audioItem.error.message}` : `${audioItem?.data?.status} ${audioItem?.data?.mime}`, audioItem?.status ?? storageStatus(audioUp.error)))
+
   // 3. Le fichier ne peut être ni relu, ni listé, ni remplacé, ni supprimé par l'app.
   const dl = await client.storage.from('inbox').download(objectPath)
   results.push(step('relire le fichier', 'refusé', !!dl.error && !dl.data, dl.error ? `refus ${dl.error.message}` : 'lu', storageStatus(dl.error)))
@@ -127,8 +136,8 @@ async function main(): Promise<number> {
   results.push(expectDenied('insérer dans inbox (status done)', asResponse(await client.from('inbox').insert({ kind: 'text', text: '[rest-check] direct', status: 'done' }).select('id'))))
 
   // 5. Statuts.
-  const listed = await client.from('inbox').select('id, kind, status').in('id', [textId, fileId, mdId])
-  results.push(expectRows('lister mes éléments', '200, 3 lignes', asResponse(listed), 3))
+  const listed = await client.from('inbox').select('id, kind, status').in('id', [textId, fileId, mdId, audioId])
+  results.push(expectRows('lister mes éléments', '200, 4 lignes', asResponse(listed), 4))
 
   // 6. Brouillon de test (issu d'un texte [rest-check] traité par /flashcards) : accepter, pas de retour en brouillon, puis suppression douce.
   const testItems = await client.from('inbox').select('id').like('text', '[rest-check]%').eq('status', 'done')
@@ -150,7 +159,7 @@ async function main(): Promise<number> {
 
   await client.auth.signOut()
   process.stdout.write('\n' + formatTable(results) + '\n')
-  process.stdout.write(`\nÉléments de test : ${textId} (texte), ${fileId} (fichier), ${mdId} (.md) — en attente ; purge : docs/rest-check.md.\n`)
+  process.stdout.write(`\nÉléments de test : ${textId} (texte), ${fileId} (fichier), ${mdId} (.md), ${audioId} (audio) — en attente ; purge : docs/rest-check.md.\n`)
   return results.every(r => r.ok) ? 0 : 1
 }
 

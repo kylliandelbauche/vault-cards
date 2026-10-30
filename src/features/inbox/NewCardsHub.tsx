@@ -9,7 +9,7 @@ import type { InboxDeps, InboxItem } from '../../lib/inbox'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import { drafts as draftsLabel } from './sourceName'
 import { SourceIcon, SourceMessage, type SourceKind } from './sources'
-import { useSources, VOICE_LABEL } from './useSources'
+import { useSources } from './useSources'
 import { useCreations } from './useCreations'
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
   /** Mêmes actions que la rangée de l'accueil (#81). */
   onManual(): void
   onText(): void
+  onVoice(): void
   onSent(item: InboxItem): void
   /** Dernière génération : ses brouillons s'il en reste, sinon « Mes cartes » filtré sur ce document. */
   onOpenGeneration(last: LastGeneration): void
@@ -32,7 +33,7 @@ const CAPTIONS: Record<Exclude<SourceKind, 'manual'>, string> = {
   file: 'PDF ou image',
   photo: 'Prendre une photo',
   text: 'Coller un texte',
-  voice: 'Bientôt',
+  voice: 'Enregistrer, importer',
 }
 const TITLES: Record<SourceKind, string> = { manual: 'À la main', file: 'Fichier', photo: 'Photo', text: 'Texte', voice: 'Vocal' }
 
@@ -40,14 +41,14 @@ const TITLES: Record<SourceKind, string> = { manual: 'À la main', file: 'Fichie
  * Écran « Nouvelles cartes » (#86, Paper « Nouvelles cartes (hub) »), ouvert par le « › » du bloc de l'accueil : les
  * 5 sources (« À la main » pleine largeur, puis Fichier, Photo, Texte, Vocal en grille 2×2), puis « Tes créations »
  * calculé sur le cache local. Les sources sont celles de l'accueil (`useSources`) : mêmes actions, mêmes messages.
- * Verre imité (`on-glass`) sur le fond ; une seule surface floutée, la carte « Tes créations ». Vocal (#48) est grisé
- * et dit « Bientôt ». Aucun bouton bleu : un seul bleu d'action dans l'app, celui de l'accueil.
+ * Verre imité (`on-glass`) sur le fond ; une seule surface floutée, la carte « Tes créations ».
+ * Aucun bouton bleu : un seul bleu d'action dans l'app, celui de l'accueil.
  */
-export function NewCardsHub({ db, deps, now, onBack, onManual, onText, onSent, onOpenGeneration }: Props) {
-  const { busy, message, actions, label, inputs } = useSources({ deps, onManual, onText, onSent })
+export function NewCardsHub({ db, deps, now, onBack, onManual, onText, onVoice, onSent, onOpenGeneration }: Props) {
+  const { busy, message, actions, label, inputs } = useSources({ deps, onManual, onText, onVoice, onSent })
   const creations = useCreations(db, now)
 
-  const tile = (kind: Exclude<SourceKind, 'voice'>) => (
+  const tile = (kind: SourceKind) => (
     <GlassButton
       tone="neutral"
       className={kind === 'manual' ? `${TILE} h-[76px] w-full items-center gap-3.5` : `${TILE} h-[104px] flex-col items-start justify-between py-4`}
@@ -75,13 +76,7 @@ export function NewCardsHub({ db, deps, now, onBack, onManual, onText, onSent, o
             {tile('file')}
             {tile('photo')}
             {tile('text')}
-            <GlassButton tone="neutral" className={`${TILE} tag-chip-empty h-[104px] flex-col items-start justify-between py-4`} aria-disabled="true" aria-label={VOICE_LABEL} onClick={actions.voice}>
-              <SourceIcon kind="voice" className="size-7 shrink-0" />
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-[17px] leading-[22px] font-semibold">{TITLES.voice}</span>
-                <span className="text-[13px] leading-4">{CAPTIONS.voice}</span>
-              </span>
-            </GlassButton>
+            {tile('voice')}
           </div>
           <SourceMessage message={message} className="px-1" />
         </section>
@@ -136,7 +131,7 @@ function Creation({ creations, now, onOpenGeneration }: { creations: Creations; 
               </svg>
             </button>
           )
-          : <p className="text-[15px] leading-5 text-label-2">Aucune génération pour l’instant. Envoie un fichier, une photo ou un texte.</p>}
+          : <p className="text-[15px] leading-5 text-label-2">Aucune génération pour l’instant. Envoie un fichier, une photo, un texte ou un vocal.</p>}
       </div>
     </section>
   )

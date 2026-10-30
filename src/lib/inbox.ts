@@ -8,7 +8,8 @@ import type { supabase } from './supabase'
  * contraint par la liste blanche du bucket et l'extension.
  * /flashcards (Mac) traite ensuite la file et produit des brouillons (drafts.ts). Réseau obligatoire (pas de file
  * hors ligne pour les fichiers) : erreur `offline` claire.
- * Limites alignées sur la migration 20261015010000_inbox et tools/cards/inbox.ts.
+ * Audio (#48) : même dépôt, sans compression ; le type est normalisé avant l'envoi (le bucket compare le type exact).
+ * Limites alignées sur les migrations 20261015010000_inbox, 20261030000000_inbox_audio et tools/cards/inbox.ts.
  */
 
 const MB = 1024 * 1024
@@ -25,7 +26,8 @@ export const INBOX_LIMITS = {
   PENDING_MAX: 10,
 } as const
 
-export type InboxMime = 'application/pdf' | 'text/plain' | 'text/markdown' | 'image/png' | 'image/jpeg' | 'image/webp'
+export type AudioMime = 'audio/mp4' | 'audio/x-m4a' | 'audio/m4a' | 'audio/webm' | 'audio/wav' | 'audio/x-wav' | 'audio/mpeg'
+export type InboxMime = 'application/pdf' | 'text/plain' | 'text/markdown' | 'image/png' | 'image/jpeg' | 'image/webp' | AudioMime
 
 /** Extensions acceptées → type MIME envoyé (l'extension fait foi ; l'outil vérifie ensuite la signature des octets). */
 export const ACCEPTED: Readonly<Record<string, InboxMime>> = {
@@ -41,6 +43,34 @@ export const ACCEPTED: Readonly<Record<string, InboxMime>> = {
 
 /** Valeur de `accept` pour un `<input type="file">`. */
 export const ACCEPT_ATTR = Object.keys(ACCEPTED).map(e => `.${e}`).join(',')
+
+/** Audio (écran Source · Vocal) : extension → type envoyé. L'outil vérifie ensuite la signature des octets. */
+export const AUDIO_ACCEPTED: Readonly<Record<string, AudioMime>> = {
+  m4a: 'audio/mp4',
+  mp4: 'audio/mp4',
+  webm: 'audio/webm',
+  wav: 'audio/wav',
+  mp3: 'audio/mpeg',
+}
+
+const AUDIO_MIMES: readonly AudioMime[] = ['audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/webm', 'audio/wav', 'audio/x-wav', 'audio/mpeg']
+/** Variantes rencontrées dans les navigateurs, absentes de la liste du bucket. */
+const AUDIO_ALIASES: Readonly<Record<string, AudioMime>> = { 'audio/mp3': 'audio/mpeg', 'audio/wave': 'audio/wav', 'audio/vnd.wave': 'audio/wav' }
+const AUDIO_EXT: Readonly<Record<AudioMime, string>> = {
+  'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/webm': 'webm', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/mpeg': 'mp3',
+}
+
+/** Valeur de `accept` du champ audio : extensions et types, selon ce que le sélecteur du système sait filtrer. */
+export const AUDIO_ACCEPT_ATTR = [...Object.keys(AUDIO_ACCEPTED).map(e => `.${e}`), ...AUDIO_MIMES].join(',')
+
+/** Type tel que le bucket l'accepte : sans paramètre (`audio/webm;codecs=opus` → `audio/webm`), en minuscules ; null s'il n'est pas dans la liste. */
+export function normalizeAudioType(type: string): AudioMime | null {
+  const base = type.split(';')[0].trim().toLowerCase()
+  return AUDIO_ALIASES[base] ?? AUDIO_MIMES.find(m => m === base) ?? null
+}
+
+/** Extension d'un fichier audio de ce type (nom d'un enregistrement). */
+export const audioExtension = (mime: AudioMime) => AUDIO_EXT[mime]
 
 export type InboxErrorCode = 'offline' | 'empty' | 'too_long' | 'format' | 'too_big' | 'session' | 'full' | 'server'
 
@@ -96,6 +126,15 @@ export function checkFile(file: Pick<File, 'name' | 'size'>): { mime: InboxMime;
   if (file.size <= 0) throw new InboxError('empty', 'Le fichier est vide')
   if (file.size > INBOX_LIMITS.FILE_MAX) throw new InboxError('too_big', 'Fichier trop gros (30 Mo au maximum)')
   return { mime, ext }
+}
+
+/** Fichier audio : extension de la liste (sinon le type annoncé, normalisé), non vide, 30 Mo au plus. */
+export function checkAudio(file: Pick<File, 'name' | 'size' | 'type'>): AudioMime {
+  const mime = AUDIO_ACCEPTED[extOf(file.name)] ?? normalizeAudioType(file.type)
+  if (!mime) throw new InboxError('format', 'Format non pris en charge (M4A, MP4, WebM, WAV ou MP3)')
+  if (file.size <= 0) throw new InboxError('empty', 'Le fichier est vide')
+  if (file.size > INBOX_LIMITS.FILE_MAX) throw new InboxError('too_big', 'Fichier trop gros (30 Mo au maximum)')
+  return mime
 }
 
 /** Dimensions réduites pour que le plus grand côté tienne dans `max` (jamais d'agrandissement). */
@@ -196,25 +235,44 @@ export async function addText({ client, online = isOnline, uuid = () => crypto.r
   return toItem(data)
 }
 
-/**
- * Dépose un fichier : envoi vers `inbox/<uid>/<id>` (sans écrasement) puis création de l'élément. Si la création échoue
- * après l'envoi, le fichier orphelin est purgé par l'outil (`inbox purge`, après 24 h).
- */
-export async function addFile({ client, online = isOnline, uuid = () => crypto.randomUUID(), compress }: InboxDeps, file: File): Promise<InboxItem> {
-  checkFile(file)
-  requireOnline(online)
+async function requireUserId(client: InboxClient): Promise<string> {
   const { data: { session } } = await client.auth.getSession()
   if (!session) throw new InboxError('session', 'Session expirée : se reconnecter')
-  const prepared = await prepareFile(file, compress)
+  return session.user.id
+}
+
+/** Envoi vers `inbox/<uid>/<id>` (sans écrasement) puis création de l'élément. */
+async function deposit({ client, uuid = () => crypto.randomUUID() }: InboxDeps, uid: string, { blob, filename, mime }: PreparedFile): Promise<InboxItem> {
   const id = uuid()
   // Storage ignore `contentType` pour un Blob/File (envoi en FormData) et prend le type du corps, souvent vide pour un .md
-  // sur Safari/iOS : le corps est réemballé avec le type déduit de l'extension (sans copie du contenu).
-  const body = new Blob([prepared.blob], { type: prepared.mime })
-  const up = await client.storage.from('inbox').upload(`${session.user.id}/${id}`, body, { contentType: prepared.mime, upsert: false })
+  // sur Safari/iOS : le corps est réemballé avec le type déduit (sans copie du contenu).
+  const body = new Blob([blob], { type: mime })
+  const up = await client.storage.from('inbox').upload(`${uid}/${id}`, body, { contentType: mime, upsert: false })
   if (up.error) throw new InboxError('server', `Envoi du fichier refusé : ${up.error.message}`)
-  const { data, error } = await client.rpc('create_inbox_item', { p_id: id, p_kind: 'file', p_filename: prepared.filename })
+  const { data, error } = await client.rpc('create_inbox_item', { p_id: id, p_kind: 'file', p_filename: filename })
   if (error) throw rpcError(error)
   return toItem(data)
+}
+
+/**
+ * Dépose un fichier : envoi puis création de l'élément. Si la création échoue après l'envoi, le fichier orphelin est
+ * purgé par l'outil (`inbox purge`, après 24 h).
+ */
+export async function addFile(deps: InboxDeps, file: File): Promise<InboxItem> {
+  const { client, online = isOnline, compress } = deps
+  checkFile(file)
+  requireOnline(online)
+  const uid = await requireUserId(client)
+  return deposit(deps, uid, await prepareFile(file, compress))
+}
+
+/** Dépose un audio (enregistré ou importé), tel quel, avec son type normalisé. Mêmes garanties que addFile. */
+export async function addAudio(deps: InboxDeps, file: File): Promise<InboxItem> {
+  const { client, online = isOnline } = deps
+  const mime = checkAudio(file)
+  requireOnline(online)
+  const uid = await requireUserId(client)
+  return deposit(deps, uid, { blob: file, filename: cleanFilename(file.name), mime })
 }
 
 /** Les 50 derniers éléments (statuts), du plus récent au plus ancien. Réseau requis. */
