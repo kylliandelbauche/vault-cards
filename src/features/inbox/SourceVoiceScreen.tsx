@@ -73,8 +73,12 @@ export function SourceVoiceScreen({ deps, onClose, onSent }: Props) {
   const active = phase === 'starting' || phase === 'recording'
   const pending = imported ?? recorded
   const dirty = active || pending !== null
-  useLeaveGuard(dirty, () => setConfirming('close'))
-  const close = () => (dirty ? setConfirming('close') : onClose())
+  const close = () => {
+    if (sending) return // #103 : l'envoi va ouvrir les brouillons, ne pas quitter avant
+    if (dirty) setConfirming('close')
+    else onClose()
+  }
+  useLeaveGuard(dirty, close)
 
   const toggle = () => {
     setError(null)

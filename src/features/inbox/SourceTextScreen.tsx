@@ -31,8 +31,12 @@ export function SourceTextScreen({ deps, onClose, onSent }: Props) {
   const tooLong = count > INBOX_LIMITS.TEXT_MAX
 
   const dirty = text.trim() !== ''
-  useLeaveGuard(dirty, () => setConfirming(true)) // #88 : retour du navigateur / geste iOS = même confirmation que le ✕
-  const close = () => (dirty ? setConfirming(true) : onClose())
+  const close = () => {
+    if (sending) return // #103 : l'envoi va ouvrir les brouillons, ne pas quitter avant
+    if (dirty) setConfirming(true)
+    else onClose()
+  }
+  useLeaveGuard(dirty, close) // #88 : retour du navigateur / geste iOS = même confirmation que le ✕
 
   const paste = async () => {
     try {
