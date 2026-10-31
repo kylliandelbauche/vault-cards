@@ -52,8 +52,8 @@ export async function changePseudo({ client, online }: ProfileDeps, raw: string)
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 /**
- * Demande le changement d'adresse. « Secure email change » est activé : Supabase envoie un lien à l'ancienne adresse et un
- * à la nouvelle, et les deux doivent être validés. L'ancienne adresse reste active jusque-là.
+ * Demande le changement d'adresse. « Secure email change » est désactivé (#117) : Supabase envoie un seul lien, à la
+ * nouvelle adresse. L'ancienne adresse reste active jusque-là.
  * `emailRedirectTo` : l'origine de l'app. Renvoie l'adresse demandée, nettoyée.
  */
 export async function requestEmailChange({ client, online }: ProfileDeps, current: string, raw: string): Promise<string> {

@@ -230,7 +230,7 @@ describe('Profil : changer l’e-mail (#83)', () => {
     await user.click(confirmButton('Envoyer le lien'))
     await waitFor(() => expect(fake.auth.updateUser).toHaveBeenCalledWith({ email: 'nouveau@exemple.com' }, { emailRedirectTo: window.location.origin }))
     await waitFor(() => expect(heading()).toBe('Profil'))
-    expect(within(screen.getByRole('main')).getByRole('status').textContent).toBe("Un lien a été envoyé à ton adresse actuelle et un autre à nouveau@exemple.com. Valide les deux pour changer d'adresse. L'actuelle reste active jusque-là.")
+    expect(within(screen.getByRole('main')).getByRole('status').textContent).toBe("Un lien a été envoyé à nouveau@exemple.com. Valide-le pour changer d'adresse. L'actuelle reste active jusque-là.")
     await settle()
     expect(depth()).toBe(1)
   })
