@@ -24,6 +24,8 @@ export const TAG_CONTROL_CLASS = '\\u0000-\\u001f\\u007f-\\u009f'
 const EDGE_SPACES = new RegExp(`^[${TAG_SPACE_CLASS}]+|[${TAG_SPACE_CLASS}]+$`, 'g')
 const SPACE_RUNS = new RegExp(`[${TAG_SPACE_CLASS}]+`, 'g')
 const CONTROL = new RegExp(`[${TAG_CONTROL_CLASS}]`)
+/** Moitié de paire de substitution isolée (#98) : en mode `u`, un emoji entier reste un seul point de code et ne correspond pas. */
+const LONE_SURROGATE = /\p{Cs}/u
 
 /**
  * Forme stockée d'un nom, dans le même ordre que le serveur (public.tag_name_normalize) : NFC, espaces de bord retirés,
@@ -44,7 +46,7 @@ const chars = (s: string) => Array.from(s).length
 /** Message d'erreur si le nom (déjà normalisé) est refusé, sinon null. */
 export function tagNameError(name: string): string | null {
   if (name === '') return 'nom de tag vide'
-  if (CONTROL.test(name)) return `nom de tag invalide « ${name} »`
+  if (CONTROL.test(name) || LONE_SURROGATE.test(name)) return `nom de tag invalide « ${name} »`
   if (chars(name) > TAG_NAME_MAX) return `nom de tag trop long « ${name} » (${chars(name)} > ${TAG_NAME_MAX} caractères)`
   return null
 }

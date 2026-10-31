@@ -40,6 +40,13 @@ describe('règles de nom de tag (#79)', () => {
     expect(tagNameError(normalizeTagName('a\u00a0b'))).toBeNull()
   })
 
+  it('refuse une moiti\u00e9 d\'emoji isol\u00e9e, accepte un emoji entier (#98)', () => {
+    for (const name of ['a\ud83db', 'a\ude00b', '\ud83d']) {
+      expect(tagNameError(normalizeTagName(name))).toMatch(/invalide/)
+    }
+    expect(tagNameError(normalizeTagName('a\ud83d\ude00b'))).toBeNull()
+  })
+
   it('dédoublonne sans tenir compte de la casse et reprend l’orthographe connue', () => {
     expect(cleanTagNames(['ia & agents', 'IA & AGENTS', ' Nouveau  tag '], ['IA & agents'])).toEqual(['IA & agents', 'Nouveau tag'])
   })
