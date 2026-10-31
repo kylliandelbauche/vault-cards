@@ -201,7 +201,10 @@ export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accu
         {canStudy && (
           <footer className={`action-dock sticky bottom-0 z-20 shrink-0 pt-3.5 pb-[max(12px,var(--k-safe-area-bottom))] ${EDGES}`}>
             <div className="mx-auto max-w-xl">
-              <GlassButton tone="new" className={GLASS_PRIMARY} onClick={() => onStudy(results.map(r => r.card.id))}>
+              <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass btn-filled gap-3`} onClick={() => onStudy(results.map(r => r.card.id))}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px] shrink-0" fill="currentColor">
+                  <path d="M7 4.5v15a1 1 0 0 0 1.5.87l12-7.5a1 1 0 0 0 0-1.74l-12-7.5A1 1 0 0 0 7 4.5z" />
+                </svg>
                 {results.length === 1 ? 'Étudier cette carte' : `Étudier ces ${results.length} cartes`}
               </GlassButton>
             </div>
