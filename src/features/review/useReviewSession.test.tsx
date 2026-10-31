@@ -365,6 +365,75 @@ describe('useReviewSession', () => {
       expect(result.current.nextDueAt!.getTime() - t0).toBeGreaterThan(5 * 60_000)
     })
 
+    describe('liste de cartes (#105, « Étudier ces N cartes »)', () => {
+      const pool: Card[] = [...tagged, { ...cards[0], id: 'draft1', source: 'inbox', status: 'draft' }, { ...cards[0], id: 'other' }]
+      const rateOne = async (r: { current: ReturnType<typeof useReviewSession> }) => {
+        act(() => r.current.reveal()); await act(async () => r.current.rate(3))
+      }
+
+      it('révision libre limitée aux cartes données : « sur N », notes marquées free, jamais les autres ni un brouillon', async () => {
+        const store = memoryStore(pool)
+        const scope: SessionScope = { mode: 'all', cardIds: ['ia1', 'both', 'draft1'] }
+        const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+        await waitFor(() => expect(result.current.status).toBe('reviewing'))
+        expect(result.current.position).toEqual({ n: 1, total: 2 })
+        const seen: string[] = []
+        for (let i = 0; i < 2; i++) { seen.push(result.current.current!.card.id); await rateOne(result) }
+        expect(seen.sort()).toEqual(['both', 'ia1'])
+        expect(result.current.status).toBe('done')
+        expect((await store.loadReviews()).map(r => r.free)).toEqual([true, true])
+      })
+
+      it('plus de 20 nouvelles : toutes proposées (le quota du jour ne s’applique pas)', async () => {
+        const many = Array.from({ length: 25 }, (_, i) => ({ ...cards[0], id: `n${i}` }))
+        const store = memoryStore([...many, ...pool])
+        const scope: SessionScope = { mode: 'all', cardIds: many.map(c => c.id) }
+        const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+        await waitFor(() => expect(result.current.status).toBe('reviewing'))
+        expect(result.current.position.total).toBe(25)
+      })
+
+      it('« Réviser à nouveau » et « Réessayer » restent dans la liste, en révision libre', async () => {
+        const store = memoryStore(pool)
+        const scope: SessionScope = { mode: 'all', cardIds: ['ia1', 'dev1'] }
+        const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+        await waitFor(() => expect(result.current.status).toBe('reviewing'))
+        await rateOne(result); await rateOne(result)
+        expect(result.current.status).toBe('done')
+        act(() => result.current.reviewAll())
+        await waitFor(() => expect(result.current.status).toBe('reviewing'))
+        expect(result.current.position.total).toBe(2)
+        await rateOne(result); await rateOne(result)
+        act(() => result.current.restart())
+        await waitFor(() => expect(result.current.status).toBe('reviewing'))
+        expect(result.current.position.total).toBe(2) // pas dues + nouvelles du jour de tout le paquet
+        await rateOne(result)
+        expect((await store.loadReviews()).every(r => r.free === true)).toBe(true)
+      })
+
+      it('fin de session : la prochaine échéance ne regarde que les cartes de la liste', async () => {
+        // « other » vue juste avant (« Je ne sais pas ») : due dans ~1 min, hors liste.
+        const t0 = fixedNow().getTime()
+        const otherReview: Review = { id: 'r-other', card_id: 'other', rating: 1, reviewed_at: new Date(t0).toISOString(), synced: 1 }
+        const base = memoryStore(pool)
+        const store: ReviewStore = { ...base, loadReviews: async () => [otherReview, ...(await base.loadReviews())] }
+        const scope: SessionScope = { mode: 'all', cardIds: ['ia1'] }
+        const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+        await waitFor(() => expect(result.current.status).toBe('reviewing'))
+        await rateOne(result)
+        expect(result.current.status).toBe('done')
+        expect(result.current.nextDueAt!.getTime() - t0).toBeGreaterThan(5 * 60_000)
+      })
+
+      it('liste dont plus aucune carte n’est vivante : « done », pas la fausse alerte d’un paquet vide', async () => {
+        const store = memoryStore(pool)
+        const scope: SessionScope = { mode: 'all', cardIds: ['draft1', 'inconnue'] }
+        const { result } = renderHook(() => useReviewSession(store, fixedNow, scope))
+        await waitFor(() => expect(result.current.status).toBe('done'))
+        expect(result.current.nextDueAt).toBeNull()
+      })
+    })
+
     it('changer de scope relance une session (loading, puis la nouvelle file) ; null → idle', async () => {
       const store = memoryStore(tagged)
       const { result, rerender } = renderHook(({ scope }: Props) => useReviewSession(store, fixedNow, scope), { initialProps: { scope: { mode: 'due', tag: 'dev' } as SessionScope | null } })

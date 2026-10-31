@@ -5,10 +5,10 @@ import type { ProfileDeps } from '../../lib/account'
 import type { InboxDeps, InboxItem } from '../../lib/inbox'
 import { pendingCount } from '../../lib/sync'
 import { dexieStore } from '../review/dexieStore'
-import { DAY_TITLE, ReviewScreen } from '../review/ReviewScreen'
+import { DAY_TITLE, FILTERED_TITLE, ReviewScreen } from '../review/ReviewScreen'
 import { safeSignOut } from '../review/safeSignOut'
 import { syncIndicator, useAutoSync, usePendingCount } from '../review/useAutoSync'
-import { useReviewSession, type ReviewSession } from '../review/useReviewSession'
+import { useReviewSession, type ReviewSession, type SessionScope } from '../review/useReviewSession'
 import { DraftsScreen } from '../inbox/DraftsScreen'
 import { EditCardScreen, NewCardScreen } from '../inbox/EditCardScreen'
 import { NewCardsBlock } from '../inbox/NewCardsBlock'
@@ -24,9 +24,12 @@ import { useHomeData } from './useHomeData'
 import { LeaveGuardContext } from './useLeaveGuard'
 import { useNavigation, type Screen } from './useNavigation'
 
+/** Titre de la barre selon l'entrée : nom du tag, « Cartes filtrées » (liste de cartes de Mes cartes, #105) ou « Révision du jour ». */
+const reviewTitle = (scope: SessionScope) => scope.tag ?? (scope.cardIds ? FILTERED_TITLE : DAY_TITLE)
+
 /** Nom accessible de la flèche retour : l'écran de destination. */
 const backLabel = (to: Screen | null) =>
-  to?.name === 'tags' ? 'Mes tags' : to?.name === 'profile' ? 'Profil' : to?.name === 'hub' ? 'Nouvelles cartes' : to?.name === 'drafts' ? 'Brouillons' : to?.name === 'review' ? to.scope.tag ?? DAY_TITLE : 'Accueil'
+  to?.name === 'tags' ? 'Mes tags' : to?.name === 'profile' ? 'Profil' : to?.name === 'hub' ? 'Nouvelles cartes' : to?.name === 'drafts' ? 'Brouillons' : to?.name === 'cards' ? 'Mes cartes' : to?.name === 'review' ? reviewTitle(to.scope) : 'Accueil'
 
 interface Props {
   db: VaultDB
@@ -67,8 +70,9 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
   const store = useMemo(() => dexieStore(db), [db])
   const { screen, previous, stack, openReview, openTags, openCards, open, replace, back, goHome } = nav
   // Une révision en cours garde sa session sous tout écran posé dessus (Profil #83, puis Mes cartes ou Mes tags) :
-  // le périmètre reste celui de la révision de la pile, il n'y en a jamais deux.
-  const scope = stack.find((s): s is Extract<Screen, { name: 'review' }> => s.name === 'review')?.scope ?? null
+  // le périmètre reste celui de la révision de la pile, il n'y en a jamais deux. Une révision lancée depuis Mes cartes ou
+  // Mes tags posés sur celle-ci (Profil › Cartes › Étudier) en ajoute une deuxième : c'est la plus haute qui s'applique.
+  const scope = stack.findLast((s): s is Extract<Screen, { name: 'review' }> => s.name === 'review')?.scope ?? null
   const session = useReviewSession(store, now, scope)
   const autoSyncOptions = useMemo(() => ({ pending: () => pendingCount(db) }), [db])
   const { syncNow, ...syncState } = useAutoSync(session, runSync, autoSyncOptions)
@@ -95,9 +99,9 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
         session={session}
         db={db}
         now={now}
-        title={screen.scope.tag ?? DAY_TITLE}
+        title={reviewTitle(screen.scope)}
         onBack={back}
-        backLabel={previous?.name === 'tags' ? 'Mes tags' : 'Accueil'}
+        backLabel={previous?.name === 'tags' ? 'Mes tags' : previous?.name === 'cards' ? 'Mes cartes' : 'Accueil'}
         onHome={goHome}
         onWrite={syncNow}
       />
@@ -160,7 +164,17 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
     )
   }
   if (screen.name === 'cards') {
-    return <MyCardsScreen db={db} initialDocumentId={screen.documentId} onBack={back} backLabel={backLabel(previous)} onWrite={syncNow} />
+    return (
+      <MyCardsScreen
+        db={db}
+        initialDocumentId={screen.documentId}
+        onBack={back}
+        backLabel={backLabel(previous)}
+        onWrite={syncNow}
+        // Révision libre des cartes filtrées (#105) : ne consomme pas le quota de nouvelles cartes.
+        onStudy={cardIds => openReview({ mode: 'all', cardIds })}
+      />
+    )
   }
   if (screen.name === 'new-card') {
     return <NewCardScreen db={db} onClose={back} onWrite={syncNow} />

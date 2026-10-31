@@ -344,6 +344,67 @@ describe('SignedInApp : Mes cartes (#80)', () => {
     await waitFor(() => expect(depth()).toBe(1))
   })
 
+  describe('« Étudier ces N cartes » (#105)', () => {
+    const imported = (id: string): Card => ({
+      id, source: 'inbox', inbox_id: 'doc1', status: 'active', deck: null, source_path: null, source_title: 'Cours FSRS.pdf', tags: ['FSRS'],
+      front: `Question ${id} ?`, back: `Réponse ${id}.`, created_at: '2026-10-05T00:00:00Z', updated_at: '2026-10-05T00:00:00Z', deleted_at: null,
+    })
+    const headerTexts = () => [...document.querySelectorAll('header p')].map(p => p.textContent)
+    /** Mes cartes filtré sur le document, puis « Étudier ces 2 cartes ». */
+    async function startStudy(user: ReturnType<typeof userEvent.setup>) {
+      await db.cards.bulkPut([imported('i1'), imported('i2')])
+      await waitFor(() => expect(heading()).toBe("5 cartes à revoir aujourd'hui"))
+      await user.click(screen.getByRole('button', { name: 'Rechercher' }))
+      await user.click(await screen.findByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }))
+      await user.click(await screen.findByRole('button', { name: 'Étudier ces 2 cartes' }))
+    }
+
+    it('révision libre des seules cartes filtrées (notes free), « Réviser à nouveau » reste dans la liste, retour vers Mes cartes', async () => {
+      const { user } = renderApp()
+      await startStudy(user)
+      expect(await screen.findByRole('button', { name: 'Afficher la réponse' })).toBeTruthy()
+      expect(headerTexts()).toEqual(['Cartes filtrées', 'Carte 1 sur 2']) // pas « Révision du jour »
+      expect(depth()).toBe(2)
+      await rateAll(user)
+      expect(await screen.findByText('Session terminée')).toBeTruthy()
+      expect((await db.reviews.toArray()).map(r => [r.card_id, r.free]).sort()).toEqual([['i1', true], ['i2', true]])
+      await user.click(screen.getByRole('button', { name: 'Réviser à nouveau' }))
+      expect(await screen.findByText('Carte 1 sur 2')).toBeTruthy() // 2 cartes, pas les 5 du paquet
+      // Flèche : Mes cartes, nommée d'après sa destination ; un second retour mène à l'accueil.
+      await user.click(screen.getByRole('button', { name: 'Mes cartes' }))
+      await waitFor(() => expect(heading()).toBe('Mes cartes'))
+      expect(await screen.findByText('Question i1 ?')).toBeTruthy()
+      await waitFor(() => expect(depth()).toBe(1))
+      await user.click(screen.getByRole('button', { name: 'Accueil' }))
+      await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui")) // les 2 étudiées sont passées, les 3 du vault restent
+    })
+
+    it('geste retour / « précédent » du navigateur pendant l’étude : Mes cartes', async () => {
+      const { user } = renderApp()
+      await startStudy(user)
+      await screen.findByRole('button', { name: 'Afficher la réponse' })
+      act(() => { window.history.back() })
+      await waitFor(() => expect(heading()).toBe('Mes cartes'))
+      await waitFor(() => expect(depth()).toBe(1))
+    })
+
+    it('lancée depuis Mes cartes posé sur une révision (Profil › Cartes) : la nouvelle liste s’applique, le retour retrouve la révision', async () => {
+      const { user } = renderApp()
+      await db.cards.bulkPut([imported('i1'), imported('i2')])
+      await waitFor(() => expect(heading()).toBe("5 cartes à revoir aujourd'hui"))
+      await user.click(screen.getByRole('button', { name: 'Commencer à étudier' }))
+      await screen.findByText('Carte 1 sur 5')
+      await user.click(screen.getByRole('button', { name: 'Profil' }))
+      await user.click(await screen.findByRole('button', { name: /Cartes/ }))
+      await user.click(await screen.findByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }))
+      await user.click(await screen.findByRole('button', { name: 'Étudier ces 2 cartes' }))
+      expect(await screen.findByText('Carte 1 sur 2')).toBeTruthy()
+      expect(headerTexts()[0]).toBe('Cartes filtrées')
+      await user.click(screen.getByRole('button', { name: 'Mes cartes' }))
+      await waitFor(() => expect(heading()).toBe('Mes cartes'))
+    })
+  })
+
   it('modifier une carte depuis Mes cartes : le retour iOS ferme le formulaire et reste sur Mes cartes', async () => {
     const { user } = renderApp()
     await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui"))

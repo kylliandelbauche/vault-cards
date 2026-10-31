@@ -16,6 +16,9 @@ import type { ReviewSession } from './useReviewSession'
 /** Titre d'une session lancée par « Commencer à étudier » (toutes les cartes du jour). */
 export const DAY_TITLE = 'Révision du jour'
 
+/** Titre d'une session lancée par « Étudier ces N cartes » de Mes cartes (#105) : ce n'est pas la révision du jour. */
+export const FILTERED_TITLE = 'Cartes filtrées'
+
 interface Props {
   session: ReviewSession
   /** Cache local : tags proposés dans « Modifier la carte » (menu ⋯, #73). */
