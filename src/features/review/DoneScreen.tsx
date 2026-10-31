@@ -20,11 +20,14 @@ export function DoneScreen({ stats, nextDueAt, now, onRestart, onHome }: Props) 
     <div className="my-auto flex flex-col items-center gap-4">
       <section className="glass-card flex w-full flex-col items-center gap-6 rounded-[28px] px-5 py-8 text-center text-black dark:text-white">
         <h1 className="text-[28px] font-bold">Session terminée</h1>
-        <div className="flex gap-6 text-[20px] font-semibold tabular-nums">
-          <span aria-label={`${stats.again} « Je ne sais pas »`}><span className="text-again">✕</span> {stats.again}</span>
-          <span aria-label={`${stats.hard} « Moyen »`}><span className="text-hard">~</span> {stats.hard}</span>
-          <span aria-label={`${stats.good} « Très bien »`}><span className="text-good">✓</span> {stats.good}</span>
-        </div>
+        {/* Aucune note (cartes toutes supprimées, ou rien à réviser) : pas de bilan « 0 0 0 ». */}
+        {stats.again + stats.hard + stats.good > 0 && (
+          <div className="flex gap-6 text-[20px] font-semibold tabular-nums">
+            <span aria-label={`${stats.again} « Je ne sais pas »`}><span className="text-again">✕</span> {stats.again}</span>
+            <span aria-label={`${stats.hard} « Moyen »`}><span className="text-hard">~</span> {stats.hard}</span>
+            <span aria-label={`${stats.good} « Très bien »`}><span className="text-good">✓</span> {stats.good}</span>
+          </div>
+        )}
         <p className="text-[17px] text-label-2">
           {nextDueAt ? `Prochaine révision dans ${formatInterval(now, nextDueAt)}` : 'Aucune carte en attente.'}
         </p>

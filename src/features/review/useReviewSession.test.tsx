@@ -73,6 +73,24 @@ describe('useReviewSession', () => {
       expect(result.current.stats).toEqual({ again: 1, hard: 0, good: 1 })
     })
 
+    it('supprimer pendant l’écriture d’une note : attend la note, puis supprime la carte affichée (pas la suivante)', async () => {
+      const base = memoryStore(cards)
+      let finish!: () => void
+      const store: ReviewStore = { ...base, addReview: r => new Promise<void>(resolve => { finish = () => { void base.addReview(r).then(resolve) } }) }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      const first = result.current.current!.card.id
+      act(() => result.current.reveal())
+      let removed!: Promise<void>
+      await act(async () => { result.current.rate(3); removed = result.current.remove() })
+      expect((await base.loadCards()).every(c => c.deleted_at === null)).toBe(true) // rien de supprimé tant que la note s'écrit
+      await act(async () => { finish(); await removed })
+      expect(await base.loadReviews()).toHaveLength(1)
+      expect((await base.loadCards()).filter(c => c.deleted_at !== null).map(c => c.id)).toEqual([first])
+      expect(result.current.current!.card.id).not.toBe(first)
+      expect(result.current.position).toEqual({ n: 2, total: 2 })
+    })
+
     it('supprimer la seule carte : écran vide ; échec d’écriture : rejette, rien ne change', async () => {
       const failing: ReviewStore = { ...memoryStore(cards), deleteCard: async () => { throw new Error('IndexedDB indisponible') } }
       const a = renderHook(() => useReviewSession(failing, fixedNow))
