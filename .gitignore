@@ -30,3 +30,9 @@ dist-ssr
 dev-dist
 .superpowers/
 .claude/settings.local.json
+
+# Outils locaux, hors du dépôt public
+.mcp.json
+.agents/
+.claude/skills/
+skills-lock.json
