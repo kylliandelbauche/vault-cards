@@ -1,6 +1,6 @@
 # Restaurer une sauvegarde
 
-Le workflow `backup.yml` produit chaque dimanche (03:23 UTC) un artefact `backup-<run_id>` contenant
+Le workflow `backup.yml` du dépôt privé `kylliandelbauche/vault-cards-ops` produit chaque dimanche (03:23 UTC) un artefact `backup-<run_id>` contenant
 uniquement `backup.tgz.gpg` : une archive `schema.sql` + `data.sql` chiffrée en AES256. Conservation : 90 jours.
 
 > **La phrase de passe (`BACKUP_PASSPHRASE`) vit dans le gestionnaire de mots de passe de Kyllian.
@@ -27,8 +27,8 @@ Après restauration sur un projet neuf, Kyllian recrée son compte (voir l'étap
 ```bash
 umask 077                                            # les fichiers en clair ne seront lisibles que par toi
 mkdir -p ~/restore-vault-cards && cd ~/restore-vault-cards
-gh run list --workflow backup.yml --repo yukydesu/vault-cards --limit 5   # repérer un run en succès
-gh run download <run_id> --repo yukydesu/vault-cards                      # crée backup-<run_id>/backup.tgz.gpg
+gh run list --workflow backup.yml --repo kylliandelbauche/vault-cards-ops --limit 5   # repérer un run en succès
+gh run download <run_id> --repo kylliandelbauche/vault-cards-ops                      # crée backup-<run_id>/backup.tgz.gpg
 ```
 
 ## 2. Déchiffrer
