@@ -1,12 +1,12 @@
 import { Page, Preloader } from 'konsta/react'
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { GlassButton } from '../../components/GlassButton'
+import { GLASS_PRIMARY, GlassButton } from '../../components/GlassButton'
 import { ConfirmDialog } from '../../components/SheetBar'
 import { BarTitle, EDGES, TopBar } from '../../components/TopBar'
 import { deleteCard, updateCard } from '../../lib/cards'
 import type { VaultDB } from '../../lib/db'
 import { cards as cardCount } from '../../lib/home'
-import { documentKind, filterCards, type ImportedDocument } from '../../lib/myCards'
+import { documentKind, filterCards, foldText, type ImportedDocument } from '../../lib/myCards'
 import { TRANSPARENT_PAGE } from '../../lib/theme'
 import type { Card } from '../../lib/types'
 import { EditForm } from '../inbox/EditCardScreen'
@@ -22,6 +22,11 @@ interface Props {
   backLabel?: string
   /** Après une modification ou une suppression locale : synchro immédiate. */
   onWrite?(): void
+  /**
+   * « Étudier ces N cartes » (#105) : lance une révision libre des cartes de la liste filtrée (ids des résultats, pas de la
+   * tranche affichée). Absent : pas de bouton.
+   */
+  onStudy?(cardIds: string[]): void
 }
 
 /** Cartes rendues d'un coup, puis par tranches à l'approche du bas : l'ouverture reste instantanée avec 2000 cartes. */
@@ -41,9 +46,11 @@ function nearCard(anchor: DOMRect): CSSProperties {
  * tags (ni brouillons, ni supprimées). Recherche locale (cache Dexie), sans accents ni casse, sur question, réponse,
  * tags et nom du document, combinée au document choisi. Tap sur une carte → « Modifier la carte » (formulaire de #73,
  * posé sur la liste : le retour iOS le ferme, garde #88 compris) ; glisser à gauche → « Supprimer » → confirmation →
- * suppression douce (deleteCard, comme le menu ⋯). Aucun bouton bleu : seul l'anneau de focus du champ l'est.
+ * suppression douce (deleteCard, comme le menu ⋯). Un filtre actif (document ou recherche) fait apparaître en bas
+ * « Étudier ces N cartes » (#105) : révision libre des cartes de la liste. Sans filtre, aucun bouton bleu : seul
+ * l'anneau de focus du champ l'est.
  */
-export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accueil', onWrite }: Props) {
+export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accueil', onWrite, onStudy }: Props) {
   const data = useMyCards(db)
   const [query, setQuery] = useState('')
   const [documentId, setDocumentId] = useState<string | null>(initialDocumentId ?? null)
@@ -112,6 +119,10 @@ export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accu
   }
 
   const subtitle = ready ? cardCount(results.length) : undefined
+  // Bouton d'étude (#105) : seulement quand un filtre est actif (document ou recherche), sur ce que la liste affiche
+  // (valeur différée comprise) ; les résultats sont déjà sans brouillons ni cartes supprimées.
+  const filtered = doc !== null || foldText(deferredQuery).trim() !== ''
+  const canStudy = onStudy !== undefined && filtered && results.length > 0
   return (
     <>
       {editing && (
@@ -187,6 +198,18 @@ export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accu
           )}
           {more && <div ref={sentinel} aria-hidden="true" className="h-px" />}
         </main>
+        {canStudy && (
+          <footer className={`action-dock sticky bottom-0 z-20 shrink-0 pt-3.5 pb-[max(12px,var(--k-safe-area-bottom))] ${EDGES}`}>
+            <div className="mx-auto max-w-xl">
+              <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass btn-filled gap-3`} onClick={() => onStudy(results.map(r => r.card.id))}>
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px] shrink-0" fill="currentColor">
+                  <path d="M7 4.5v15a1 1 0 0 0 1.5.87l12-7.5a1 1 0 0 0 0-1.74l-12-7.5A1 1 0 0 0 7 4.5z" />
+                </svg>
+                {results.length === 1 ? 'Étudier cette carte' : `Étudier ces ${results.length} cartes`}
+              </GlassButton>
+            </div>
+          </footer>
+        )}
       </Page>
       {deleting && (
         <ConfirmDialog

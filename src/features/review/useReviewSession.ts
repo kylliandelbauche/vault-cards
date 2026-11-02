@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { stateFromReviews } from '../../lib/scheduler'
-import { buildQueue, countKinds, freeQueue, isLive, nextDue, type SessionItem } from '../../lib/session'
+import { buildQueue, countKinds, freeQueue, inScope, isLive, nextDue, type SessionItem } from '../../lib/session'
 import type { ManualCardInput } from '../../lib/cards'
 import type { Card, Rating, Review } from '../../lib/types'
 
@@ -37,10 +37,16 @@ export const memoryStore = (cards: Card[]): ReviewStore => {
 /** `idle` : aucune session demandée (écran d'accueil). */
 type Status = 'idle' | 'loading' | 'error' | 'empty' | 'reviewing' | 'done'
 
-/** Ce que la session doit proposer : file du jour (`due`) ou révision libre (`all`), éventuellement limitée à un tag. */
+/** Ce que la session doit proposer : file du jour (`due`) ou révision libre (`all`), éventuellement limitée à un tag ou à des cartes. */
 export interface SessionScope {
   mode: 'due' | 'all'
   tag?: string
+  /**
+   * Ids des cartes au moment du lancement (« Étudier ces N cartes » de Mes cartes, #105) : la file, le « sur N » et la
+   * prochaine échéance ne regardent que ces cartes, y compris après « Réviser à nouveau ». Liste figée : une carte
+   * ajoutée ensuite n'entre pas dans la session ; une carte supprimée en sort (isLive).
+   */
+  cardIds?: readonly string[]
 }
 
 /** Session par défaut : dues + nouvelles du jour, toutes les cartes. */
@@ -148,7 +154,8 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     Promise.all([store.loadCards(), store.loadReviews()]).then(([cs, rs]) => {
       if (gen !== generation.current) return
       const t = now()
-      const queue = mode === 'all' ? freeQueue(cs, rs, t, target.tag) : buildQueue(cs, rs, t, undefined, target.tag)
+      const scoped = inScope(cs, target.cardIds)
+      const queue = mode === 'all' ? freeQueue(scoped, rs, t, target.tag) : buildQueue(scoped, rs, t, undefined, target.tag)
       const hasLiveCards = cs.some(isLive) // brouillons (#55) et cartes supprimées exclus
       cards.current = cs
       reviews.current = rs
@@ -160,7 +167,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         status: queue.length ? 'reviewing' : hasLiveCards ? 'done' : 'empty',
         queue,
         initial: queue.length,
-        nextDueAt: queue.length ? null : nextDue(cs, rs, t, target.tag),
+        nextDueAt: queue.length ? null : nextDue(scoped, rs, t, target.tag),
         // Ouverture de la session = changement d'écran : le 2e tap d'un double tap sur « Commencer à étudier »
         // (ou un tag) tomberait sur la carte et révélerait la réponse.
         shownAt: t.getTime(),
@@ -222,7 +229,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         saveFailed: false,
         processed: live.current.processed + 1,
         stats: { ...live.current.stats, [STAT_KEY[r]]: live.current.stats[STAT_KEY[r]] + 1 },
-        nextDueAt: finished ? nextDue(cards.current, reviews.current, t, live.current.scope?.tag) : null,
+        nextDueAt: finished ? nextDue(inScope(cards.current, live.current.scope?.cardIds), reviews.current, t, live.current.scope?.tag) : null,
         shownAt: t.getTime(),
       })
     } finally {
@@ -274,7 +281,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
         revealed: false,
         saveFailed: false,
         initial: rated.current.has(id) ? cur.initial : Math.max(0, cur.initial - 1),
-        nextDueAt: finished ? nextDue(cards.current, reviews.current, t, cur.scope?.tag) : null,
+        nextDueAt: finished ? nextDue(inScope(cards.current, cur.scope?.cardIds), reviews.current, t, cur.scope?.tag) : null,
         shownAt: t.getTime(),
       })
     } finally {
@@ -289,7 +296,8 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     if (live.current.status === 'error') commit({ ...INITIAL, scope: target })
     load(target, mode)
   }, [load, commit])
-  const restart = useCallback(() => reload('due'), [reload])
+  // Session sur une liste de cartes (#105) : « Réessayer » rouvre la même révision, jamais la file du jour.
+  const restart = useCallback(() => reload(io.current.scope?.cardIds ? io.current.scope.mode : 'due'), [reload])
   const reviewAll = useCallback(() => reload('all'), [reload])
 
   const total = state.processed + state.queue.length

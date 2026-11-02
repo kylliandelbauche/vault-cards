@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildQueue, countKinds, freeQueue, nextDue } from './session'
+import { buildQueue, countKinds, freeQueue, inScope, nextDue } from './session'
 import type { Card, Review } from './types'
 
 const card = (id: string, extra: Partial<Card> = {}): Card => ({
@@ -116,6 +116,26 @@ describe('session limitée à un tag (#53)', () => {
     const cards = [tagged('a', ['ia']), tagged('b', ['dev'])]
     const rs = [rv('a', ago(1)), rv('b', ago(10), 1)]
     expect(nextDue(cards, rs, now, 'ia')!.getTime()).toBe(nextDue([cards[0]], rs, now)!.getTime())
+  })
+})
+
+describe('liste de cartes (#105)', () => {
+  it('inScope : seulement les ids donnés ; sans ids, toutes (même liste)', () => {
+    const cards = [card('a'), card('b'), card('c')]
+    expect(inScope(cards, ['a', 'c', 'inconnue']).map(c => c.id)).toEqual(['a', 'c'])
+    expect(inScope(cards, [])).toEqual([])
+    expect(inScope(cards)).toBe(cards)
+  })
+  it('révision libre d’une liste : 25 nouvelles proposées (pas de quota), hors liste ignorées, brouillon exclu', () => {
+    const listed = Array.from({ length: 25 }, (_, i) => card(`n${i}`))
+    const draft = card('d', { source: 'inbox', status: 'draft', deck: null, source_path: null })
+    const q = freeQueue(inScope([...listed, card('hors'), draft], [...listed.map(c => c.id), 'd']), [], now)
+    expect(q).toHaveLength(25)
+  })
+  it('prochaine échéance limitée à la liste', () => {
+    const cards = [card('a'), card('b')]
+    const rs = [rv('a', ago(1)), rv('b', ago(10), 1)]
+    expect(nextDue(inScope(cards, ['a']), rs, now)!.getTime()).toBe(nextDue([cards[0]], rs, now)!.getTime())
   })
 })
 

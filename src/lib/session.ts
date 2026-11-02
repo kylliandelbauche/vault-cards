@@ -22,6 +22,13 @@ export const hasTag = (card: Card, tag: string) => {
   return (card.tags ?? []).some(t => tagKey(t) === key)
 }
 
+/** Cartes limitées à une liste d'ids (session lancée depuis un filtre de « Mes cartes ») ; `ids` absent : toutes. */
+export const inScope = (cards: Card[], ids?: readonly string[]) => {
+  if (!ids) return cards
+  const wanted = new Set(ids)
+  return cards.filter(c => wanted.has(c.id))
+}
+
 /**
  * Carte à réviser : non supprimée et pas un brouillon de la boîte de réception (#55). Un brouillon n'entre ni dans les
  * sessions, ni dans les compteurs de l'accueil, ni dans les tags tant qu'il n'est pas accepté.

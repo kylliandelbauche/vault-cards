@@ -28,9 +28,11 @@ afterEach(async () => { cleanup(); db.close(); await db.delete() })
 function renderScreen(initialDocumentId?: string) {
   const onBack = vi.fn()
   const onWrite = vi.fn()
-  render(<KApp theme="ios"><MyCardsScreen db={db} initialDocumentId={initialDocumentId} onBack={onBack} onWrite={onWrite} /></KApp>)
-  return { onBack, onWrite, user: userEvent.setup() }
+  const onStudy = vi.fn()
+  render(<KApp theme="ios"><MyCardsScreen db={db} initialDocumentId={initialDocumentId} onBack={onBack} onWrite={onWrite} onStudy={onStudy} /></KApp>)
+  return { onBack, onWrite, onStudy, user: userEvent.setup() }
 }
+const studyButton = () => screen.queryByRole('button', { name: /^Étudier / })
 const list = () => screen.getByRole('list', { name: 'Cartes' })
 const fronts = () => within(list()).getAllByRole('listitem').map(li => li.querySelector('span')!.textContent)
 const subtitle = () => document.querySelector('header h1')!.nextElementSibling!.textContent
@@ -90,6 +92,83 @@ describe('MyCardsScreen (#80)', () => {
     await user.clear(search())
     await user.type(search(), 'photo du')
     await waitFor(() => expect(fronts()).toEqual(['Quand une carte est-elle maîtrisée ?'])) // par le nom du document
+  })
+
+  describe('« Étudier ces N cartes » (#105)', () => {
+    it('absent sans filtre, même avec des cartes', async () => {
+      renderScreen()
+      await waitFor(() => expect(fronts()).toHaveLength(5))
+      expect(studyButton()).toBeNull()
+    })
+
+    it('document choisi : N = nombre de résultats ; « Tous » le retire ; lance les ids des résultats, jamais un brouillon', async () => {
+      const { user, onStudy } = renderScreen()
+      await waitFor(() => expect(fronts()).toHaveLength(5))
+      await user.click(screen.getByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }))
+      await user.click(screen.getByRole('button', { name: 'Étudier ces 2 cartes' }))
+      expect(onStudy).toHaveBeenCalledTimes(1)
+      expect([...onStudy.mock.calls[0][0]].sort()).toEqual(['i1', 'i2'])
+      await user.click(screen.getByRole('button', { name: 'Tous' }))
+      expect(studyButton()).toBeNull()
+    })
+
+    it('document filtré à l’ouverture (depuis « Tes créations ») : le bouton est déjà là', async () => {
+      renderScreen('photo')
+      expect(await screen.findByRole('button', { name: 'Étudier cette carte' })).toBeTruthy()
+    })
+
+    it('recherche : singulier pour 1 résultat, pluriel sinon ; N est le total des résultats, pas la tranche affichée', async () => {
+      const { user, onStudy } = renderScreen()
+      await waitFor(() => expect(fronts()).toHaveLength(5))
+      await user.type(search(), 'stabilite')
+      expect(await screen.findByRole('button', { name: 'Étudier ces 3 cartes' })).toBeTruthy()
+      await user.clear(search())
+      await user.type(search(), 'RLS')
+      await waitFor(() => expect(fronts()).toEqual(['Que garantit la RLS ?']))
+      await user.click(await screen.findByRole('button', { name: 'Étudier cette carte' }))
+      expect(onStudy).toHaveBeenCalledWith(['m1'])
+    })
+
+    it('recherche vide ou d’espaces seulement : pas de bouton ; aucun résultat : pas de bouton', async () => {
+      const { user } = renderScreen()
+      await waitFor(() => expect(fronts()).toHaveLength(5))
+      await user.type(search(), '   ')
+      expect(studyButton()).toBeNull()
+      await user.clear(search())
+      await user.type(search(), 'introuvable')
+      await waitFor(() => expect(screen.getByText('Aucune carte ne correspond à ta recherche.')).toBeTruthy())
+      expect(studyButton()).toBeNull()
+    })
+
+    it('recherche + document : les deux filtres comptent ; un brouillon qui correspond n’entre jamais', async () => {
+      const { user, onStudy } = renderScreen()
+      await waitFor(() => expect(fronts()).toHaveLength(5))
+      await user.type(search(), 'fsrs') // « Brouillon ? » porte aussi le tag FSRS
+      await waitFor(() => expect(fronts()).toHaveLength(3))
+      await user.click(screen.getByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }))
+      await user.click(await screen.findByRole('button', { name: 'Étudier ces 2 cartes' }))
+      expect([...onStudy.mock.calls[0][0]].sort()).toEqual(['i1', 'i2'])
+    })
+
+    it('plus de 80 résultats : N compte tout, pas la première tranche', async () => {
+      vi.stubGlobal('IntersectionObserver', class { observe() {} disconnect() {} }) // tranches actives (sinon tout est rendu)
+      try {
+        await db.cards.bulkPut(Array.from({ length: 100 }, (_, i) => ({ ...base, id: `bulk${i}`, source: 'inbox' as const, inbox_id: 'gros', status: 'active' as const, source_title: 'Gros document', front: `Question ${i} ?`, back: 'Réponse.', tags: ['FSRS'], created_at: '2026-11-01T00:00:00Z' })))
+        const { user, onStudy } = renderScreen()
+        await user.click(await screen.findByRole('button', { name: 'Gros document, 100 cartes' }))
+        await user.click(await screen.findByRole('button', { name: 'Étudier ces 100 cartes' }))
+        expect(fronts()).toHaveLength(80)
+        expect(onStudy.mock.calls[0][0]).toHaveLength(100)
+      } finally {
+        vi.unstubAllGlobals()
+      }
+    })
+
+    it('sans onStudy : pas de bouton', async () => {
+      render(<KApp theme="ios"><MyCardsScreen db={db} initialDocumentId="pdf" onBack={vi.fn()} /></KApp>)
+      await waitFor(() => expect(fronts()).toHaveLength(2))
+      expect(studyButton()).toBeNull()
+    })
   })
 
   it('tap sur une carte → « Modifier la carte » (formulaire #73) ; enregistrer met la liste à jour et synchronise', async () => {
