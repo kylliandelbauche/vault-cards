@@ -1,5 +1,7 @@
 # Vault Cards
 
+> 🚧 **Projet en construction.** Vault Cards sert d'abord à un usage personnel. L'installation n'est pas encore simplifiée et peut demander des ajustements.
+
 Application de flashcards à répétition espacée (FSRS), pensée pour l'iPhone. Elle fonctionne hors ligne et se synchronise avec Supabase. Les cartes viennent de notes Obsidian, de documents, de textes, de photos ou de vocaux, et peuvent aussi s'écrire à la main.
 
 <p align="center">
@@ -27,6 +29,8 @@ L'interface est en français.
 React 19, TypeScript, Vite, Konsta UI, Tailwind CSS 4, Dexie (IndexedDB), ts-fsrs, Supabase (Postgres, Auth, Storage).
 
 ## Démarrer
+
+Ces étapes donnent le principe, mais elles n'ont pas encore été testées sur une installation neuve.
 
 Il faut Node 24 et un projet [Supabase](https://supabase.com) avec son [CLI](https://supabase.com/docs/guides/cli).
 
