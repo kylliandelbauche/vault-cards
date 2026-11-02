@@ -26,7 +26,7 @@ function renderScreen(initial: string[] = ['IA & agents']) {
 const onCard = () => within(screen.getByRole('region', { name: /^SUR CETTE CARTE/ }))
 const chips = () => onCard().queryAllByRole('listitem').map(li => li.textContent)
 const search = () => screen.getByRole('searchbox', { name: 'Rechercher ou créer un tag' }) as HTMLInputElement
-const row = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name.replace(/[&]/g, '\\&')}`) })
+const row = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) })
 
 describe('AddTagsScreen (#79)', () => {
   it('liste A–Z par lettre (accents et casse ignorés), nombre de cartes, tags de la carte cochés', () => {
