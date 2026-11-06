@@ -18,15 +18,17 @@ interface Props {
   onBack(): void
   /** Document (`inbox_id`) filtré à l'ouverture, depuis « Tes créations » (#86) ; absent : « Tous ». Retiré s'il n'existe plus. */
   initialDocumentId?: string
+  /** Recherche saisie à l'ouverture : celle d'avant « Étudier ces N cartes », retrouvée au retour de la révision (#125). */
+  initialQuery?: string
   /** Nom accessible de la flèche : l'écran de destination. */
   backLabel?: string
   /** Après une modification ou une suppression locale : synchro immédiate. */
   onWrite?(): void
   /**
    * « Étudier ces N cartes » (#105) : lance une révision libre des cartes de la liste filtrée (ids des résultats, pas de la
-   * tranche affichée). Absent : pas de bouton.
+   * tranche affichée), avec le filtre affiché pour le retrouver au retour (#125). Absent : pas de bouton.
    */
-  onStudy?(cardIds: string[]): void
+  onStudy?(cardIds: string[], filter: { documentId?: string; query: string }): void
 }
 
 /** Cartes rendues d'un coup, puis par tranches à l'approche du bas : l'ouverture reste instantanée avec 2000 cartes. */
@@ -50,9 +52,9 @@ function nearCard(anchor: DOMRect): CSSProperties {
  * « Étudier ces N cartes » (#105) : révision libre des cartes de la liste. Sans filtre, aucun bouton bleu : seul
  * l'anneau de focus du champ l'est.
  */
-export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accueil', onWrite, onStudy }: Props) {
+export function MyCardsScreen({ db, onBack, initialDocumentId, initialQuery = '', backLabel = 'Accueil', onWrite, onStudy }: Props) {
   const data = useMyCards(db)
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(initialQuery)
   const [documentId, setDocumentId] = useState<string | null>(initialDocumentId ?? null)
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<Card | null>(null)
@@ -201,7 +203,7 @@ export function MyCardsScreen({ db, onBack, initialDocumentId, backLabel = 'Accu
         {canStudy && (
           <footer className={`action-dock sticky bottom-0 z-20 shrink-0 pt-3.5 pb-[max(12px,var(--k-safe-area-bottom))] ${EDGES}`}>
             <div className="mx-auto max-w-xl">
-              <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass btn-filled gap-3`} onClick={() => onStudy(results.map(r => r.card.id))}>
+              <GlassButton tone="new" className={`${GLASS_PRIMARY} on-glass btn-filled gap-3`} onClick={() => onStudy(results.map(r => r.card.id), { documentId: doc?.id, query })}>
                 <svg aria-hidden="true" viewBox="0 0 24 24" className="size-[18px] shrink-0" fill="currentColor">
                   <path d="M7 4.5v15a1 1 0 0 0 1.5.87l12-7.5a1 1 0 0 0 0-1.74l-12-7.5A1 1 0 0 0 7 4.5z" />
                 </svg>

@@ -168,11 +168,16 @@ function SignedInScreens({ db, runSync, now, inbox, profile, nav, onSignOutSafe 
       <MyCardsScreen
         db={db}
         initialDocumentId={screen.documentId}
+        initialQuery={screen.query}
         onBack={back}
         backLabel={backLabel(previous)}
         onWrite={syncNow}
         // Révision libre des cartes filtrées (#105) : ne consomme pas le quota de nouvelles cartes.
-        onStudy={cardIds => openReview({ mode: 'all', cardIds })}
+        // Le filtre est gardé sur l'entrée de la pile : le retour de la révision le retrouve (#125).
+        onStudy={(cardIds, filter) => {
+          replace({ name: 'cards', ...filter })
+          openReview({ mode: 'all', cardIds })
+        }}
       />
     )
   }

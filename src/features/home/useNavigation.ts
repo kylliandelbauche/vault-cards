@@ -17,7 +17,7 @@ export interface DraftsTarget {
 export type Screen =
   | { name: 'home' }
   | { name: 'tags' }
-  | { name: 'cards'; documentId?: string }
+  | { name: 'cards'; documentId?: string; query?: string }
   | { name: 'hub' }
   | { name: 'profile'; view?: 'email' | 'password' }
   | { name: 'review'; scope: SessionScope }
