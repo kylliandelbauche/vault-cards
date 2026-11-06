@@ -138,6 +138,8 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
   const rated = useRef(new Set<string>())
   // Numéro du dernier chargement lancé : un chargement plus ancien qui se termine après est ignoré.
   const generation = useRef(0)
+  // Mode du dernier chargement demandé (file du jour ou révision libre) : « Réessayer » le reprend (#126).
+  const requested = useRef<SessionScope['mode']>('due')
   // Dernières valeurs de `store` / `now` / `scope`, lues par les gestionnaires sans en faire des dépendances.
   const io = useRef({ store, now, scope })
   useEffect(() => { io.current = { store, now, scope } })
@@ -149,6 +151,7 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
 
   // Lit le store et prépare l'état de départ de `scope`, puis l'applique s'il est encore le dernier demandé.
   const load = useCallback((target: SessionScope, mode: SessionScope['mode']) => {
+    requested.current = mode
     const gen = ++generation.current
     const { store, now } = io.current
     Promise.all([store.loadCards(), store.loadReviews()]).then(([cs, rs]) => {
@@ -296,8 +299,9 @@ export function useReviewSession(store: ReviewStore, now: () => Date = systemNow
     if (live.current.status === 'error') commit({ ...INITIAL, scope: target })
     load(target, mode)
   }, [load, commit])
-  // Session sur une liste de cartes (#105) : « Réessayer » rouvre la même révision, jamais la file du jour.
-  const restart = useCallback(() => reload(io.current.scope?.cardIds ? io.current.scope.mode : 'due'), [reload])
+  // « Réessayer » relance le dernier chargement demandé : une révision libre reste libre (#126), une liste de cartes
+  // reste cette liste (#105).
+  const restart = useCallback(() => reload(requested.current), [reload])
   const reviewAll = useCallback(() => reload('all'), [reload])
 
   const total = state.processed + state.queue.length
