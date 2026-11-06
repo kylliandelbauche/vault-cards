@@ -126,7 +126,7 @@ describe('MyCardsScreen (#80)', () => {
       await user.type(search(), 'RLS')
       await waitFor(() => expect(fronts()).toEqual(['Que garantit la RLS ?']))
       await user.click(await screen.findByRole('button', { name: 'Étudier cette carte' }))
-      expect(onStudy).toHaveBeenCalledWith(['m1'])
+      expect(onStudy).toHaveBeenCalledWith(['m1'], { documentId: undefined, query: 'RLS' })
     })
 
     it('recherche vide ou d’espaces seulement : pas de bouton ; aucun résultat : pas de bouton', async () => {
@@ -162,6 +162,13 @@ describe('MyCardsScreen (#80)', () => {
       } finally {
         vi.unstubAllGlobals()
       }
+    })
+
+    it('recherche reçue à l’ouverture (retour d’une révision, #125) : appliquée, bouton d’étude présent', async () => {
+      render(<KApp theme="ios"><MyCardsScreen db={db} initialQuery="RLS" onBack={vi.fn()} onStudy={vi.fn()} /></KApp>)
+      await waitFor(() => expect(fronts()).toEqual(['Que garantit la RLS ?']))
+      expect((search() as HTMLInputElement).value).toBe('RLS')
+      expect(await screen.findByRole('button', { name: 'Étudier cette carte' })).toBeTruthy()
     })
 
     it('sans onStudy : pas de bouton', async () => {
