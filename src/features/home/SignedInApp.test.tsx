@@ -374,6 +374,9 @@ describe('SignedInApp : Mes cartes (#80)', () => {
       await user.click(screen.getByRole('button', { name: 'Mes cartes' }))
       await waitFor(() => expect(heading()).toBe('Mes cartes'))
       expect(await screen.findByText('Question i1 ?')).toBeTruthy()
+      // #125 : le document choisi est retrouvé, le bouton d'étude aussi.
+      expect(screen.getByRole('button', { name: 'Cours FSRS.pdf, 2 cartes' }).className).toMatch('doc-chip-on')
+      expect(await screen.findByRole('button', { name: 'Étudier ces 2 cartes' })).toBeTruthy()
       await waitFor(() => expect(depth()).toBe(1))
       await user.click(screen.getByRole('button', { name: 'Accueil' }))
       await waitFor(() => expect(heading()).toBe("3 cartes à revoir aujourd'hui")) // les 2 étudiées sont passées, les 3 du vault restent
