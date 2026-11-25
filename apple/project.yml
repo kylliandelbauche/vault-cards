@@ -12,7 +12,9 @@ targets:
   VaultCards:
     type: application
     supportedDestinations: [iOS, macOS]
-    sources: [VaultCards]
+    sources:
+      - path: VaultCards
+        excludes: ["*.entitlements"]
     scheme: {}
     dependencies:
       - package: VaultCardsCore
@@ -31,3 +33,6 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
+        # Sandbox macOS : lecture et écriture des seuls fichiers et dossiers choisis par l'utilisateur (dossier de synchro).
+        ENABLE_USER_SELECTED_FILES: readwrite
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": VaultCards/VaultCards-macOS.entitlements

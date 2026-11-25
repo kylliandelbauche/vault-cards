@@ -133,6 +133,12 @@ public struct CardEvent: Equatable, Sendable {
     public var device: String
     public var at: Millis
     public var card: Card
+
+    public init(device: String, at: Millis, card: Card) {
+        self.device = device
+        self.at = at
+        self.card = card
+    }
 }
 
 public enum LineError: Error, Equatable, Sendable {

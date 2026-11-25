@@ -19,6 +19,36 @@ public enum Merge {
         }
     }
 
+    /// Carte connue sur un appareil avec son dernier changement `(at, device)`.
+    public struct Versioned: Equatable, Sendable {
+        public var card: Card
+        public var at: Millis
+        public var device: String
+
+        public init(card: Card, at: Millis, device: String) {
+            self.card = card
+            self.at = at
+            self.device = device
+        }
+    }
+
+    /// Applique un changement reçu à la carte locale ; nil si rien ne change. Appliquer tous les changements, dans
+    /// n'importe quel ordre, donne le même résultat que `cards(_:)` : tous les appareils convergent.
+    public static func apply(_ e: CardEvent, to local: Versioned?) -> Versioned? {
+        guard let local else { return Versioned(card: e.card, at: e.at, device: e.device) }
+        if (e.at, e.device) > (local.at, local.device) {
+            var card = e.card
+            if local.card.status == .active { card.status = .active }
+            return Versioned(card: card, at: e.at, device: e.device)
+        }
+        if e.card.status == .active && local.card.status == .draft {
+            var accepted = local
+            accepted.card.status = .active
+            return accepted
+        }
+        return nil
+    }
+
     /// Union des révisions par id (une révision est immuable), triées par instant puis id.
     public static func reviews(_ reviews: [Review]) -> [Review] {
         var seen = Set<String>()
