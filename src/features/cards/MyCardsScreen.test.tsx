@@ -284,6 +284,20 @@ describe('MyCardsScreen (#80)', () => {
     expect(await screen.findByRole('heading', { name: 'Modifier la carte' })).toBeTruthy()
   })
 
+  it('#170 : le minuteur qui retire l’écouteur du clic avalé ne lit plus `document` (démonté entre-temps)', async () => {
+    renderScreen()
+    await waitFor(() => expect(fronts()).toHaveLength(5))
+    swipe(face(row('Que garantit la RLS ?')), [280, 190])
+    const spy = vi.spyOn(globalThis, 'setTimeout')
+    fireEvent.pointerDown(search(), TOUCH) // toucher ailleurs : referme et arme le minuteur
+    const timer = spy.mock.calls.find(([, ms]) => ms === 800)?.[0] as (() => void) | undefined
+    spy.mockRestore()
+    expect(timer).toBeTypeOf('function')
+    cleanup()
+    vi.stubGlobal('document', undefined) // comme après la fin de l’environnement de test
+    try { expect(() => timer!()).not.toThrow() } finally { vi.unstubAllGlobals() }
+  })
+
   it('la liste suit Dexie (synchro) : carte ajoutée, brouillon accepté, carte supprimée ailleurs', async () => {
     renderScreen()
     await waitFor(() => expect(fronts()).toHaveLength(5))
