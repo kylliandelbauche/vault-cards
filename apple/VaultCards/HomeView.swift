@@ -10,6 +10,7 @@ struct HomeView: View {
     struct Session: Identifiable {
         let id = UUID()
         let items: [SessionItem]
+        let reviews: [Review]
         let free: Bool
     }
 
@@ -29,7 +30,7 @@ struct HomeView: View {
                 }
                 if !queue.isEmpty {
                     Button {
-                        session = Session(items: queue, free: false)
+                        session = Session(items: queue, reviews: reviews, free: false)
                     } label: {
                         Text("Réviser (\(queue.count))").frame(maxWidth: .infinity)
                     }
@@ -42,7 +43,7 @@ struct HomeView: View {
                             Text("Prochaine carte dans \(delayLabel(from: now, to: due)).").foregroundStyle(.secondary)
                         }
                         Button("Réviser à nouveau") {
-                            session = Session(items: freeQueue(cards, reviews, now: now), free: true)
+                            session = Session(items: freeQueue(cards, reviews, now: now), reviews: reviews, free: true)
                         }
                         .buttonStyle(.bordered)
                     }
@@ -55,7 +56,7 @@ struct HomeView: View {
             .padding()
             .navigationTitle("Vault Cards")
             .sheet(item: $session) { s in
-                ReviewSessionView(items: s.items, free: s.free)
+                ReviewSessionView(items: s.items, reviews: s.reviews, free: s.free)
             }
         }
     }

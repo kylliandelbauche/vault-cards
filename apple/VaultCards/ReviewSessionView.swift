@@ -4,27 +4,36 @@ import VaultCardsCore
 
 /// Session de révision : question, puis réponse, puis une note parmi À revoir / Difficile / Correct.
 struct ReviewSessionView: View {
-    let items: [SessionItem]
     /// Révision libre (« Réviser à nouveau ») : les notes sont marquées `free`.
     let free: Bool
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
-    @State private var index = 0
+    /// File restante : la carte affichée est la première. Une carte notée « À revoir » revient en fin de file (PWA).
+    @State private var queue: [SessionItem]
+    /// Historique connu (toutes les révisions), complété à chaque note pour recalculer l'état d'une carte remise en file.
+    @State private var history: [Review]
+    @State private var done = 0
     @State private var showBack = false
+
+    init(items: [SessionItem], reviews: [Review], free: Bool) {
+        self.free = free
+        _queue = State(initialValue: items)
+        _history = State(initialValue: reviews)
+    }
 
     var body: some View {
         NavigationStack {
             Group {
-                if index < items.count {
-                    card(items[index])
+                if let item = queue.first {
+                    card(item)
                 } else {
                     ContentUnavailableView("Session terminée", systemImage: "checkmark.circle",
-                                           description: Text("\(items.count) carte\(items.count > 1 ? "s" : "") révisée\(items.count > 1 ? "s" : "")."))
+                                           description: Text("\(done) révision\(done > 1 ? "s" : "")."))
                 }
             }
             .padding()
-            .navigationTitle(index < items.count ? "\(index + 1) / \(items.count)" : "Terminé")
+            .navigationTitle(queue.isEmpty ? "Terminé" : "Reste \(queue.count)")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
@@ -89,7 +98,9 @@ struct ReviewSessionView: View {
                             reviewedAt: Date.now.millis, free: free)
         context.insert(StoredReview(review))
         try? context.save()
+        history.append(review)
+        queue = afterRating(queue, rating: rating, cardHistory: history.filter { $0.cardId == item.card.id })
+        done += 1
         showBack = false
-        index += 1
     }
 }
