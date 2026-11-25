@@ -49,6 +49,9 @@ Inchangée, sauf mention :
   carte active ne redevient jamais brouillon.
 - Suppression douce seulement (`deleted_at`) : une carte supprimée garde son historique.
 - Origines : `manual` (écrite dans l'app), `vault` (générée depuis une note), `inbox` (brouillon proposé par l'IA).
+  Différence avec la PWA : dans l'app native, l'IA de l'utilisateur génère les cartes d'une note en **brouillons**
+  `vault` (avec `source_path` et `source_title`), à accepter, modifier ou rejeter. Dans la PWA, une carte `vault`
+  n'était jamais un brouillon, car l'outil `/flashcards` les écrivait directement.
 
 ## Dossier de synchro : format v1
 
@@ -99,6 +102,21 @@ révisions comptent, rien n'est perdu.
 - Fichier qui ne suit pas les noms ci-dessus (ex. copie de conflit du cloud) : ignoré.
 - Lecture incrémentale : l'app retient, par fichier, la taille déjà lue ; elle relit tout si le fichier a rétréci.
 - Écritures et lectures coordonnées (`NSFileCoordinator`) pour coopérer avec le fournisseur de fichiers.
+
+## Cartes depuis une note (tranche 5)
+
+- L'utilisateur choisit une note Markdown. Son titre suit les règles de `shared/source-title.ts` (premier H1 humanisé,
+  sinon le nom du fichier), et `source_path` est le nom du fichier.
+- L'app appelle l'API Messages d'Anthropic en HTTP, car il n'y a pas de SDK officiel en Swift
+  ([API Messages](https://platform.claude.com/docs/en/api/messages)). Elle utilise le modèle `claude-opus-5-5`, l'effort
+  `medium`, une réponse contrainte par un schéma JSON (structured outputs) et le repli côté serveur
+  `fallbacks: "default"` si le modèle décline.
+- Les règles de rédaction et de tags sont celles de `skill/flashcards/SKILL.md`. Le prompt reçoit les tags existants
+  et les questions déjà posées pour cette note.
+- La note est passée entre balises `<note>`, comme de la donnée. Une note vide ou trop longue est refusée, jamais
+  tronquée en silence.
+- Les propositions sont filtrées avant d'être gardées : question de 1 à 500 caractères, réponse de 1 à 1500, 1 à 5 tags
+  valides, pas de doublon de question, 50 cartes au plus.
 
 ## Sécurité et confidentialité
 

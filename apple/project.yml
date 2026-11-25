@@ -35,4 +35,6 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         # Sandbox macOS : lecture et écriture des seuls fichiers et dossiers choisis par l'utilisateur (dossier de synchro).
         ENABLE_USER_SELECTED_FILES: readwrite
+        # Sandbox macOS : connexions sortantes (API d'Anthropic, avec la clé de l'utilisateur).
+        ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": VaultCards/VaultCards-macOS.entitlements
