@@ -23,6 +23,7 @@ App native Mac + iPhone en cours (SwiftUI, sans serveur, synchro par fichiers JS
 
 ## Commandes
 - `npm run dev` · `npm test` · `npm run build`
+- App native : `cd apple/VaultCardsCore && swift test` (CI macOS ; pas de Swift dans le conteneur cloud) · `node tools/dev/fsrs-vectors.ts` régénère les vecteurs FSRS
 - `node tools/cards/cli.ts scan | tags | all | existing <path> | apply <file.json> [--confirm-delete=<n>] | retag <file.json> | titles | relink <file.json>` (synthèses `type: synthese` de `3-Resources/Second cerveau`, ou `VAULT_NOTES_DIR`)
 - `node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | transcribe <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge` : boîte de réception (brouillons ; `transcribe` : audio → texte, en local avec ffmpeg et whisper-cli ; voir skill/flashcards/SKILL.md)
   - Toute suppression de cartes exige `--confirm-delete=<n>` (n exact), seulement après confirmation explicite de Kyllian.
