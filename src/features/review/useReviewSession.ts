@@ -70,7 +70,10 @@ export interface ReviewSession {
   position: { n: number; total: number }
   stats: Stats
   nextDueAt: Date | null
-  /** Recharge une session normale : cartes dues + nouvelles du jour (du tag de la session, s'il y en a un). */
+  /**
+   * Relance le dernier chargement demandé (file du jour ou révision libre, #126), sur le même périmètre (tag, liste de
+   * cartes) : « Réessayer », et rechargement après une synchro (useAutoSync).
+   */
   restart(): void
   /** Révision libre (« Réviser à nouveau ») : toutes les cartes vivantes (du tag), dues ou non. */
   reviewAll(): void
