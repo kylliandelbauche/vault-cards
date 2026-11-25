@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { readAllByKey, sortCardsForOutput, KEYSET_PAGE_SIZE } from './lib.ts'
-import { fetchTagNames } from './inbox-cli.ts'
+import { fetchTagNames, listInboxFiles, runInbox } from './inbox-cli.ts'
 import { fetchAll, fetchCardTags, fetchLiveCardPaths, fetchTitledCards } from './reads.ts'
 
 // Ids de type uuid, triés comme le fait Postgres (comparaison d'octets de la forme canonique en minuscules).
@@ -307,5 +307,120 @@ describe('tools/cards (#70) : cli.ts et inbox-cli.ts', () => {
     expect(src).not.toMatch(/\.(update|insert|upsert|delete|rpc)\(/)
   })
 
-  // listAll (Storage, `inbox purge`) pagine encore par limit/offset : suivi dans l'issue #101, hors de ce correctif.
+  it('inbox-cli.ts : plus de pagination du Storage par décalage (#101)', async () => {
+    const src = await fs.readFile(path.join(import.meta.dirname, 'inbox-cli.ts'), 'utf8')
+    expect(src).not.toMatch(/\boffset\b/)
+    expect(src).not.toMatch(/\.list\(/)
+  })
+})
+
+// Faux Storage (#101) : list-v2 à plat, trié par nom, reprise strictement après le nom codé dans le curseur, comme le
+// serveur Storage (startAfter = nom du dernier objet de la page). `before` simule des écritures entre deux pages.
+function fakeStorage(names: string[], opts: { before?: (call: number, names: string[]) => void; reply?: (call: number) => unknown } = {}) {
+  const calls: { cursor?: string; limit?: number; sortBy?: unknown }[] = []
+  const removed: string[] = []
+  const created = new Map<string, string>()
+  const bucket = {
+    async listV2(o: { cursor?: string; limit?: number; sortBy?: unknown }) {
+      const call = calls.length
+      opts.before?.(call, names)
+      calls.push(o)
+      const forced = opts.reply?.(call)
+      if (forced !== undefined) return forced
+      const after = o.cursor === undefined ? null : Buffer.from(o.cursor, 'base64').toString()
+      const limit = o.limit ?? 1000
+      const rest = [...names].sort().filter(n => after === null || n > after)
+      const page = rest.slice(0, limit)
+      const hasNext = rest.length > limit
+      return {
+        data: {
+          hasNext,
+          folders: [],
+          objects: page.map(n => ({ name: n, id: `id-${n}`, created_at: created.get(n) ?? '2026-01-01T00:00:00.000Z' })),
+          ...(hasNext ? { nextCursor: Buffer.from(page[page.length - 1]).toString('base64') } : {}),
+        },
+        error: null,
+      }
+    },
+    async remove(paths: string[]) {
+      const present = paths.filter(p => names.includes(p)) // comme Storage : un fichier déjà absent n'est pas renvoyé
+      for (const p of present) names.splice(names.indexOf(p), 1)
+      removed.push(...present)
+      return { data: present.map(name => ({ name })), error: null }
+    },
+  }
+  return { storage: { from: (b: string) => { if (b !== 'inbox') throw new Error('bucket inattendu'); return bucket } }, calls, removed, created }
+}
+
+const filePath = (user: number, n: number) => `${uuid('a', user)}/${uuid('f', n)}`
+
+describe('listInboxFiles (#101 : pagination du Storage par clé, plus par décalage)', () => {
+  const many = (n: number) => Array.from({ length: n }, (_, i) => filePath(1 + (i % 3), i + 1))
+
+  it('plusieurs pages : tous les fichiers, chaque page reprend avec le curseur reçu, fin quand hasNext est faux', async () => {
+    const names = many(2500)
+    const st = fakeStorage(names)
+    const got = await listInboxFiles(st as unknown as SupabaseClient)
+    expect(got.map(f => f.path).sort()).toEqual([...names].sort())
+    expect(st.calls).toHaveLength(3)
+    expect(st.calls[0].cursor).toBeUndefined()
+    expect(st.calls.every(c => c.limit === 1000)).toBe(true)
+    expect(st.calls.every(c => JSON.stringify(c.sortBy) === JSON.stringify({ column: 'name', order: 'asc' }))).toBe(true)
+  })
+
+  it('fichier supprimé pendant la lecture : aucun autre fichier sauté (l’offset en sautait un)', async () => {
+    const names = many(2500)
+    const sorted = [...names].sort()
+    const gone = sorted[10] // lu en page 1, puis supprimé par un `complete` concurrent avant la page 2
+    const st = fakeStorage(names, { before: (call, live) => { if (call === 1) live.splice(live.indexOf(gone), 1) } })
+    const got = (await listInboxFiles(st as unknown as SupabaseClient)).map(f => f.path)
+    expect(got).toHaveLength(2500)
+    expect(new Set(got).size).toBe(2500)
+    expect(got).toContain(sorted[1000]) // premier fichier de la page 2 : avec un offset de 1000, il aurait été sauté
+  })
+
+  it('fichier déposé pendant la lecture : aucun fichier lu deux fois', async () => {
+    const names = many(2500)
+    const st = fakeStorage(names, { before: (call, live) => { if (call === 1) live.push(`${uuid('0', 0)}/${uuid('0', 0)}`) } })
+    const got = (await listInboxFiles(st as unknown as SupabaseClient)).map(f => f.path)
+    expect(new Set(got).size).toBe(got.length)
+    expect(got).toHaveLength(2500) // nouveau nom avant le curseur : vu à la purge suivante (récent, jamais purgé ici)
+  })
+
+  it('ne garde que les chemins <dossier>/<fichier>', async () => {
+    const st = fakeStorage([filePath(1, 1), 'racine', `${uuid('a', 1)}/sous/fichier`])
+    expect((await listInboxFiles(st as unknown as SupabaseClient)).map(f => f.path)).toEqual([filePath(1, 1)])
+  })
+
+  it('réponse incohérente ou erreur : la lecture s’arrête (aucune suppression possible)', async () => {
+    const db = (reply: (call: number) => unknown) => fakeStorage(many(5), { reply }) as unknown as SupabaseClient
+    await expect(listInboxFiles(db(() => ({ data: { hasNext: true, folders: [], objects: [] }, error: null })))).rejects.toThrow('sans nouveau curseur')
+    await expect(listInboxFiles(db(() => ({ data: { hasNext: true, nextCursor: 'x', folders: [], objects: [{ name: filePath(1, 1), id: '1', created_at: null }] }, error: null }))))
+      .rejects.toThrow('lu deux fois')
+    await expect(listInboxFiles(db(() => ({ data: { hasNext: true, nextCursor: 'x', folders: [], objects: [] }, error: null })) /* même curseur deux fois */))
+      .rejects.toThrow('sans nouveau curseur')
+    await expect(listInboxFiles(db(() => ({ data: null, error: { message: 'FeatureNotEnabled' } })))).rejects.toThrow('liste du stockage : FeatureNotEnabled')
+  })
+})
+
+describe('inbox purge (#101) : plus de 1000 fichiers, suppression concurrente', () => {
+  it('supprime tous les fichiers terminés et les orphelins anciens, garde les autres', async () => {
+    const names = Array.from({ length: 2400 }, (_, i) => filePath(1 + (i % 4), i + 1))
+    const sorted = [...names].sort()
+    // Statuts : un tiers done, un tiers pending, un tiers sans élément (orphelin) ; un orphelin sur deux est récent.
+    const status = new Map(sorted.flatMap((n, i) => (i % 3 === 0 ? [[n, 'done']] : i % 3 === 1 ? [[n, 'pending']] : [])) as [string, string][])
+    status.set(sorted[1000], 'done') // premier fichier de la page 2 : celui que la lecture par décalage aurait sauté
+    const st = fakeStorage(names, { before: (call, live) => { if (call === 1) live.splice(live.indexOf(sorted[5]), 1) } })
+    const recent = new Date().toISOString()
+    sorted.forEach((n, i) => { if (i % 3 === 2 && i % 2 === 0) st.created.set(n, recent) })
+    const inbox = {
+      update: () => ({ eq: () => ({ lt: () => ({ select: async () => ({ data: [], error: null }) }) }) }),
+      select: () => ({ in: async (_c: string, paths: string[]) => ({ data: paths.filter(p => status.has(p)).map(p => ({ storage_path: p, status: status.get(p) })), error: null }) }),
+    }
+    const db = { storage: st.storage, from: (t: string) => { if (t !== 'inbox') throw new Error('table inattendue'); return inbox } } as unknown as SupabaseClient
+    await runInbox(db, { action: 'purge' })
+    const expected = sorted.filter((n, i) => n !== sorted[5] && (status.get(n) === 'done' || (i % 3 === 2 && i % 2 === 1)))
+    expect([...st.removed].sort()).toEqual(expected)
+    expect(st.removed).toContain(sorted[1000])
+  })
 })
