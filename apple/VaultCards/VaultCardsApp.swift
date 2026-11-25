@@ -36,6 +36,8 @@ struct RootView: View {
                 .tabItem { Label("Accueil", systemImage: "rectangle.stack") }
             CardsView()
                 .tabItem { Label("Mes cartes", systemImage: "list.bullet") }
+            GenerateView()
+                .tabItem { Label("Générer", systemImage: "sparkles") }
             SyncView()
                 .tabItem { Label("Synchro", systemImage: "arrow.triangle.2.circlepath") }
         }

@@ -12,3 +12,5 @@ Spec : `docs/specs/2026-11-25-app-apple-native.md` · Plan : `docs/plans/2026-11
   écrit `VaultCards/` (format v1 de la spec) ; la base locale reste hors de ce dossier.
 - Import depuis la PWA : sur le Mac, `node tools/export/cli.ts <dossier choisi dans l'app>` (lit Supabase avec la clé
   secrète de `.env.local`, sans rien y modifier) ; l'app reçoit cartes et historique à sa synchro suivante.
+- Cartes depuis une note : onglet « Générer », saisir sa clé API Anthropic (gardée dans le trousseau), choisir une
+  note Markdown ; les cartes proposées arrivent en brouillons à accepter, modifier ou rejeter.
