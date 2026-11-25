@@ -45,5 +45,14 @@ struct RootView: View {
         .onChange(of: phase, initial: true) { _, now in
             if now == .active { sync.soon(context) }
         }
+        // Tant que l'app est active (sur Mac, la fenêtre peut le rester des heures) : une synchro par minute.
+        .task(id: phase) {
+            guard phase == .active else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                if Task.isCancelled { break }
+                await sync.sync(context)
+            }
+        }
     }
 }
