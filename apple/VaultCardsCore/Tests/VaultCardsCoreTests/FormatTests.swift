@@ -96,4 +96,20 @@ final class FormatTests: XCTestCase {
         XCTAssertNotNil(Tags.error("a\u{0007}"))
         XCTAssertNil(Tags.error("IA & agents"))
     }
+
+    /// Lignes écrites par l'export de la PWA (tools/export/lib.test.ts) : lues telles quelles par l'app.
+    func testReadsLinesWrittenByThePWAExport() {
+        let cards = Data(("{\"at\":\"2026-11-25T13:16:29.123Z\",\"back\":\"R\",\"created_at\":\"2026-10-12T08:00:00.000Z\",\"deck\":null,"
+            + "\"deleted_at\":\"2026-11-26T00:00:00.000Z\",\"front\":\"Q / é\",\"id\":\"c1\",\"source\":\"manual\",\"source_path\":null,"
+            + "\"source_title\":null,\"status\":\"active\",\"tags\":[\"IA\"],\"v\":1}\n").utf8)
+        let read = Journal.readCards(cards, device: device)
+        XCTAssertEqual(read.errors, [])
+        XCTAssertEqual(read.items.first?.at, ISOTimestamp.parse("2026-11-25T13:16:29.123Z"))
+        XCTAssertEqual(read.items.first?.card, Card(id: "c1", source: .manual, front: "Q / é", back: "R", tags: ["IA"],
+                                                    deletedAt: ISOTimestamp.parse("2026-11-26T00:00:00.000Z"),
+                                                    createdAt: ISOTimestamp.parse("2026-10-12T08:00:00.000Z")))
+        let reviews = Data("{\"card_id\":\"c1\",\"free\":false,\"id\":\"r1\",\"rating\":2,\"reviewed_at\":\"2026-11-25T13:16:29.123Z\",\"v\":1}\n".utf8)
+        XCTAssertEqual(Journal.readReviews(reviews).items,
+                       [Review(id: "r1", cardId: "c1", rating: .hard, reviewedAt: ISOTimestamp.parse("2026-11-25T13:16:29.123Z")!)])
+    }
 }

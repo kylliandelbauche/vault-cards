@@ -27,6 +27,7 @@ App native Mac + iPhone en cours (SwiftUI, sans serveur, synchro par fichiers JS
 - `node tools/cards/cli.ts scan | tags | all | existing <path> | apply <file.json> [--confirm-delete=<n>] | retag <file.json> | titles | relink <file.json>` (synthèses `type: synthese` de `3-Resources/Second cerveau`, ou `VAULT_NOTES_DIR`)
 - `node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | transcribe <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge` : boîte de réception (brouillons ; `transcribe` : audio → texte, en local avec ffmpeg et whisper-cli ; voir skill/flashcards/SKILL.md)
   - Toute suppression de cartes exige `--confirm-delete=<n>` (n exact), seulement après confirmation explicite de Kyllian.
+- `node tools/export/cli.ts <dossier>` : export de la PWA (lecture seule de Supabase, clé secrète) vers le dossier de synchro de l'app native, comme un appareil « Import de la PWA »
 - `supabase db push` (migrations dans `supabase/migrations/`)
 - `supabase db query --linked -f supabase/tests/manual_cards.sql` (et `supabase/tests/inbox.sql`, `supabase/tests/tags.sql`, `supabase/tests/length_limits.sql`) : preuves des droits (transaction annulée, aucune trace)
 - `node tools/dev/rest-check.ts` et `node tools/dev/rest-check-inbox.ts` : vérification de l'API REST / Storage avec un vrai compte (e-mail + mot de passe masqué demandés, clé publishable seulement) — voir docs/rest-check.md
