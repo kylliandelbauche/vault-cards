@@ -15,12 +15,13 @@ func delayLabel(from now: Millis, to due: Millis) -> String {
     return years == 1 ? "1 an" : "\(years) ans"
 }
 
+/// Libellés des notes, ceux de la PWA (RatingBar.tsx).
 extension Rating {
     var label: String {
         switch self {
-        case .again: return "À revoir"
-        case .hard: return "Difficile"
-        case .good: return "Correct"
+        case .again: return "Je ne sais pas"
+        case .hard: return "Moyen"
+        case .good: return "Très bien"
         }
     }
 }

@@ -140,7 +140,17 @@ révisions comptent, rien n'est perdu.
 - Accueil, « Mes tags » : les tags des cartes vivantes (pas de registre de tags dans l'app native), triés par nombre
   de cartes puis A–Z en français, avec la file du jour de chacun (règles de `src/lib/home.ts`). Un tap lance la
   session du jour du tag ; si elle est vide, une révision libre du tag (notes `free`), comme « Réviser à nouveau ».
-- Révision au clavier (Mac, iPad) : espace pour la réponse, 1 À revoir, 2 Difficile, 3 Correct, comme la PWA.
+- Révision au clavier (Mac, iPad) : espace pour la réponse, 1 Je ne sais pas, 2 Moyen, 3 Très bien, comme la PWA.
+
+## Révision : carte, menu et bilan (parité PWA)
+
+- Notes : « Je ne sais pas », « Moyen », « Très bien » (libellés de `RatingBar.tsx`).
+- En haut de la carte : titre de la source (sinon nom de fichier humanisé, sinon « Carte perso » ; jamais le chemin),
+  puis les tags sans doublon (casse ignorée), comme `CardView.tsx`.
+- Menu ⋯ : « Modifier » (même formulaire que « Mes cartes ») et « Supprimer » (confirmation, suppression douce ; la
+  carte sort de la file, son historique reste).
+- Bilan : nombre de chaque note (rien si aucune note), prochaine échéance, « Réviser à nouveau » (révision libre du
+  même périmètre : tout, le tag ou la liste choisie) et « Retour à l'accueil ».
 
 ## Sécurité et confidentialité
 
