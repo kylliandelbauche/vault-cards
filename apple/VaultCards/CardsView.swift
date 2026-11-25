@@ -2,13 +2,24 @@ import SwiftData
 import SwiftUI
 import VaultCardsCore
 
-/// « Mes cartes » : cartes vivantes, recherche, création, modification et suppression douce.
+/// « Mes cartes » (MyCardsScreen de la PWA) : cartes vivantes, recherche sans accents ni casse, filtre par document
+/// importé, « Étudier ces N cartes » quand un filtre est actif, création, modification et suppression douce.
 struct CardsView: View {
     @Query(sort: \StoredCard.updatedAt, order: .reverse) private var cards: [StoredCard]
+    @Query private var storedReviews: [StoredReview]
     @Environment(\.modelContext) private var context
     @Environment(SyncService.self) private var sync
     @State private var search = ""
+    @State private var document: String?
     @State private var editing: Editing?
+    @State private var studying: Study?
+
+    struct Study: Identifiable {
+        let id = UUID()
+        let items: [SessionItem]
+        let reviews: [Review]
+        let scope: Set<String>
+    }
 
     enum Editing: Identifiable {
         case new
@@ -21,43 +32,76 @@ struct CardsView: View {
         }
     }
 
-    private var visible: [StoredCard] {
-        let live = cards.filter { $0.deletedAt == nil && $0.status != CardStatus.draft.rawValue }
-        let q = search.trimmingCharacters(in: .whitespaces)
-        guard !q.isEmpty else { return live }
-        return live.filter {
-            $0.front.localizedCaseInsensitiveContains(q) || $0.back.localizedCaseInsensitiveContains(q)
-                || $0.tags.contains { Tags.same($0, q) }
-        }
+    private var index: MyCards.Index {
+        let updated = Dictionary(cards.map { ($0.id, $0.updatedAt.millis) }, uniquingKeysWith: { a, _ in a })
+        return MyCards.index(cards.map(\.card), updatedAt: { updated[$0.id] ?? 0 })
     }
 
     var body: some View {
-        NavigationStack {
+        let index = self.index
+        let shown = MyCards.filter(index.cards, query: search, document: document)
+        let byId = Dictionary(cards.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let filtered = document != nil || !search.trimmingCharacters(in: .whitespaces).isEmpty
+        return NavigationStack {
             List {
-                ForEach(visible) { card in
-                    Button {
-                        editing = .card(card)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(card.front).lineLimit(2)
-                            Text(card.tags.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                if !index.documents.isEmpty {
+                    Section {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                chip("Tous", selected: document == nil) { document = nil }
+                                ForEach(index.documents, id: \.label) { doc in
+                                    chip("\(doc.label) · \(doc.count)", selected: document == doc.label) {
+                                        document = document == doc.label ? nil : doc.label
+                                    }
+                                    .accessibilityLabel("\(doc.label), \(doc.count) carte\(doc.count > 1 ? "s" : "")")
+                                }
+                            }
                         }
                     }
-                    .buttonStyle(.plain)
-                    .swipeActions {
-                        Button("Supprimer", role: .destructive) { delete(card) }
-                    }
-                    .contextMenu {
-                        Button("Supprimer", role: .destructive) { delete(card) }
+                }
+                ForEach(shown, id: \.card.id) { item in
+                    if let card = byId[item.card.id] {
+                        Button {
+                            editing = .card(card)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(card.front).lineLimit(2)
+                                Text(item.card.displayTags.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .swipeActions {
+                            Button("Supprimer", role: .destructive) { delete(card) }
+                        }
+                        .contextMenu {
+                            Button("Supprimer", role: .destructive) { delete(card) }
+                        }
                     }
                 }
             }
             .overlay {
-                if visible.isEmpty {
-                    ContentUnavailableView(search.isEmpty ? "Aucune carte" : "Aucun résultat", systemImage: "rectangle.stack")
+                if shown.isEmpty {
+                    ContentUnavailableView(filtered ? "Aucun résultat" : "Aucune carte", systemImage: "rectangle.stack")
                 }
             }
-            .searchable(text: $search, prompt: "Rechercher")
+            .safeAreaInset(edge: .bottom) {
+                // Filtre actif (document ou recherche) : révision libre des cartes de la liste (#105 de la PWA).
+                if filtered && !shown.isEmpty {
+                    Button {
+                        let picked = shown.map(\.card)
+                        let reviews = storedReviews.compactMap(\.review)
+                        studying = Study(items: freeQueue(picked, reviews, now: Date.now.millis), reviews: reviews,
+                                         scope: Set(picked.map(\.id)))
+                    } label: {
+                        Text("Étudier \(shown.count == 1 ? "cette carte" : "ces \(shown.count) cartes")")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding()
+                }
+            }
+            .searchable(text: $search, prompt: "Rechercher dans mes cartes")
             .navigationTitle("Mes cartes")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -68,6 +112,12 @@ struct CardsView: View {
                     }
                 }
             }
+            .onChange(of: index.documents) { _, docs in
+                if let document, !docs.contains(where: { $0.label == document }) { self.document = nil }
+            }
+            .sheet(item: $studying, onDismiss: { sync.soon(context) }) { s in
+                ReviewSessionView(items: s.items, reviews: s.reviews, free: true, scope: s.scope)
+            }
             .sheet(item: $editing) { e in
                 switch e {
                 case .new: CardEditor(card: nil)
@@ -75,6 +125,13 @@ struct CardsView: View {
                 }
             }
         }
+    }
+
+    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Text(title).lineLimit(1) }
+            .buttonStyle(.bordered)
+            .tint(selected ? .accentColor : .secondary)
+            .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     /// Suppression douce : la carte garde son historique de révisions.
