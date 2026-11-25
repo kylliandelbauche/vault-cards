@@ -147,14 +147,30 @@ async function failItem(db: SupabaseClient, id: string, message: string) {
  */
 const LIST_PAGE = 1000
 
-/** Toutes les entrées d'un dossier du bucket, page par page. */
-async function listAll(db: SupabaseClient, prefix: string) {
-  const out: { name: string; id: string | null; created_at: string | null }[] = []
-  for (let offset = 0; ; offset += LIST_PAGE) {
-    const res = await db.storage.from(BUCKET).list(prefix, { limit: LIST_PAGE, offset, sortBy: { column: 'name', order: 'asc' } })
+/**
+ * Tous les fichiers du bucket (`<uid>/<uuid>`), en pagination par clé (#101) : `listV2` (API Storage list-v2) reprend
+ * chaque page après le nom du dernier objet lu (curseur `nextCursor`, tri par nom), comme `readAllByKey` (#70) pour les
+ * tables. L'ancienne lecture par `limit` et décalage pouvait sauter un fichier si un autre disparaissait pendant la
+ * lecture (suppression par un `complete` ou un `fail` concurrent) : il restait orphelin jusqu'à la purge suivante.
+ * Liste à plat (sans délimiteur) : `name` est le chemin complet. Seuls les chemins `<dossier>/<fichier>` sont gardés,
+ * les seuls que la policy de dépôt autorise et ceux que l'ancienne lecture par dossier voyait.
+ * `listV2` est marqué expérimental dans supabase-js : toute réponse incohérente arrête la purge (rien n'est supprimé).
+ */
+export async function listInboxFiles(db: SupabaseClient): Promise<{ path: string; created_at: string | null }[]> {
+  const out: { path: string; created_at: string | null }[] = []
+  const seen = new Set<string>()
+  let cursor: string | undefined
+  for (;;) {
+    const res = await db.storage.from(BUCKET).listV2({ limit: LIST_PAGE, sortBy: { column: 'name', order: 'asc' }, ...(cursor === undefined ? {} : { cursor }) })
     if (res.error) fail('liste du stockage', res.error)
-    out.push(...res.data)
-    if (res.data.length < LIST_PAGE) return out
+    for (const o of res.data.objects) {
+      if (seen.has(o.name)) throw new Error('liste du stockage : fichier lu deux fois (curseur inattendu)')
+      seen.add(o.name)
+      if (o.name.split('/').length === 2) out.push({ path: o.name, created_at: o.created_at ?? null })
+    }
+    if (!res.data.hasNext) return out
+    if (!res.data.nextCursor || res.data.nextCursor === cursor) throw new Error('liste du stockage : page suivante annoncée sans nouveau curseur')
+    cursor = res.data.nextCursor
   }
 }
 
@@ -169,13 +185,8 @@ async function purge(db: SupabaseClient) {
     .eq('status', 'pending').lt('created_at', new Date(now - PENDING_EXPIRY_MS).toISOString()).select('id')
   if (expired.error) fail('éléments expirés', expired.error)
 
-  const files: { path: string; created_at: string }[] = []
-  for (const folder of (await listAll(db, '')).filter(e => e.id === null)) {
-    for (const f of await listAll(db, folder.name)) {
-      // date inconnue : jamais purgé comme orphelin
-      if (f.id !== null) files.push({ path: `${folder.name}/${f.name}`, created_at: f.created_at ?? new Date(now).toISOString() })
-    }
-  }
+  // date inconnue : jamais purgé comme orphelin
+  const files = (await listInboxFiles(db)).map(f => ({ path: f.path, created_at: f.created_at ?? new Date(now).toISOString() }))
   const status = new Map<string, string>()
   for (const paths of chunk(files.map(f => f.path), 50)) {
     const { data, error } = await db.from('inbox').select('storage_path, status').in('storage_path', paths)
