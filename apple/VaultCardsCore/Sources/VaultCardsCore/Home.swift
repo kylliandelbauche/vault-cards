@@ -50,3 +50,36 @@ public func tagCounts(_ cards: [Card], _ reviews: [Review], now: Millis, newLimi
                  today: queueOf(items, grouped, now: now, newLimit: newLimit, tag: name, calendar: calendar).count)
     }
 }
+
+/// Seuil « maîtrisée » : stabilité FSRS ≥ 21 jours, l'équivalent du « mature » d'Anki (`MASTERED_STABILITY_DAYS`).
+public let masteredStabilityDays = 21.0
+
+public func isMastered(_ s: FSRSCard) -> Bool { s.state == .review && s.stability >= masteredStabilityDays }
+
+/// Compteurs du bloc du jour de l'accueil, toutes les cartes (`DayCounts` de src/lib/home.ts).
+public struct DayCounts: Equatable, Sendable {
+    /// Taille de la file du jour = `due` + `fresh` (celle de « Commencer à étudier »).
+    public var today: Int
+    /// À revoir : cartes déjà vues dont l'échéance est passée.
+    public var due: Int
+    /// Nouvelles : jamais vues, dans la limite du quota du jour.
+    public var fresh: Int
+    /// Maîtrisées : état Review et stabilité ≥ 21 jours.
+    public var mastered: Int
+    /// Cartes vivantes.
+    public var total: Int
+    /// Prochaine échéance à venir (cartes déjà vues), ou nil.
+    public var nextDueAt: Millis?
+}
+
+public func dayCounts(_ cards: [Card], _ reviews: [Review], now: Millis, newLimit: Int = newPerDay,
+                      calendar: Calendar = .current) -> DayCounts {
+    let grouped = byCard(reviews)
+    let items = scheduleItems(cards, grouped)
+    let queue = queueOf(items, grouped, now: now, newLimit: newLimit, calendar: calendar)
+    let fresh = queue.filter { $0.state.state == .new }.count
+    let seen = items.filter { $0.state.state != .new }
+    return DayCounts(today: queue.count, due: queue.count - fresh, fresh: fresh,
+                     mastered: items.filter { isMastered($0.state) }.count, total: items.count,
+                     nextDueAt: seen.map(\.state.due).filter { $0 > now }.min())
+}

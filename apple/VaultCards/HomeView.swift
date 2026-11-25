@@ -23,7 +23,7 @@ struct HomeView: View {
         let reviews = storedReviews.compactMap(\.review)
         let now = Date.now.millis
         let queue = buildQueue(cards, reviews, now: now)
-        let kinds = countKinds(queue)
+        let day = dayCounts(cards, reviews, now: now)
         let allTags = tagCounts(cards, reviews, now: now)
         let tags = Tags.shortcuts(allTags)
         let study: (String) -> Void = { tag in
@@ -35,30 +35,48 @@ struct HomeView: View {
         }
         return NavigationStack {
             VStack(spacing: 24) {
-                HStack(spacing: 16) {
-                    Counter(value: kinds.new, label: "Nouvelles", color: .blue)
-                    Counter(value: kinds.learn, label: "En cours", color: .orange)
-                    Counter(value: kinds.due, label: "À revoir", color: .green)
-                }
-                if !queue.isEmpty {
-                    Button {
-                        session = Session(items: queue, reviews: reviews, free: false)
-                    } label: {
-                        Text("Réviser (\(queue.count))").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                } else if cards.contains(where: \.isLive) {
-                    VStack(spacing: 12) {
-                        Text("Tout est révisé pour l'instant.").font(.headline)
-                        if let due = nextDue(cards, reviews, now: now) {
-                            Text("Prochaine carte dans \(delayLabel(from: now, to: due)).").foregroundStyle(.secondary)
+                if day.total > 0 {
+                    // Bloc du jour (HomeScreen de la PWA) : file du jour, 3 compteurs, puis l'action.
+                    VStack(alignment: .leading, spacing: 16) {
+                        if day.today > 0 {
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("\(day.today)").font(.system(size: 52, weight: .bold)).monospacedDigit()
+                                Text("\(day.today > 1 ? "cartes" : "carte") à revoir aujourd'hui").font(.title3.weight(.semibold))
+                            }
+                            .accessibilityElement(children: .combine)
+                        } else {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Aucune carte à revoir aujourd'hui").font(.title2.weight(.semibold))
+                                Text(day.nextDueAt.map { "Prochaine révision dans \(delayLabel(from: now, to: $0))." }
+                                     ?? "Tout est à jour.")
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-                        Button("Réviser à nouveau") {
-                            session = Session(items: freeQueue(cards, reviews, now: now), reviews: reviews, free: true)
+                        HStack(spacing: 8) {
+                            Counter(value: day.due, label: "À revoir", color: .orange)
+                            Counter(value: day.fresh, label: "Nouvelles", color: .blue)
+                            Counter(value: day.mastered, label: "Maîtrisées", color: .green)
                         }
-                        .buttonStyle(.bordered)
+                        if day.today > 0 {
+                            Button {
+                                session = Session(items: queue, reviews: reviews, free: false)
+                            } label: {
+                                Label("Commencer à étudier", systemImage: "play.fill").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                        } else {
+                            Button {
+                                session = Session(items: freeQueue(cards, reviews, now: now), reviews: reviews, free: true)
+                            } label: {
+                                Text("Réviser à nouveau").frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.large)
+                        }
                     }
+                    .padding()
+                    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 24))
                 }
                 if !tags.isEmpty {
                     TagShortcuts(tags: tags, study: study) {
@@ -119,18 +137,23 @@ private struct TagShortcuts<Destination: View>: View {
     }
 }
 
+/// Compteur du bloc du jour : chiffre neutre, pastille de couleur décorative devant le libellé.
 private struct Counter: View {
     let value: Int
     let label: String
     let color: Color
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text("\(value)").font(.largeTitle.bold()).foregroundStyle(color)
-            Text(label).font(.caption).foregroundStyle(.secondary)
+        VStack(spacing: 2) {
+            Text("\(value)").font(.title.bold()).monospacedDigit()
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 8, height: 8).accessibilityHidden(true)
+                Text(label).font(.footnote).foregroundStyle(.secondary)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
     }
 }
