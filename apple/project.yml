@@ -1,0 +1,33 @@
+# Projet Xcode de l'app native, généré par XcodeGen : `cd apple && xcodegen` crée VaultCards.xcodeproj (non versionné).
+name: VaultCards
+options:
+  bundleIdPrefix: io.github.kylliandelbauche
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+packages:
+  VaultCardsCore:
+    path: VaultCardsCore
+targets:
+  VaultCards:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources: [VaultCards]
+    scheme: {}
+    dependencies:
+      - package: VaultCardsCore
+    settings:
+      base:
+        PRODUCT_NAME: Vault Cards
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.kylliandelbauche.vaultcards
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Vault Cards
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.education
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES

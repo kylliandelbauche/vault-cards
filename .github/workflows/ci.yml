@@ -32,3 +32,11 @@ jobs:
           persist-credentials: false
       - run: swift --version
       - run: swift test
+      # App SwiftUI (#160) : projet généré par XcodeGen, compilé pour iOS (simulateur) et macOS, sans signature.
+      - run: brew install xcodegen
+      - run: xcodegen
+        working-directory: apple
+      - run: xcodebuild -project VaultCards.xcodeproj -scheme VaultCards -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+        working-directory: apple
+      - run: xcodebuild -project VaultCards.xcodeproj -scheme VaultCards -destination 'generic/platform=macOS' CODE_SIGNING_ALLOWED=NO build
+        working-directory: apple

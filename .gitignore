@@ -40,3 +40,4 @@ skills-lock.json
 # Swift
 apple/**/.build/
 apple/**/.swiftpm/
+apple/VaultCards.xcodeproj/
