@@ -152,6 +152,14 @@ révisions comptent, rien n'est perdu.
 - Bilan : nombre de chaque note (rien si aucune note), prochaine échéance, « Réviser à nouveau » (révision libre du
   même périmètre : tout, le tag ou la liste choisie) et « Retour à l'accueil ».
 
+## Mes cartes : recherche et documents (parité PWA)
+
+- Recherche locale sur la question, la réponse, les tags et le nom du document : tous les mots, en tout ordre, sans
+  accents ni casse (règles de `src/lib/myCards.ts`).
+- Rangée « Tous » + documents importés : les cartes `inbox` actives, regroupées par titre (le format v1 n'a pas
+  d'`inbox_id`, donc deux éléments de même titre forment un seul document), le plus récent d'abord.
+- Filtre actif (document ou recherche) : « Étudier ces N cartes », révision libre des cartes de la liste.
+
 ## Sécurité et confidentialité
 
 - Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et vers le fournisseur
