@@ -2,7 +2,9 @@ import Foundation
 import SwiftData
 import VaultCardsCore
 
-/// Carte enregistrée sur l'appareil. `journaled` : pas encore écrite dans le journal de l'appareil (tranche 3).
+/// Carte enregistrée sur l'appareil. `journaled` : déjà écrite dans le journal de l'appareil (ou reçue d'un autre).
+/// `updatedAt` et `updatedBy` : dernier changement `(at, device)` connu, comparé par la fusion ; `updatedBy` vide pour
+/// un changement fait sur cet appareil.
 @Model
 final class StoredCard {
     @Attribute(.unique) var id: String
@@ -18,6 +20,7 @@ final class StoredCard {
     var sourcePath: String?
     var sourceTitle: String?
     var journaled: Bool
+    var updatedBy: String = ""
 
     init(_ card: Card, updatedAt: Date = .now) {
         id = card.id
@@ -33,6 +36,27 @@ final class StoredCard {
         sourcePath = card.sourcePath
         sourceTitle = card.sourceTitle
         journaled = false
+    }
+
+    /// Changement fait sur cet appareil : à écrire dans son journal à la prochaine synchro.
+    func touch() {
+        updatedAt = .now
+        updatedBy = ""
+        journaled = false
+    }
+
+    /// Contenu d'une carte reçue (l'id ne change pas).
+    func set(_ card: Card) {
+        source = card.source.rawValue
+        status = card.status.rawValue
+        front = card.front
+        back = card.back
+        tags = card.tags
+        deletedAt = card.deletedAt.map { Date(millis: $0) }
+        createdAt = card.createdAt.map { Date(millis: $0) }
+        deck = card.deck
+        sourcePath = card.sourcePath
+        sourceTitle = card.sourceTitle
     }
 
     var card: Card {

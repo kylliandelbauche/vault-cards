@@ -3,8 +3,8 @@ import SwiftUI
 
 @main
 struct VaultCardsApp: App {
-    /// Base locale de l'appareil (SwiftData, stockée en SQLite), jamais synchronisée par iCloud : la synchro passera par
-    /// le dossier choisi par l'utilisateur (spec docs/specs/2026-11-25-app-apple-native.md).
+    /// Base locale de l'appareil (SwiftData, stockée en SQLite), jamais synchronisée par iCloud : la synchro passe par
+    /// le dossier choisi par l'utilisateur (SyncService, spec docs/specs/2026-11-25-app-apple-native.md).
     let container: ModelContainer = {
         let schema = Schema([StoredCard.self, StoredReview.self])
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .none)
@@ -14,22 +14,34 @@ struct VaultCardsApp: App {
             fatalError("Base locale illisible : \(error)")
         }
     }()
+    @State private var sync = SyncService()
 
     var body: some Scene {
         WindowGroup {
             RootView()
         }
         .modelContainer(container)
+        .environment(sync)
     }
 }
 
 struct RootView: View {
+    @Environment(SyncService.self) private var sync
+    @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var phase
+
     var body: some View {
         TabView {
             HomeView()
                 .tabItem { Label("Accueil", systemImage: "rectangle.stack") }
             CardsView()
                 .tabItem { Label("Mes cartes", systemImage: "list.bullet") }
+            SyncView()
+                .tabItem { Label("Synchro", systemImage: "arrow.triangle.2.circlepath") }
+        }
+        // Au retour dans l'app, les changements des autres appareils sont lus.
+        .onChange(of: phase, initial: true) { _, now in
+            if now == .active { sync.soon(context) }
         }
     }
 }

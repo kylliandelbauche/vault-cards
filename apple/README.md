@@ -8,3 +8,5 @@ Spec : `docs/specs/2026-11-25-app-apple-native.md` · Plan : `docs/plans/2026-11
 - `VaultCards/` + `project.yml` : app SwiftUI Mac + iPhone. Ouvrir dans Xcode :
   `brew install xcodegen && cd apple && xcodegen && open VaultCards.xcodeproj`, choisir son équipe dans
   « Signing & Capabilities », puis lancer sur l'iPhone ou le Mac.
+- Synchro : onglet « Synchro », choisir le même dossier (iCloud Drive, Google Drive…) sur chaque appareil. L'app y
+  écrit `VaultCards/` (format v1 de la spec) ; la base locale reste hors de ce dossier.

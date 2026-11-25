@@ -6,6 +6,7 @@ import VaultCardsCore
 struct CardsView: View {
     @Query(sort: \StoredCard.updatedAt, order: .reverse) private var cards: [StoredCard]
     @Environment(\.modelContext) private var context
+    @Environment(SyncService.self) private var sync
     @State private var search = ""
     @State private var editing: Editing?
 
@@ -79,9 +80,9 @@ struct CardsView: View {
     /// Suppression douce : la carte garde son historique de révisions.
     private func delete(_ card: StoredCard) {
         card.deletedAt = .now
-        card.updatedAt = .now
-        card.journaled = false
+        card.touch()
         try? context.save()
+        sync.soon(context)
     }
 }
 
@@ -89,6 +90,7 @@ struct CardEditor: View {
     let card: StoredCard?
 
     @Environment(\.modelContext) private var context
+    @Environment(SyncService.self) private var sync
     @Environment(\.dismiss) private var dismiss
     @State private var front = ""
     @State private var back = ""
@@ -151,14 +153,14 @@ struct CardEditor: View {
                 card.front = f
                 card.back = b
                 card.tags = names
-                card.updatedAt = .now
-                card.journaled = false
+                card.touch()
             } else {
                 let now = Date.now
                 context.insert(StoredCard(Card(id: UUID().uuidString.lowercased(), source: .manual, front: f, back: b,
                                                tags: names, createdAt: now.millis), updatedAt: now))
             }
             try context.save()
+            sync.soon(context)
             dismiss()
         } catch {
             message = error.localizedDescription

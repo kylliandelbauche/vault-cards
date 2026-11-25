@@ -6,6 +6,8 @@ struct HomeView: View {
     @Query private var storedCards: [StoredCard]
     @Query private var storedReviews: [StoredReview]
     @State private var session: Session?
+    @Environment(\.modelContext) private var context
+    @Environment(SyncService.self) private var sync
 
     struct Session: Identifiable {
         let id = UUID()
@@ -55,7 +57,7 @@ struct HomeView: View {
             }
             .padding()
             .navigationTitle("Vault Cards")
-            .sheet(item: $session) { s in
+            .sheet(item: $session, onDismiss: { sync.soon(context) }) { s in
                 ReviewSessionView(items: s.items, reviews: s.reviews, free: s.free)
             }
         }
