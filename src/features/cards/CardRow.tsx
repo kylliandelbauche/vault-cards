@@ -71,8 +71,10 @@ export const CardRow = memo(function CardRow({ card, open, onOpenChange, onEdit,
       const swallow = (c: MouseEvent) => {
         if ((c.target as Element | null)?.closest?.('.list-card')) { c.preventDefault(); c.stopPropagation() }
       }
-      document.addEventListener('click', swallow, { capture: true, once: true })
-      setTimeout(() => document.removeEventListener('click', swallow, true), 800)
+      // Document gardé ici : le minuteur peut tomber après le démontage (et, en test, après la fin de jsdom, #170).
+      const doc = document
+      doc.addEventListener('click', swallow, { capture: true, once: true })
+      setTimeout(() => doc.removeEventListener('click', swallow, true), 800)
     }
     document.addEventListener('pointerdown', close, true)
     return () => document.removeEventListener('pointerdown', close, true)
