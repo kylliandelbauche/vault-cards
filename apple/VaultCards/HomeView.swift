@@ -24,7 +24,15 @@ struct HomeView: View {
         let now = Date.now.millis
         let queue = buildQueue(cards, reviews, now: now)
         let kinds = countKinds(queue)
-        let tags = Tags.shortcuts(tagCounts(cards, reviews, now: now))
+        let allTags = tagCounts(cards, reviews, now: now)
+        let tags = Tags.shortcuts(allTags)
+        let study: (String) -> Void = { tag in
+            let due = buildQueue(cards, reviews, now: now, tag: tag)
+            // Rien à revoir dans ce tag aujourd'hui : révision libre du tag, comme « Réviser à nouveau ».
+            session = due.isEmpty
+                ? Session(items: freeQueue(cards, reviews, now: now, tag: tag), reviews: reviews, free: true, tag: tag)
+                : Session(items: due, reviews: reviews, free: false, tag: tag)
+        }
         return NavigationStack {
             VStack(spacing: 24) {
                 HStack(spacing: 16) {
@@ -53,12 +61,8 @@ struct HomeView: View {
                     }
                 }
                 if !tags.isEmpty {
-                    TagShortcuts(tags: tags) { tag in
-                        let due = buildQueue(cards, reviews, now: now, tag: tag)
-                        // Rien à revoir dans ce tag aujourd'hui : révision libre du tag, comme « Réviser à nouveau ».
-                        session = due.isEmpty
-                            ? Session(items: freeQueue(cards, reviews, now: now, tag: tag), reviews: reviews, free: true, tag: tag)
-                            : Session(items: due, reviews: reviews, free: false, tag: tag)
+                    TagShortcuts(tags: tags, study: study) {
+                        TagsView(tags: allTags, today: queue.count, study: study)
                     }
                 }
                 if !cards.contains(where: \.isLive) {
@@ -76,14 +80,24 @@ struct HomeView: View {
     }
 }
 
-/// « Mes tags » : tags non vides, triés par nombre de cartes ; un tap lance la session du tag.
-private struct TagShortcuts: View {
+/// « Mes tags » : tags non vides, triés par nombre de cartes ; un tap lance la session du tag. Le titre ouvre la page
+/// de tous les tags.
+private struct TagShortcuts<Destination: View>: View {
     let tags: [TagCount]
     let study: (String) -> Void
+    @ViewBuilder let destination: () -> Destination
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Mes tags").font(.headline)
+            NavigationLink {
+                destination()
+            } label: {
+                HStack {
+                    Text("Mes tags").font(.headline)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(tags, id: \.name) { tag in

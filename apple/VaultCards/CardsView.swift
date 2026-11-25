@@ -151,8 +151,9 @@ struct CardEditor: View {
     @Environment(\.dismiss) private var dismiss
     @State private var front = ""
     @State private var back = ""
-    @State private var tags = ""
+    @State private var tags: [String] = []
     @State private var message: String?
+    @State private var pickingTags = false
 
     var body: some View {
         NavigationStack {
@@ -164,14 +165,23 @@ struct CardEditor: View {
                     TextField("Réponse", text: $back, axis: .vertical).lineLimit(3...10)
                 }
                 Section {
-                    TextField("IA, Swift", text: $tags)
-                        #if os(iOS)
-                        .textInputAutocapitalization(.never)
-                        #endif
+                    if tags.isEmpty {
+                        Text("Aucun tag.").foregroundStyle(.secondary)
+                    } else {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(tags, id: \.self) { name in
+                                    Text(name).font(.callout).padding(.horizontal, 10).padding(.vertical, 4)
+                                        .background(.quaternary, in: Capsule())
+                                }
+                            }
+                        }
+                    }
+                    Button(tags.isEmpty ? "Ajouter des tags" : "Modifier les tags") { pickingTags = true }
                 } header: {
                     Text("Tags")
                 } footer: {
-                    Text("Séparés par des virgules, \(Tags.maxPerCard) au plus. Le premier est le principal.")
+                    Text("1 à \(Tags.maxPerCard) tags. Le premier est le principal.")
                 }
                 if let message {
                     Text(message).foregroundStyle(.red)
@@ -187,11 +197,14 @@ struct CardEditor: View {
                     Button("Enregistrer") { save() }
                 }
             }
+            .sheet(isPresented: $pickingTags) {
+                TagPickerView(initial: tags) { tags = $0; message = nil }
+            }
             .onAppear {
                 guard let card else { return }
                 front = card.front
                 back = card.back
-                tags = card.tags.joined(separator: ", ")
+                tags = card.tags
             }
         }
         #if os(macOS)
@@ -205,7 +218,7 @@ struct CardEditor: View {
         do {
             guard !f.isEmpty else { throw CardDraftError.emptyFront }
             guard !b.isEmpty else { throw CardDraftError.emptyBack }
-            let names = try parseTags(tags)
+            let names = try validateTags(tags)
             if let card {
                 card.front = f
                 card.back = b

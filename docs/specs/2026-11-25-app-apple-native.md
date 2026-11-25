@@ -160,6 +160,15 @@ révisions comptent, rien n'est perdu.
   d'`inbox_id`, donc deux éléments de même titre forment un seul document), le plus récent d'abord.
 - Filtre actif (document ou recherche) : « Étudier ces N cartes », révision libre des cartes de la liste.
 
+## Tags : page et choix (parité PWA)
+
+- « Mes tags › » (titre de la rangée de l'accueil) ouvre la page de tous les tags : « À revoir aujourd'hui » (file du
+  jour non vide, avec son nombre) puis « À jour », triés comme sur l'accueil ; sous-titre « N cartes à revoir » ou
+  « Tout est à jour ». Un tap lance la session du tag.
+- Modifier une carte : « Ajouter des tags » remplace la saisie par virgules. Recherche, tags de la carte (× retire),
+  liste A–Z avec le nombre de cartes ; « Créer « … » » crée et ajoute en tête ; 5 tags au plus. Rien n'est enregistré
+  avant « Enregistrer » dans le formulaire ; annuler avec des changements demande confirmation.
+
 ## Sécurité et confidentialité
 
 - Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et vers le fournisseur

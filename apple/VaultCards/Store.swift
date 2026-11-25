@@ -115,12 +115,12 @@ enum CardDraftError: LocalizedError, Equatable {
     }
 }
 
-/// Tags saisis séparés par des virgules : normalisés, validés, doublons de casse retirés (le premier gardé).
-func parseTags(_ text: String) throws -> [String] {
+/// Tags d'une carte : normalisés, valides, sans doublon (casse ignorée), 1 à 5.
+func validateTags(_ names: [String]) throws -> [String] {
     var seen = Set<String>()
     var tags: [String] = []
-    for part in text.split(separator: ",") {
-        let name = Tags.normalize(String(part))
+    for raw in names {
+        let name = Tags.normalize(raw)
         if name.isEmpty { continue }
         if let error = Tags.error(name) { throw CardDraftError.badTag(error) }
         if seen.insert(Tags.key(name)).inserted { tags.append(name) }
