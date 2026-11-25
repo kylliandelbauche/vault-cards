@@ -25,5 +25,5 @@ PWA de flashcards FSRS, hors ligne, synchronisée avec Supabase. Spec : docs/spe
 - `node tools/cards/cli.ts inbox list | claim <id> <RUN_DIR> | transcribe <id> <RUN_DIR> | complete <id> <RUN_DIR> | fail <id> <message> | purge` : boîte de réception (brouillons ; `transcribe` : audio → texte, en local avec ffmpeg et whisper-cli ; voir skill/flashcards/SKILL.md)
   - Toute suppression de cartes exige `--confirm-delete=<n>` (n exact), seulement après confirmation explicite de Kyllian.
 - `supabase db push` (migrations dans `supabase/migrations/`)
-- `supabase db query --linked -f supabase/tests/manual_cards.sql` (et `supabase/tests/inbox.sql`, `supabase/tests/tags.sql`) : preuves des droits (transaction annulée, aucune trace)
+- `supabase db query --linked -f supabase/tests/manual_cards.sql` (et `supabase/tests/inbox.sql`, `supabase/tests/tags.sql`, `supabase/tests/length_limits.sql`) : preuves des droits (transaction annulée, aucune trace)
 - `node tools/dev/rest-check.ts` et `node tools/dev/rest-check-inbox.ts` : vérification de l'API REST / Storage avec un vrai compte (e-mail + mot de passe masqué demandés, clé publishable seulement) — voir docs/rest-check.md
