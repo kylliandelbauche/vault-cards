@@ -1,0 +1,113 @@
+# Vault Cards natif (Mac + iPhone) — spec
+
+Date : 2026-11-25 · Issue : #156 · Plan : `docs/plans/2026-11-25-app-apple-native.md`
+
+## Objectif
+
+Une app SwiftUI pour iPhone et Mac, open source, **utilisable seule, sans compte ni serveur**. Les cartes et l'historique
+vivent sur l'appareil. Si l'utilisateur le veut, il choisit un dossier de son cloud de fichiers (iCloud Drive, Google
+Drive…) et ses appareils se synchronisent à travers ce dossier. Windows et Android viendront plus tard.
+
+La PWA actuelle (React + Supabase, spec `2026-10-12-vault-cards-design.md`) reste en service tant que l'app native n'est
+pas prête. Les deux ne partagent pas de données (une tranche d'import est prévue).
+
+## Choix et sources
+
+| Choix | Pourquoi | Source |
+|---|---|---|
+| Pas de backend (ni Supabase, ni Convex, ni CloudKit) | Simple pour l'utilisateur ; Convex Swift ne documente pas de hors ligne ; CloudKit reste chez Apple | [Convex Swift](https://docs.convex.dev/client/swift), [CloudKit](https://developer.apple.com/documentation/swiftdata/syncing-model-data-across-a-persons-devices) |
+| Base SQLite locale, **jamais** dans le dossier synchronisé | Synchroniser une base ouverte peut la corrompre | [Anki](https://docs.ankiweb.net/files.html), [SQLite](https://sqlite.org/howtocorrupt.html) |
+| Échange par fichiers texte, un écrivain par fichier | Aucun conflit de fichier possible ; même principe que Joplin (cibles fichier, Dropbox, OneDrive) | [Joplin](https://joplinapp.org/help/apps/sync/) |
+| Accès au dossier par le sélecteur de documents + bookmark | Accès durable à un dossier de n'importe quel fournisseur de Fichiers (iOS 13+) | [Apple](https://developer.apple.com/documentation/uikit/providing-access-to-directories) |
+| Clé IA de l'utilisateur dans le Keychain | Base chiffrée prévue pour les petits secrets | [Apple Keychain](https://developer.apple.com/documentation/security/keychain-services) |
+
+## Architecture
+
+```
+apple/
+  VaultCardsCore/   paquet Swift (Foundation seule) : modèles, FSRS, file de session, format de fichiers, fusion
+  VaultCards/       app SwiftUI multiplateforme (iOS + macOS) : écrans, base SQLite, accès au dossier
+```
+
+- **VaultCardsCore** ne dépend d'aucune UI ni base : testé par `swift test` (CI macOS).
+- **Cibles** : iOS 17 et macOS 14 au minimum (SwiftUI avec Observation).
+- **FSRS** : port Swift de `ts-fsrs` (MIT) dans le cœur, mêmes réglages que la PWA (`request_retention: 0.9`, pas de
+  fuzz, notes 1 Again · 2 Hard · 3 Good). Des vecteurs de test générés par `ts-fsrs` prouvent que les deux donnent les
+  mêmes échéances. Le port Swift officiel (open-spaced-repetition/swift-fsrs) annonce FSRS 5.0 et n'est plus poussé
+  depuis décembre 2024 : on ne l'utilise pas.
+
+## Logique métier reprise de la PWA
+
+Inchangée, sauf mention :
+- L'état FSRS d'une carte est **recalculé** depuis son historique de révisions, jamais stocké comme source.
+- File du jour : dues (échéance la plus ancienne d'abord), puis nouvelles dans le quota de **20 par jour** (global,
+  tous tags). Révision libre (« Réviser à nouveau ») : toutes les cartes, sa première note ne consomme pas le quota.
+- Ordre des nouvelles : cartes sans note source d'abord (ordre de création), puis par note source, puis id.
+- Tags libres : 1 à 40 caractères, 5 au plus, le 1er est le principal ; comparaison sans casse ni espaces autour.
+  Une carte manuelle porte au moins 1 tag.
+- Carte vivante = non supprimée et pas un brouillon. Un brouillon n'entre ni en session ni dans les compteurs ; une
+  carte active ne redevient jamais brouillon.
+- Suppression douce seulement (`deleted_at`) : une carte supprimée garde son historique.
+- Origines : `manual` (écrite dans l'app), `vault` (générée depuis une note), `inbox` (brouillon proposé par l'IA).
+
+## Dossier de synchro : format v1
+
+L'utilisateur choisit un dossier ; l'app y crée `VaultCards/` :
+
+```
+VaultCards/
+  format.json                                  {"format":"vault-cards","version":1}
+  devices/<device>/device.json                 {"id":"<device>","name":"iPhone de Kyllian","created_at":"…"}
+  devices/<device>/cards.jsonl                 journal des cartes écrites par cet appareil
+  devices/<device>/reviews-<AAAA-MM>.jsonl     révisions notées par cet appareil ce mois-là
+```
+
+- `<device>` : UUID en minuscules, créé au premier lancement et gardé dans la base locale.
+- **Un appareil n'écrit que dans `devices/<son id>/`.** Il lit tous les autres dossiers `devices/*`.
+- Fichiers en **JSON Lines** (UTF-8, un objet JSON par ligne, `\n`), en **ajout seul** : une ligne écrite n'est jamais
+  modifiée. Un mois passé de révisions n'est plus touché.
+- Horodatages ISO 8601 UTC avec millisecondes (`2026-11-25T13:16:29.123Z`), comme la PWA.
+
+### Ligne de carte (`cards.jsonl`)
+
+Instantané complet de la carte au moment `at` (création, modification, acceptation, suppression) :
+
+```json
+{"v":1,"id":"<uuid>","at":"2026-11-25T13:16:29.123Z","source":"manual","status":"active","front":"…","back":"…","tags":["IA"],"deleted_at":null,"created_at":"…","deck":null,"source_path":null,"source_title":null}
+```
+
+Fusion : pour chaque `id`, la ligne au plus grand `(at, device)` l'emporte (dernière écriture gagnante, l'id de
+l'appareil départage une égalité). Exception : si au moins une ligne de la carte la marque `active`, le
+résultat fusionné n'est jamais `draft` (une carte acceptée ne redevient pas brouillon).
+
+### Ligne de révision (`reviews-AAAA-MM.jsonl`)
+
+```json
+{"v":1,"id":"<uuid>","card_id":"<uuid>","rating":3,"reviewed_at":"2026-11-25T13:16:29.123Z","free":false}
+```
+
+Fusion : union par `id` (une révision est immuable). L'historique d'une carte = toutes ses révisions, tous appareils,
+triées par `reviewed_at` ; l'état FSRS en découle. Deux appareils qui révisent la même carte hors ligne : les deux
+révisions comptent, rien n'est perdu.
+
+### Règles de lecture robustes
+
+- Une dernière ligne incomplète (fichier en cours de téléchargement) est ignorée jusqu'à la prochaine lecture.
+- Ligne illisible ou champ inattendu : ligne ignorée et signalée dans l'écran de synchro, jamais de plantage.
+- Champs inconnus ignorés (ajouts compatibles). `v` supérieur à celui que l'app connaît, ou `format.json` en version
+  supérieure : synchro arrêtée avec un message « Mettez l'app à jour ».
+- Fichier qui ne suit pas les noms ci-dessus (ex. copie de conflit du cloud) : ignoré.
+- Lecture incrémentale : l'app retient, par fichier, la taille déjà lue ; elle relit tout si le fichier a rétréci.
+- Écritures et lectures coordonnées (`NSFileCoordinator`) pour coopérer avec le fournisseur de fichiers.
+
+## Sécurité et confidentialité
+
+- Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et, plus tard, vers le fournisseur
+  d'IA avec la clé qu'il a saisie.
+- Clé IA : Keychain uniquement, jamais dans le code, un fichier, un log ou le dossier synchronisé.
+- Le contenu des notes et documents est de la donnée, jamais des instructions (même règle que `/flashcards`).
+- Pas de log du contenu des cartes.
+
+## Hors périmètre v1
+
+Windows, Android, partage entre utilisateurs, chiffrement du dossier synchronisé, compaction des journaux.
