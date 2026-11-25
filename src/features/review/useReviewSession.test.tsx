@@ -226,6 +226,22 @@ describe('useReviewSession', () => {
       act(() => result.current.restart())
       await waitFor(() => expect(result.current.status).toBe('reviewing'))
     })
+    it('« Réessayer » après l’échec d’une révision libre : reste en révision libre (#126)', async () => {
+      let fail = false
+      const base = memoryStore(cards)
+      const store = { ...base, loadCards: async () => { if (fail) throw new Error('IndexedDB indisponible'); return base.loadCards() } }
+      const { result } = renderHook(() => useReviewSession(store, fixedNow))
+      await waitFor(() => expect(result.current.status).toBe('reviewing'))
+      for (let i = 0; i < cards.length; i++) { act(() => result.current.reveal()); await act(async () => result.current.rate(3)) }
+      expect(result.current.status).toBe('done')
+      fail = true
+      act(() => result.current.reviewAll())
+      await waitFor(() => expect(result.current.status).toBe('error'))
+      fail = false
+      act(() => result.current.restart())
+      await waitFor(() => expect(result.current.status).toBe('reviewing')) // file du jour vide : seule la révision libre propose des cartes
+      expect(result.current.counts.due + result.current.counts.learn + result.current.counts.new).toBe(cards.length)
+    })
     it('restart() en échec : status error (pas de rejet non géré)', async () => {
       let fail = false
       const base = memoryStore(cards)
