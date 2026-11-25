@@ -2,6 +2,8 @@
 
 PWA de flashcards FSRS, hors ligne, synchronisée avec Supabase. Spec : docs/specs/2026-10-12-vault-cards-design.md. Plan : docs/plans/2026-10-12-vault-cards-mvp.md.
 
+App native Mac + iPhone en cours (SwiftUI, sans serveur, synchro par fichiers JSONL dans le cloud de l'utilisateur) : spec docs/specs/2026-11-25-app-apple-native.md, plan docs/plans/2026-11-25-app-apple-native.md. Code dans `apple/`. Les règles Supabase ci-dessous concernent la PWA.
+
 ## Règles de travail
 - Une issue = une branche `feat|fix|chore/<n>-<slug>` = une PR avec `Closes #<n>`. Jamais de commit direct sur `main`.
 - Avant de pousser : `npm run lint && npm run typecheck && npm test && npm run build`.
