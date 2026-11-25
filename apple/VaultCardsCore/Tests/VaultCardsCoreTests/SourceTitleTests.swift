@@ -42,8 +42,8 @@ final class SourceTitleTests: XCTestCase {
         XCTAssertEqual(SourceTitle.extract(markdown: "# Titre #   ", fileName: "x-synthese.md"), "Titre")
         XCTAssertEqual(SourceTitle.extract(markdown: "# Apprendre C#", fileName: "x-synthese.md"), "Apprendre C#")
         XCTAssertEqual(SourceTitle.extract(markdown: "# ##\n# Suivant", fileName: "x-synthese.md"), "Suivant")
-        XCTAssertEqual(SourceTitle.extract(markdown: "\uFEFF# Titre", fileName: "x-synthese.md"), "Titre")
-        XCTAssertEqual(SourceTitle.extract(markdown: "\uFEFF---\na: 1\n---\n# Titre", fileName: "x-synthese.md"), "Titre")
+        XCTAssertEqual(SourceTitle.extract(markdown: "\u{FEFF}# Titre", fileName: "x-synthese.md"), "Titre")
+        XCTAssertEqual(SourceTitle.extract(markdown: "\u{FEFF}---\na: 1\n---\n# Titre", fileName: "x-synthese.md"), "Titre")
     }
 
     func testFrontmatterIsSkippedEvenWithAHash() {
