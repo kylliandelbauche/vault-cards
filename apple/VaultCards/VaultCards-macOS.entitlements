@@ -5,5 +5,8 @@
 	<!-- Bookmarks à portée de l'app : garder l'accès au dossier de synchro choisi par l'utilisateur. -->
 	<key>com.apple.security.files.bookmarks.app-scope</key>
 	<true/>
+	<!-- Micro : vocal de la boîte de réception (sandbox et runtime renforcé). -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>

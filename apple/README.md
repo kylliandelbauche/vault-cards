@@ -14,3 +14,5 @@ Spec : `docs/specs/2026-11-25-app-apple-native.md` · Plan : `docs/plans/2026-11
   secrète de `.env.local`, sans rien y modifier) ; l'app reçoit cartes et historique à sa synchro suivante.
 - Cartes depuis une note : onglet « Générer », saisir sa clé API Anthropic (gardée dans le trousseau), choisir une
   note Markdown ; les cartes proposées arrivent en brouillons à accepter, modifier ou rejeter.
+- Boîte de réception : même onglet, écrire, dicter (transcrit sur l'appareil) ou joindre une photo, puis « Envoyer à
+  l'IA » ; les cartes arrivent en brouillons.

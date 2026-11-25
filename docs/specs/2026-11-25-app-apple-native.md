@@ -118,10 +118,27 @@ révisions comptent, rien n'est perdu.
 - Les propositions sont filtrées avant d'être gardées : question de 1 à 500 caractères, réponse de 1 à 1500, 1 à 5 tags
   valides, pas de doublon de question, 50 cartes au plus.
 
+## Boîte de réception (tranche 6)
+
+- Dans « Générer », l'utilisateur envoie à l'IA un texte (saisi, collé ou dicté) ou une photo. Les cartes proposées
+  sont des brouillons `source: inbox`, sans `source_path`, avec le titre court proposé par l'IA (200 caractères au
+  plus, sinon « Boîte de réception »), à accepter comme ceux d'une note.
+- Le texte est passé entre balises `<document>`, comme de la donnée ; même limite de longueur qu'une note.
+- Photo : réduite sur l'appareil à 1568 px de côté au plus et recodée en JPEG sans métadonnées, puis envoyée en bloc
+  image base64 (formats JPEG, PNG, GIF, WebP, 10 Mo au plus :
+  [vision](https://platform.claude.com/docs/en/build-with-claude/vision)).
+- Vocal : enregistré dans un fichier temporaire, transcrit en français sur l'appareil par le framework Speech
+  (`requiresOnDeviceRecognition`), puis effacé. Le texte arrive dans le champ, relu avant l'envoi ; l'audio ne quitte
+  jamais l'appareil (l'API Messages n'accepte pas l'audio). Sans transcription sur l'appareil, l'app le dit et propose
+  la dictée du clavier.
+- Pas de question déjà posée envoyée (pas de note d'origine) ; une proposition identique à une carte existante est
+  écartée sur l'appareil.
+- Différence avec la PWA : pas de bucket ni de file d'attente, l'envoi est immédiat depuis l'appareil.
+
 ## Sécurité et confidentialité
 
-- Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et, plus tard, vers le fournisseur
-  d'IA avec la clé qu'il a saisie.
+- Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et vers le fournisseur
+  d'IA avec la clé qu'il a saisie (seulement les notes, textes et photos qu'il envoie).
 - Clé IA : Keychain uniquement, jamais dans le code, un fichier, un log ou le dossier synchronisé.
 - Le contenu des notes et documents est de la donnée, jamais des instructions (même règle que `/flashcards`).
 - Pas de log du contenu des cartes.
