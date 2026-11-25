@@ -135,6 +135,13 @@ révisions comptent, rien n'est perdu.
   écartée sur l'appareil.
 - Différence avec la PWA : pas de bucket ni de file d'attente, l'envoi est immédiat depuis l'appareil.
 
+## Tags et clavier (après la v1)
+
+- Accueil, « Mes tags » : les tags des cartes vivantes (pas de registre de tags dans l'app native), triés par nombre
+  de cartes puis A–Z en français, avec la file du jour de chacun (règles de `src/lib/home.ts`). Un tap lance la
+  session du jour du tag ; si elle est vide, une révision libre du tag (notes `free`), comme « Réviser à nouveau ».
+- Révision au clavier (Mac, iPad) : espace pour la réponse, 1 À revoir, 2 Difficile, 3 Correct, comme la PWA.
+
 ## Sécurité et confidentialité
 
 - Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et vers le fournisseur

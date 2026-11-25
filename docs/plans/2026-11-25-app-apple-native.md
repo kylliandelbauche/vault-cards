@@ -12,7 +12,8 @@ Une tranche = une issue = une PR. Chaque tranche laisse l'app dans un état util
 | 4 | **Import depuis la PWA** : commande `tools/` qui exporte les cartes et révisions Supabase au format v1 | historique complet retrouvé dans l'app | lancer une commande, ouvrir l'app |
 | 5 | **Cartes depuis les notes** : lecture des notes Markdown du dossier, génération par l'IA avec la clé de l'utilisateur (Keychain), en brouillons | brouillons acceptés / rejetés comme dans la PWA | saisir sa clé, générer depuis une note |
 | 6 | **Boîte de réception** : texte, photo, vocal → brouillons | idem | déposer une photo et un vocal |
-| 7 | **Distribution** : TestFlight (compte Apple Developer requis) | app installée sans Xcode | accepter l'invitation TestFlight |
+| 7 | **Distribution** : TestFlight (compte Apple Developer requis) — reportée le 25/11/2026, pas de compte | app installée sans Xcode | accepter l'invitation TestFlight |
+| 8 | **Tags et clavier** : « Mes tags » sur l'accueil, session d'un tag, touches 1-2-3 | tests du cœur verts | aucun |
 
 ## Règles
 

@@ -6,6 +6,8 @@ import VaultCardsCore
 struct ReviewSessionView: View {
     /// Révision libre (« Réviser à nouveau ») : les notes sont marquées `free`.
     let free: Bool
+    /// Session limitée à un tag (titre seulement).
+    let tag: String?
 
     @Environment(\.modelContext) private var context
     @Environment(\.dismiss) private var dismiss
@@ -16,8 +18,9 @@ struct ReviewSessionView: View {
     @State private var done = 0
     @State private var showBack = false
 
-    init(items: [SessionItem], reviews: [Review], free: Bool) {
+    init(items: [SessionItem], reviews: [Review], free: Bool, tag: String? = nil) {
         self.free = free
+        self.tag = tag
         _queue = State(initialValue: items)
         _history = State(initialValue: reviews)
     }
@@ -34,6 +37,16 @@ struct ReviewSessionView: View {
             }
             .padding()
             .navigationTitle(queue.isEmpty ? "Terminé" : "Reste \(queue.count)")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar {
+                if let tag {
+                    ToolbarItem(placement: .principal) {
+                        Text(queue.isEmpty ? tag : "\(tag) · reste \(queue.count)").font(.headline)
+                    }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
@@ -78,6 +91,8 @@ struct ReviewSessionView: View {
                             .frame(maxWidth: .infinity, minHeight: 44)
                         }
                         .buttonStyle(.bordered)
+                        // Clavier (Mac, iPad) : 1 À revoir, 2 Difficile, 3 Correct, comme la PWA.
+                        .keyboardShortcut(KeyEquivalent(Character(String(rating.rawValue))), modifiers: [])
                         .tint(rating == .again ? .red : rating == .hard ? .orange : .green)
                     }
                 }
