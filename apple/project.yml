@@ -37,4 +37,8 @@ targets:
         ENABLE_USER_SELECTED_FILES: readwrite
         # Sandbox macOS : connexions sortantes (API d'Anthropic, avec la clé de l'utilisateur).
         ENABLE_OUTGOING_NETWORK_CONNECTIONS: YES
+        # Boîte de réception : vocal enregistré puis transcrit sur l'appareil (sandbox macOS : entrée audio).
+        ENABLE_RESOURCE_ACCESS_AUDIO_INPUT: YES
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "Le micro sert à dicter un élément de la boîte de réception."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Le vocal est transcrit en texte sur cet appareil avant l'envoi à l'IA."
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": VaultCards/VaultCards-macOS.entitlements

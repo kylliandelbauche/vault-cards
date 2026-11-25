@@ -18,6 +18,8 @@ public enum SourceTitle {
     static func trim(_ s: String) -> String { String(trim(s[...])) }
 
     /// Plafonne à `maxLength` points de code ; `…` si coupé.
+    public static func cap(_ text: String) -> String { capLength(text) }
+
     static func capLength(_ text: String) -> String {
         let scalars = Array(text.unicodeScalars)
         guard scalars.count > maxLength else { return text }
