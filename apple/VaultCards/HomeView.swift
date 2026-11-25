@@ -14,6 +14,7 @@ struct HomeView: View {
         let items: [SessionItem]
         let reviews: [Review]
         let free: Bool
+        var tag: String?
     }
 
     var body: some View {
@@ -23,6 +24,7 @@ struct HomeView: View {
         let now = Date.now.millis
         let queue = buildQueue(cards, reviews, now: now)
         let kinds = countKinds(queue)
+        let tags = Tags.shortcuts(tagCounts(cards, reviews, now: now))
         return NavigationStack {
             VStack(spacing: 24) {
                 HStack(spacing: 16) {
@@ -49,7 +51,17 @@ struct HomeView: View {
                         }
                         .buttonStyle(.bordered)
                     }
-                } else {
+                }
+                if !tags.isEmpty {
+                    TagShortcuts(tags: tags) { tag in
+                        let due = buildQueue(cards, reviews, now: now, tag: tag)
+                        // Rien à revoir dans ce tag aujourd'hui : révision libre du tag, comme « Réviser à nouveau ».
+                        session = due.isEmpty
+                            ? Session(items: freeQueue(cards, reviews, now: now, tag: tag), reviews: reviews, free: true, tag: tag)
+                            : Session(items: due, reviews: reviews, free: false, tag: tag)
+                    }
+                }
+                if !cards.contains(where: \.isLive) {
                     ContentUnavailableView("Aucune carte", systemImage: "rectangle.stack.badge.plus",
                                            description: Text("Crée ta première carte dans « Mes cartes »."))
                 }
@@ -58,9 +70,38 @@ struct HomeView: View {
             .padding()
             .navigationTitle("Vault Cards")
             .sheet(item: $session, onDismiss: { sync.soon(context) }) { s in
-                ReviewSessionView(items: s.items, reviews: s.reviews, free: s.free)
+                ReviewSessionView(items: s.items, reviews: s.reviews, free: s.free, tag: s.tag)
             }
         }
+    }
+}
+
+/// « Mes tags » : tags non vides, triés par nombre de cartes ; un tap lance la session du tag.
+private struct TagShortcuts: View {
+    let tags: [TagCount]
+    let study: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Mes tags").font(.headline)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tags, id: \.name) { tag in
+                        Button { study(tag.name) } label: {
+                            HStack(spacing: 6) {
+                                Text(tag.name)
+                                Text(tag.today > 0 ? "\(tag.today)" : "✓").foregroundStyle(.secondary)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel(tag.today > 0
+                            ? "\(tag.name), \(tag.today) à revoir"
+                            : "\(tag.name), à jour")
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
