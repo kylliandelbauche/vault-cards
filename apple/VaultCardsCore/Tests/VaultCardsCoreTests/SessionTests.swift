@@ -98,4 +98,14 @@ final class SessionTests: XCTestCase {
         let seen = (0..<5).map { rv("i\($0)", ago(Int64(30 - $0))) }
         XCTAssertEqual(freshCount(queue(many, seen, tag: "Swift")), 15)
     }
+
+    func testAgainGoesBackToTheEndOfTheSession() {
+        let q = queue([card("a"), card("b"), card("c")], [])
+        let ra = rv("a", now, .again)
+        let next = afterRating(q, rating: .again, cardHistory: [ra])
+        XCTAssertEqual(next.map(\.card.id), ["b", "c", "a"])
+        XCTAssertEqual(next.last?.state.state, .learning)
+        XCTAssertEqual(afterRating(next, rating: .good, cardHistory: [rv("b", now)]).map(\.card.id), ["c", "a"])
+        XCTAssertEqual(afterRating([], rating: .again, cardHistory: []), [])
+    }
 }

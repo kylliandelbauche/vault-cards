@@ -80,6 +80,14 @@ public func freeQueue(_ cards: [Card], _ reviews: [Review], now: Millis, tag: St
     return seen + fresh
 }
 
+/// File après une note (comme la PWA) : la carte affichée sort de la file ; notée Again, elle revient en fin de file
+/// avec son nouvel état. `cardHistory` : toutes les révisions de cette carte, la nouvelle comprise.
+public func afterRating(_ queue: [SessionItem], rating: Rating, cardHistory: [Review]) -> [SessionItem] {
+    guard let shown = queue.first else { return queue }
+    let rest = Array(queue.dropFirst())
+    return rating == .again ? rest + [SessionItem(card: shown.card, state: stateFromReviews(cardHistory))] : rest
+}
+
 public struct Kinds: Equatable, Sendable {
     public var new = 0, learn = 0, due = 0
 }
