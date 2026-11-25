@@ -169,6 +169,13 @@ révisions comptent, rien n'est perdu.
   liste A–Z avec le nombre de cartes ; « Créer « … » » crée et ajoute en tête ; 5 tags au plus. Rien n'est enregistré
   avant « Enregistrer » dans le formulaire ; annuler avec des changements demande confirmation.
 
+## Accueil : bloc du jour (parité PWA)
+
+- « N cartes à revoir aujourd'hui » (file de « Commencer à étudier »), sinon « Aucune carte à revoir aujourd'hui » et
+  la prochaine échéance (ou « Tout est à jour. »).
+- Trois compteurs : À revoir (vues et dues), Nouvelles (quota du jour), Maîtrisées (état Review et stabilité ≥ 21 jours,
+  `MASTERED_STABILITY_DAYS`). Puis « Commencer à étudier », ou « Réviser à nouveau » quand la file est vide.
+
 ## Sécurité et confidentialité
 
 - Aucune donnée ne quitte l'appareil, sauf vers le dossier choisi par l'utilisateur et vers le fournisseur
