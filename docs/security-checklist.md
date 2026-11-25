@@ -128,7 +128,7 @@ Valeurs effectives du projet (API Management) : `rate_limit_otp = 30`, `rate_lim
 - Outil local : `validatePayload` (`tools/cards/lib.ts`) refuse les clés inconnues, impose texte non vide, `front` ≤ 500, `back` ≤ 1500, 1 à 2 tags de la liste fixe sans doublon, `source_title` ≤ 200, et `cards` vide pour une note `removed`. `assertDeleteConfirmed` bloque toute suppression sans `--confirm-delete=<n>` exact. 248 tests verts.
 - Base : contraintes `check` sur `cards.front` (1 à 500), `cards.back` (1 à 1500), `reviews.rating` (1 à 3), `cards.tags` (cardinalité 0 à 2, valeurs de la liste), `cards.source_title` (1 à 200).
 - Client : aucune sortie HTML brute (`grep -E "dangerouslySetInnerHTML|innerHTML|eval\(|document.write" src` ne renvoie rien) ; React échappe le texte des cartes.
-- Durcissement mineur possible (non bloquant) : `cards.deck`, `cards.source_path`, `notes.content_hash` n'ont pas de contrainte de longueur en base. Écriture réservée à la clé secrète (outil local) : risque très faible.
+- Durcissement mineur (#52) : contraintes `check` ajoutées sur `cards.deck` (1 à 100), `cards.source_path` et `notes.source_path` (1 à 500), `notes.content_hash` (SHA-256 hexadécimal ou `removed`). Preuve : `supabase/tests/length_limits.sql`.
 
 ### 11. HTTPS : OK
 
@@ -208,4 +208,3 @@ Rien de ce qui suit n'a été modifié pendant l'audit. Les chemins du Dashboard
 - **Pas de protection de la branche `main`** : fonction payante pour un dépôt privé en Free. La règle « jamais de commit direct sur `main` » repose sur la discipline et sur la CI.
 - **Accès réseau à la base ouvert** (`0.0.0.0/0`, restrictions réseau non utilisées) : accès protégé par mot de passe et TLS (`ssl = on`). Les restrictions d'IP ne conviennent pas à GitHub Actions (IP variables).
 - **Sauvegarde téléchargeable par quiconque a accès au dépôt** : chiffrée en AES256 ; la robustesse dépend de la longueur de la phrase de passe (voir `docs/restore.md`). Dépôt privé.
-- **Pas de contrainte de longueur SQL sur `deck`, `source_path`, `content_hash`** : écrits uniquement par l'outil local avec la clé secrète, après `validatePayload`.
