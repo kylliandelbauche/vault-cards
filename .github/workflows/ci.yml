@@ -19,3 +19,16 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Vecteurs FSRS de l'app native (#158) : à jour avec ts-fsrs.
+      - run: node tools/dev/fsrs-vectors.ts && git diff --exit-code apple/
+  swift:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: apple/VaultCardsCore
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: swift --version
+      - run: swift test

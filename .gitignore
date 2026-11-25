@@ -37,3 +37,6 @@ dev-dist
 .claude/skills/
 skills-lock.json
 .claude/worktrees/
+# Swift
+apple/**/.build/
+apple/**/.swiftpm/
