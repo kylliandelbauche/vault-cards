@@ -15,6 +15,7 @@ struct VaultCardsApp: App {
         }
     }()
     @State private var sync = SyncService()
+    @State private var aiKey = AIKeySettings()
 
     var body: some Scene {
         WindowGroup {
@@ -25,6 +26,14 @@ struct VaultCardsApp: App {
         #endif
         .modelContainer(container)
         .environment(sync)
+        .environment(aiKey)
+        #if os(macOS)
+        // Mac : réglages dans leur propre fenêtre, menu Vault Cards › Réglages… (⌘,).
+        Settings {
+            SettingsView()
+                .environment(aiKey)
+        }
+        #endif
     }
 }
 
@@ -35,7 +44,7 @@ struct RootView: View {
 
     @State private var tab = AppTab.home
 
-    enum AppTab: Hashable { case home, cards, generate, sync }
+    enum AppTab: Hashable { case home, cards, generate, sync, settings }
 
     var body: some View {
         // iPhone : barre d'onglets. Mac (et iPad en largeur) : barre latérale, la navigation attendue par les HIG.
@@ -47,11 +56,16 @@ struct RootView: View {
                 CardsView()
             }
             Tab("Générer", systemImage: "sparkles", value: .generate) {
-                GenerateView()
+                GenerateView { tab = .settings }
             }
             Tab("Synchro", systemImage: "arrow.triangle.2.circlepath", value: .sync) {
                 SyncView()
             }
+            #if os(iOS)
+            Tab("Réglages", systemImage: "gear", value: .settings) {
+                SettingsView()
+            }
+            #endif
         }
         .tabViewStyle(.sidebarAdaptable)
         // Au retour dans l'app, les changements des autres appareils sont lus.

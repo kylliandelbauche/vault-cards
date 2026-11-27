@@ -11,8 +11,9 @@ struct GenerateView: View {
     @Query(sort: \StoredCard.updatedAt, order: .reverse) private var cards: [StoredCard]
     @Environment(\.modelContext) private var context
     @Environment(SyncService.self) private var sync
-    @State private var hasKey = APIKeyStore.read() != nil
-    @State private var keyInput = ""
+    @Environment(AIKeySettings.self) private var aiKey
+    /// iPhone : ouvre l'onglet Réglages (sur Mac, la fenêtre Réglages s'ouvre par SettingsLink).
+    var openSettings: () -> Void = {}
     @State private var importing = false
     @State private var importKind = Importing.note
     @State private var inboxText = ""
@@ -32,29 +33,26 @@ struct GenerateView: View {
         NavigationStack {
             Form {
                 Section {
-                    if hasKey {
+                    if aiKey.hasKey {
                         Button(working ? "Génération en cours…" : "Choisir une note") { importKind = .note; importing = true }
                             .disabled(working)
                     } else {
-                        SecureField("Clé API Anthropic", text: $keyInput)
-                        Button("Enregistrer la clé") { saveKey() }
-                            .disabled(keyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        Text("Ajoute ta clé API Anthropic dans Réglages pour générer des cartes.")
+                        #if os(macOS)
+                        SettingsLink { Text("Ouvrir Réglages") }
+                        #else
+                        Button("Ouvrir Réglages", action: openSettings)
+                        #endif
                     }
                 } header: {
                     Text("Depuis une note")
                 } footer: {
-                    Text(hasKey
-                         ? "La note est envoyée à l'IA d'Anthropic avec ta clé. Les cartes proposées arrivent ici en brouillons."
-                         : "Ta clé reste dans le trousseau de cet appareil. Elle n'est jamais écrite dans le dossier de synchro.")
-                }
-                if hasKey {
-                    inboxSection
-                    Section {
-                        Button("Supprimer la clé", role: .destructive) {
-                            APIKeyStore.delete()
-                            hasKey = false
-                        }
+                    if aiKey.hasKey {
+                        Text("La note est envoyée à l'IA d'Anthropic avec ta clé. Les cartes proposées arrivent ici en brouillons.")
                     }
+                }
+                if aiKey.hasKey {
+                    inboxSection
                 }
                 if working {
                     Section { ProgressView("L'IA lit le document…") }
@@ -143,17 +141,6 @@ struct GenerateView: View {
         }
     }
 
-    private func saveKey() {
-        let key = keyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if APIKeyStore.save(key) {
-            hasKey = true
-            keyInput = ""
-            message = nil
-        } else {
-            message = "Impossible d'enregistrer la clé dans le trousseau."
-        }
-    }
-
     private func accept(_ draft: StoredCard) {
         draft.status = CardStatus.active.rawValue
         draft.touch()
@@ -211,7 +198,7 @@ struct GenerateView: View {
     private func run(existingQuestions: [String], dropping: [String] = [],
                      prepare: () async throws -> (CardGeneration.Input, MakeDrafts)) async -> Bool {
         guard let key = APIKeyStore.read() else {
-            hasKey = false
+            aiKey.refresh()
             return false
         }
         working = true

@@ -62,7 +62,7 @@ public enum CardGeneration {
             case .refused: return "L'IA a refusé de traiter cette note."
             case .truncated: return "Réponse de l'IA coupée. Réessaie avec une note plus courte."
             case .unreadableResponse: return "Réponse de l'IA illisible. Réessaie."
-            case .badKey: return "Clé API refusée. Vérifie-la dans l'onglet Générer."
+            case .badKey: return "Clé API refusée. Remplace-la dans Réglages."
             case .rateLimited: return "Limite d'utilisation de la clé atteinte. Réessaie plus tard."
             case .overloaded: return "Service de l'IA indisponible pour l'instant. Réessaie plus tard."
             case .api(let status, let message): return "Erreur de l'IA (\(status)) : \(message)"
