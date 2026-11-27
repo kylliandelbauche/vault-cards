@@ -220,11 +220,20 @@ private struct StartStyle: ViewModifier {
     let prominent: Bool
 
     func body(content: Content) -> some View {
+        // Le verre n'existe qu'avec le SDK 26 (Swift 6.2) ; la CI compile encore avec Xcode 16.
+        #if compiler(>=6.2)
         if #available(iOS 26, macOS 26, *) {
             if prominent { content.buttonStyle(.glassProminent) } else { content.buttonStyle(.glass) }
         } else {
-            if prominent { content.buttonStyle(.borderedProminent) } else { content.buttonStyle(.bordered) }
+            fallback(content)
         }
+        #else
+        fallback(content)
+        #endif
+    }
+
+    @ViewBuilder private func fallback(_ content: Content) -> some View {
+        if prominent { content.buttonStyle(.borderedProminent) } else { content.buttonStyle(.bordered) }
     }
 }
 
