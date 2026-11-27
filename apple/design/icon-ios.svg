@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs><linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1"><stop offset="0" stop-color="#4A7BFF"/><stop offset="1" stop-color="#1B2A80"/></linearGradient></defs>
+<rect width="1024" height="1024" fill="url(#bg)"/>
+<rect x="232" y="318" width="560" height="400" rx="58" fill="#FFFFFF" fill-opacity="0.26" transform="rotate(-11 512 518)"/>
+<g transform="rotate(4 512 528)">
+<rect x="212" y="318" width="600" height="420" rx="62" fill="#FFFFFF"/>
+<circle cx="512" cy="528" r="134" fill="none" stroke="#2443C6" stroke-width="26"/>
+<g stroke="#2443C6" stroke-width="12" stroke-linecap="round">
+<line x1="512.0" y1="450.0" x2="512.0" y2="424.0"/>
+<line x1="555.0" y1="453.5" x2="564.0" y2="437.9"/>
+<line x1="586.5" y1="485.0" x2="602.1" y2="476.0"/>
+<line x1="590.0" y1="528.0" x2="616.0" y2="528.0"/>
+<line x1="586.5" y1="571.0" x2="602.1" y2="580.0"/>
+<line x1="555.0" y1="602.5" x2="564.0" y2="618.1"/>
+<line x1="512.0" y1="606.0" x2="512.0" y2="632.0"/>
+<line x1="469.0" y1="602.5" x2="460.0" y2="618.1"/>
+<line x1="437.5" y1="571.0" x2="421.9" y2="580.0"/>
+<line x1="434.0" y1="528.0" x2="408.0" y2="528.0"/>
+<line x1="437.5" y1="485.0" x2="421.9" y2="476.0"/>
+<line x1="469.0" y1="453.5" x2="460.0" y2="437.9"/>
+</g>
+<circle cx="512" cy="528" r="50" fill="#2443C6"/>
+<line x1="512" y1="528" x2="512" y2="494" stroke="#FFFFFF" stroke-width="12" stroke-linecap="round"/>
+</g>
+</svg>
