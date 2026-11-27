@@ -16,3 +16,5 @@ Spec : `docs/specs/2026-11-25-app-apple-native.md` · Plan : `docs/plans/2026-11
   note Markdown ; les cartes proposées arrivent en brouillons à accepter, modifier ou rejeter.
 - Boîte de réception : même onglet, écrire, dicter (transcrit sur l'appareil) ou joindre une photo, puis « Envoyer à
   l'IA » ; les cartes arrivent en brouillons.
+- Icône : sources dans `apple/design/` (`icon-ios.svg` plein cadre, `icon-macos.svg` avec la forme et la marge du Mac),
+  exportées en PNG dans `VaultCards/Assets.xcassets/AppIcon.appiconset` (iOS 1024 sans transparence, Mac 16 à 1024).
