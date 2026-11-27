@@ -115,7 +115,6 @@ struct HomeView: View {
                     } label: {
                         Label("Nouvelle carte", systemImage: "plus")
                     }
-                    .keyboardShortcut("n")
                     .help("Nouvelle carte")
                 }
             }
