@@ -3,8 +3,8 @@ name: VaultCards
 options:
   bundleIdPrefix: io.github.kylliandelbauche
   deploymentTarget:
-    iOS: "17.0"
-    macOS: "14.0"
+    iOS: "18.0"
+    macOS: "15.0"
 packages:
   VaultCardsCore:
     path: VaultCardsCore
