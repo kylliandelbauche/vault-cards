@@ -19,6 +19,11 @@ final class SyncService {
     private(set) var isSyncing = false
     /// Une synchro demandée pendant une autre : relancée juste après.
     private var again = false
+    /// Surveillance du dossier (changements des autres appareils), active tant que l'app est au premier plan.
+    private var watcher: SyncFolderWatcher?
+    private var watching = false
+    /// Synchro prévue après un changement signalé : plusieurs fichiers changés d'un coup en donnent une seule.
+    private var scheduled: Task<Void, Never>?
 
     private let defaults = UserDefaults.standard
     private enum Key {
@@ -60,7 +65,39 @@ final class SyncService {
         problems = []
         needsUpdate = false
         error = nil
+        if watching { watch(context) }
         soon(context)
+    }
+
+    /// Surveille le dossier choisi : une synchro part dès qu'un autre appareil y écrit. Sur iOS, `unwatch` quand l'app
+    /// passe en arrière-plan (un présentateur d'app suspendue peut bloquer le fournisseur de fichiers).
+    func watch(_ context: ModelContext) {
+        watching = true
+        watcher?.stop()
+        watcher = nil
+        guard let url = folderURL() else { return }
+        watcher = SyncFolderWatcher(scope: url, root: url.appending(path: SyncFormat.rootFolder), device: Device.id) {
+            [weak self] in
+            Task { @MainActor in self?.changed(context) }
+        }
+    }
+
+    func unwatch() {
+        watching = false
+        watcher?.stop()
+        watcher = nil
+        scheduled?.cancel()
+        scheduled = nil
+    }
+
+    private func changed(_ context: ModelContext) {
+        guard watching, scheduled == nil else { return }
+        scheduled = Task {
+            try? await Task.sleep(for: .seconds(2))
+            scheduled = nil
+            if Task.isCancelled { return }
+            await sync(context)
+        }
     }
 
     /// Synchro en arrière-plan, sans attendre le résultat (après un changement local ou au retour dans l'app).

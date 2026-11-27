@@ -55,10 +55,17 @@ struct RootView: View {
         }
         .tabViewStyle(.sidebarAdaptable)
         // Au retour dans l'app, les changements des autres appareils sont lus.
+        // Au premier plan, le dossier est surveillé : les changements arrivent en quelques secondes.
         .onChange(of: phase, initial: true) { _, now in
-            if now == .active { sync.soon(context) }
+            switch now {
+            case .active:
+                sync.watch(context)
+                sync.soon(context)
+            case .background: sync.unwatch()
+            default: break
+            }
         }
-        // Tant que l'app est active (sur Mac, la fenêtre peut le rester des heures) : une synchro par minute.
+        // En secours (fournisseur qui ne prévient pas), tant que l'app est active : une synchro par minute.
         .task(id: phase) {
             guard phase == .active else { return }
             while !Task.isCancelled {
