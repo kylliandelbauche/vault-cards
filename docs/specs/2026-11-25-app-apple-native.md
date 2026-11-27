@@ -30,7 +30,7 @@ apple/
 ```
 
 - **VaultCardsCore** ne dépend d'aucune UI ni base : testé par `swift test` (CI macOS).
-- **Cibles** : iOS 17 et macOS 14 au minimum (SwiftUI avec Observation).
+- **Cibles** : iOS 18 et macOS 15 au minimum (SwiftUI avec Observation ; onglets en barre latérale sur Mac).
 - **FSRS** : port Swift de `ts-fsrs` (MIT) dans le cœur, mêmes réglages que la PWA (`request_retention: 0.9`, pas de
   fuzz, notes 1 Again · 2 Hard · 3 Good). Des vecteurs de test générés par `ts-fsrs` prouvent que les deux donnent les
   mêmes échéances. Le port Swift officiel (open-spaced-repetition/swift-fsrs) annonce FSRS 5.0 et n'est plus poussé

@@ -20,6 +20,9 @@ struct VaultCardsApp: App {
         WindowGroup {
             RootView()
         }
+        #if os(macOS)
+        .defaultSize(width: 980, height: 700)
+        #endif
         .modelContainer(container)
         .environment(sync)
     }
@@ -30,17 +33,27 @@ struct RootView: View {
     @Environment(\.modelContext) private var context
     @Environment(\.scenePhase) private var phase
 
+    @State private var tab = AppTab.home
+
+    enum AppTab: Hashable { case home, cards, generate, sync }
+
     var body: some View {
-        TabView {
-            HomeView()
-                .tabItem { Label("Accueil", systemImage: "rectangle.stack") }
-            CardsView()
-                .tabItem { Label("Mes cartes", systemImage: "list.bullet") }
-            GenerateView()
-                .tabItem { Label("Générer", systemImage: "sparkles") }
-            SyncView()
-                .tabItem { Label("Synchro", systemImage: "arrow.triangle.2.circlepath") }
+        // iPhone : barre d'onglets. Mac (et iPad en largeur) : barre latérale, la navigation attendue par les HIG.
+        TabView(selection: $tab) {
+            Tab("Accueil", systemImage: "rectangle.stack", value: .home) {
+                HomeView { tab = .generate }
+            }
+            Tab("Mes cartes", systemImage: "list.bullet", value: .cards) {
+                CardsView()
+            }
+            Tab("Générer", systemImage: "sparkles", value: .generate) {
+                GenerateView()
+            }
+            Tab("Synchro", systemImage: "arrow.triangle.2.circlepath", value: .sync) {
+                SyncView()
+            }
         }
+        .tabViewStyle(.sidebarAdaptable)
         // Au retour dans l'app, les changements des autres appareils sont lus.
         .onChange(of: phase, initial: true) { _, now in
             if now == .active { sync.soon(context) }
